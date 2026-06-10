@@ -51,7 +51,7 @@ export function Modal({ data, onClose }: { data: ModalData | null; onClose: () =
           </table>
           <h4 className="text-xs text-muted uppercase tracking-[.05em] mt-[18px] mb-2 font-semibold">Transações ({data.rows.length})</h4>
           <div className="max-h-[420px] overflow-auto">
-            <table className="w-full border-collapse text-[13.5px]">
+            <table className="w-full min-w-[520px] border-collapse text-[13.5px]">
               <thead><tr className="text-muted text-[11px] uppercase">
                 <th className="text-left p-2 border-b border-line">Data</th>
                 <th className="text-left p-2 border-b border-line">Descrição</th>

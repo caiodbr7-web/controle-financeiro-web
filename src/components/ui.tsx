@@ -4,7 +4,7 @@ export function Panel({
   title, sub, right, children, className = "",
 }: { title?: ReactNode; sub?: ReactNode; right?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <div className={`bg-card border border-line rounded-[18px] p-5 shadow-card mb-5 ${className}`}>
+    <div className={`bg-card border border-line rounded-[18px] p-4 sm:p-5 shadow-card mb-5 min-w-0 ${className}`}>
       {(title || right) && (
         <div className="flex flex-wrap gap-3 items-center justify-between mb-1">
           <h2 className="text-[16px] font-semibold tracking-tight">
@@ -24,7 +24,7 @@ export function Kpi({
   return (
     <div className="bg-card border border-line rounded-[18px] p-[18px] shadow-card">
       <div className="text-muted text-[11.5px] uppercase tracking-[.06em] font-semibold">{title}</div>
-      <div className={`text-[25px] font-semibold mt-[7px] tracking-tight ${color}`}>{value}</div>
+      <div className={`text-[20px] sm:text-[25px] font-semibold mt-[7px] tracking-tight ${color}`}>{value}</div>
       {sub !== undefined && <div className="text-xs mt-[5px] text-muted">{sub}</div>}
     </div>
   );

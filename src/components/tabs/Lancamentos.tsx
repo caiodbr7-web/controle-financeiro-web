@@ -78,7 +78,7 @@ export function Lancamentos({ dados, months }: Props) {
 
       <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
         <div className="max-h-[560px] overflow-auto">
-          <table className="w-full border-collapse text-[13.5px]">
+          <table className="w-full min-w-[820px] border-collapse text-[13.5px]">
             <thead><tr className="text-muted text-[11px] uppercase">
               {th("competencia", "Mês")}{th("banco", "Banco")}{th("origem", "Origem")}{th("data_mov", "Data")}
               {th("descricao", "Descrição")}{th("classe", "Classe")}
