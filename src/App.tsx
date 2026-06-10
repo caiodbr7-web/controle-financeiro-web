@@ -10,12 +10,14 @@ import { EvolucaoDiaria } from "./components/tabs/EvolucaoDiaria";
 import { ResumoMensal } from "./components/tabs/ResumoMensal";
 import { Arquivos } from "./components/tabs/Arquivos";
 import { Lancamentos } from "./components/tabs/Lancamentos";
+import { Classificar } from "./components/tabs/Classificar";
 
-type Aba = "geral" | "diario" | "mesdet" | "arquivos" | "lanc";
+type Aba = "geral" | "diario" | "mesdet" | "classificar" | "arquivos" | "lanc";
 const ABAS: { id: Aba; label: string }[] = [
   { id: "geral", label: "Visão Geral" },
   { id: "diario", label: "Evolução Diária" },
   { id: "mesdet", label: "Resumo Mensal" },
+  { id: "classificar", label: "Classificar" },
   { id: "arquivos", label: "Arquivos" },
   { id: "lanc", label: "Lançamentos" },
 ];
@@ -77,6 +79,7 @@ export default function App() {
         {aba === "geral" && <VisaoGeral {...tabProps} />}
         {aba === "diario" && <EvolucaoDiaria {...tabProps} />}
         {aba === "mesdet" && <ResumoMensal {...tabProps} />}
+        {aba === "classificar" && <Classificar dados={dados} openModal={openModal} reload={reload} />}
         {aba === "arquivos" && <Arquivos {...tabProps} />}
         {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}
       </div>

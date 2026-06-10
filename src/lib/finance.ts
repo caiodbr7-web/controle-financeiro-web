@@ -153,6 +153,18 @@ export const MODOS: Record<Modo, { rotulo: string; cor: string }> = {
   conta: { rotulo: "Contas", cor: "#2f6df6" },
 };
 
+// normaliza a descrição para agrupar por "estabelecimento"
+// (tira números/parcelas, *, #, espaços extras) — mesmo critério da análise
+export function normEstab(desc: string): string {
+  return String(desc || "")
+    .toLowerCase()
+    .replace(/\d/g, "")
+    .replace(/[*#]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 28);
+}
+
 export const CATEGORIAS = [
   "", "Transporte", "Mercado", "Alimentacao", "Vestuario", "Saude",
   "Assinaturas", "Academia", "Viagem", "Lazer", "Compras", "Educacao", "Servicos", "Outros",
