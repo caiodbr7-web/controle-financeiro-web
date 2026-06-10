@@ -110,8 +110,8 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
           </div>
         }
       >
-        <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-[18px] items-stretch mt-2">
-          <div className="h-[clamp(280px,42vh,420px)] min-w-0">
+        <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-[18px] items-stretch mt-2 md:h-[460px]">
+          <div className="h-[300px] md:h-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={calc.data} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
                 <CartesianGrid stroke="#e6e6eb" />
@@ -127,9 +127,9 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-1 gap-3">
+          <div className="grid grid-cols-2 gap-3 md:flex md:flex-col md:h-full">
             {stats.map((s) => (
-              <div key={s.t} className="flex flex-col justify-center bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card">
+              <div key={s.t} className="md:flex-1 flex flex-col justify-center bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card">
                 <div className="text-muted text-[11.5px] uppercase tracking-[.06em] font-semibold">{s.t}</div>
                 <div className={`text-[22px] sm:text-[30px] font-semibold mt-[6px] tracking-tight ${s.c}`}>{s.v}</div>
                 <div className="text-xs mt-[4px] text-muted">{s.s}</div>
