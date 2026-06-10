@@ -110,15 +110,14 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
           </div>
         }
       >
-        <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-[18px] items-stretch mt-2 md:h-[460px]">
-          <div className="h-[300px] md:h-full min-w-0">
+        <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-[18px] items-stretch mt-2">
+          <div className="h-[300px] md:h-[440px] min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={calc.data} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
                 <CartesianGrid stroke="#e6e6eb" />
                 <XAxis dataKey="dia" tick={{ fill: "#86868b", fontSize: 10 }} minTickGap={6} />
                 <YAxis tick={{ fill: "#86868b", fontSize: 10 }} tickFormatter={(v) => brlShort(v)} width={56} />
                 <Tooltip formatter={(v: any, n: any) => [BRL(Number(v)), n]} labelFormatter={(l) => "Dia " + l} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
                 {calc.show.map((k, i) => (
                   <Line key={dvLabel(k)} type="monotone" dataKey={dvLabel(k)}
                     stroke={`rgba(130,10,209,${ALPHA(i, calc.show.length)})`} strokeWidth={1.6} dot={false} connectNulls={false} isAnimationActive={false} />
@@ -137,7 +136,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
             ))}
           </div>
         </div>
-        <div className="text-muted text-[12.5px] mt-3 leading-relaxed">
+        <div className="text-muted text-[12.5px] mt-5 leading-relaxed">
           A <b className="text-[#c98a00]">linha laranja grossa</b> é a <b>média dos últimos 3 meses completos</b>, dia a dia — onde você deveria estar.
           As linhas roxas são os meses completos (mais fortes = mais recentes). À direita, os números do período. Meses parciais (mês atual e faturas por vir) ficam de fora.
         </div>
