@@ -13,7 +13,7 @@ export function Classificar({ dados, openModal, reload }: Props) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // grupos de gastos AINDA sem categoria manual, por estabelecimento, ordenados por valor
+  // grupos de gastos AINDA sem categoria, por estabelecimento, ordenados por valor
   const grupos = useMemo<Grupo[]>(() => {
     const map = new Map<string, Grupo>();
     dados.forEach((d) => {
@@ -35,11 +35,7 @@ export function Classificar({ dados, openModal, reload }: Props) {
   }, [dados]);
 
   useEffect(() => {
-    setEscolhas((prev) => {
-      const init: Record<string, string> = {};
-      grupos.forEach((g) => { init[g.key] = prev[g.key] ?? g.sugestao; });
-      return init;
-    });
+    setEscolhas((prev) => { const i: Record<string, string> = {}; grupos.forEach((g) => { i[g.key] = prev[g.key] ?? g.sugestao; }); return i; });
   }, [grupos]);
 
   const totalPendente = useMemo(() => grupos.reduce((s, g) => s + g.total, 0), [grupos]);
@@ -65,12 +61,12 @@ export function Classificar({ dados, openModal, reload }: Props) {
   async function aplicarTodas() {
     const alvo = grupos.filter((g) => escolhas[g.key]);
     if (!alvo.length || busy) return;
-    if (!confirm(`Aplicar categorias a ${alvo.length} estabelecimentos (${alvo.reduce((s, g) => s + g.n, 0)} lançamentos)?`)) return;
+    if (!confirm(`Aplicar categoria a ${alvo.length} estabelecimentos (${alvo.reduce((s, g) => s + g.n, 0)} lançamentos)?`)) return;
     setBusy(true);
     try {
       let feito = 0;
-      for (const g of alvo) { setMsg(`Aplicando ${++feito}/${alvo.length}: ${g.ex.slice(0, 30)}...`); await atualizarIds(g.ids, escolhas[g.key]); }
-      await reload(); setMsg(`Pronto — ${alvo.length} estabelecimentos classificados ✓`);
+      for (const g of alvo) { setMsg(`Aplicando ${++feito}/${alvo.length}: ${g.ex.slice(0, 28)}...`); await atualizarIds(g.ids, escolhas[g.key]); }
+      await reload(); setMsg(`Pronto — ${alvo.length} estabelecimentos ✓`);
     } catch (e: any) { setMsg("Erro: " + (e?.message || e)); }
     finally { setBusy(false); }
   }
@@ -78,8 +74,8 @@ export function Classificar({ dados, openModal, reload }: Props) {
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-5">
-        <Kpi title="A classificar" value={BRL(totalPendente)} sub={`${grupos.length} estabelecimentos · ${linhasPendentes} lançamentos`} color="text-amber" />
-        <Kpi title="Com sugestão pronta" value={comEscolha} sub="prontos p/ aplicar" color="text-green" />
+        <Kpi title="A classificar" value={BRL(totalPendente)} sub={`${grupos.length} estab. · ${linhasPendentes} lançamentos`} color="text-amber" />
+        <Kpi title="Com sugestão" value={comEscolha} sub="prontos p/ aplicar" color="text-green" />
         <Kpi title="Sem sugestão" value={grupos.length - comEscolha} sub="precisam de escolha" color={grupos.length - comEscolha ? "text-red" : "text-green"} />
         <div className="bg-card border border-line rounded-[18px] p-[18px] shadow-card flex flex-col justify-center gap-2">
           <button disabled={busy || !comEscolha} onClick={aplicarTodas}
@@ -91,8 +87,8 @@ export function Classificar({ dados, openModal, reload }: Props) {
       </div>
 
       <div className="text-muted text-[12.5px] mb-3 leading-relaxed">
-        Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto para o menor. A categoria sugerida vem do classificador automático;
-        ajuste se precisar e clique em <b>Aplicar</b> — vale para todos os lançamentos daquele estabelecimento. Quando vazio, escolha a categoria. Já classificados saem da lista.
+        Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto pro menor. Defina a <b>categoria</b> (use <b>Corporativo</b> para gastos de trabalho)
+        e clique <b>Aplicar</b> — vale para todos os lançamentos do grupo. <b>Aplicar todas as sugestões</b> resolve o grosso de uma vez. Já classificados saem da lista.
       </div>
 
       {grupos.length === 0 ? (

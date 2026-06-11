@@ -11,12 +11,14 @@ import { ResumoMensal } from "./components/tabs/ResumoMensal";
 import { Arquivos } from "./components/tabs/Arquivos";
 import { Lancamentos } from "./components/tabs/Lancamentos";
 import { Classificar } from "./components/tabs/Classificar";
+import { Orcamento } from "./components/tabs/Orcamento";
 
-type Aba = "geral" | "diario" | "mesdet" | "classificar" | "arquivos" | "lanc";
+type Aba = "geral" | "diario" | "mesdet" | "orcamento" | "classificar" | "arquivos" | "lanc";
 const ABAS: { id: Aba; label: string }[] = [
   { id: "geral", label: "Visão Geral" },
   { id: "diario", label: "Evolução Diária" },
   { id: "mesdet", label: "Resumo Mensal" },
+  { id: "orcamento", label: "Orçamento" },
   { id: "classificar", label: "Classificar" },
   { id: "arquivos", label: "Arquivos" },
   { id: "lanc", label: "Lançamentos" },
@@ -35,7 +37,7 @@ export default function App() {
 
   const dados = useMemo(
     () => visao === "ALL" ? allDados
-      : allDados.filter((d) => visao === "pessoal" ? d.natureza !== "Corporativo" : d.natureza === "Corporativo"),
+      : allDados.filter((d) => visao === "pessoal" ? d.categoria_manual !== "Corporativo" : d.categoria_manual === "Corporativo"),
     [allDados, visao]
   );
   const months = useMemo(() => [...new Set(dados.map((d) => d.competencia))].sort(), [dados]);
@@ -79,6 +81,7 @@ export default function App() {
         {aba === "geral" && <VisaoGeral {...tabProps} />}
         {aba === "diario" && <EvolucaoDiaria {...tabProps} />}
         {aba === "mesdet" && <ResumoMensal {...tabProps} />}
+        {aba === "orcamento" && <Orcamento />}
         {aba === "classificar" && <Classificar dados={dados} openModal={openModal} reload={reload} />}
         {aba === "arquivos" && <Arquivos {...tabProps} />}
         {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}

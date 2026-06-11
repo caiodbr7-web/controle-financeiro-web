@@ -166,6 +166,8 @@ export function normEstab(desc: string): string {
 }
 
 export const CATEGORIAS = [
-  "", "Transporte", "Mercado", "Alimentacao", "Vestuario", "Saude",
-  "Assinaturas", "Academia", "Viagem", "Lazer", "Compras", "Educacao", "Servicos", "Outros",
+  "", "Moradia", "Mercado", "Alimentacao", "Transporte", "Saude", "Academia",
+  "Vestuario", "Compras", "Assinaturas", "Lazer", "Viagem", "Educacao",
+  "Servicos", "Transferencias", "Impostos/Taxas", "Presentes", "Pets",
+  "Corporativo", "Outros",
 ];
