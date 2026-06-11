@@ -71,8 +71,8 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
       return { c, cat, total: Object.values(cat).reduce((s, v) => s + v, 0) };
     });
     const cats = Object.keys(catTot).sort((a, b) => catTot[b] - catTot[a]);
-    const dataPct = porMes.map(({ c, cat, total }) => { const row: any = { mes: mesCurto(c) }; cats.forEach((k) => { row[k] = total ? +(((cat[k] || 0) / total) * 100).toFixed(2) : 0; }); return row; });
-    const dataVal = porMes.map(({ c, cat }) => { const row: any = { mes: mesCurto(c) }; cats.forEach((k) => { row[k] = cat[k] || 0; }); return row; });
+    const dataPct = porMes.map(({ c, cat, total }) => { const row: any = { mes: mesCurto(c), _c: c }; cats.forEach((k) => { row[k] = total ? +(((cat[k] || 0) / total) * 100).toFixed(2) : 0; }); return row; });
+    const dataVal = porMes.map(({ c, cat }) => { const row: any = { mes: mesCurto(c), _c: c }; cats.forEach((k) => { row[k] = cat[k] || 0; }); return row; });
     return { cats, dataPct, dataVal };
   }, [dados, months]);
 
@@ -177,16 +177,17 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
 
       {/* ---- composição dos últimos 6 meses: 100% e em R$ ---- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px] mt-1">
-        <Panel title="Composição mensal" sub="(% por categoria · últimos 6 meses)">
+        <Panel title="Composição mensal" sub="(% por categoria · últimos 6 meses · clique p/ detalhar)">
           <div className="h-[clamp(260px,34vh,360px)] mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stack6.dataPct} margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
                 <CartesianGrid stroke={cc.grid} vertical={false} />
                 <XAxis dataKey="mes" tick={cc.tick} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 100]} tickFormatter={(v) => v + "%"} tick={cc.tickSm} width={38} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => v + "%"} tick={cc.tickSm} width={44} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTip pct />} cursor={cc.cursor} />
                 {stack6.cats.map((c) => (
-                  <Bar key={c} dataKey={c} stackId="a" fill={corCategoria(c)} isAnimationActive={false}>
+                  <Bar key={c} dataKey={c} stackId="a" fill={corCategoria(c)} isAnimationActive={false} cursor="pointer"
+                    onClick={(d: any) => { const comp = d?.payload?._c; if (comp) openModal(c + " · " + mesCurto(comp), dados.filter((x) => x.competencia === comp && ehGasto(x.classe) && catKey(x) === c)); }}>
                     <LabelList content={PctLabel} />
                   </Bar>
                 ))}
@@ -194,7 +195,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
             </ResponsiveContainer>
           </div>
         </Panel>
-        <Panel title="Composição mensal" sub="(em R$ · últimos 6 meses)">
+        <Panel title="Composição mensal" sub="(em R$ · últimos 6 meses · clique p/ detalhar)">
           <div className="h-[clamp(260px,34vh,360px)] mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stack6.dataVal} margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
@@ -202,7 +203,10 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
                 <XAxis dataKey="mes" tick={cc.tick} axisLine={false} tickLine={false} />
                 <YAxis tickFormatter={(v) => brlShort(v)} tick={cc.tickSm} width={56} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTip />} cursor={cc.cursor} />
-                {stack6.cats.map((c) => <Bar key={c} dataKey={c} stackId="a" fill={corCategoria(c)} isAnimationActive={false} />)}
+                {stack6.cats.map((c) => (
+                  <Bar key={c} dataKey={c} stackId="a" fill={corCategoria(c)} isAnimationActive={false} cursor="pointer"
+                    onClick={(d: any) => { const comp = d?.payload?._c; if (comp) openModal(c + " · " + mesCurto(comp), dados.filter((x) => x.competencia === comp && ehGasto(x.classe) && catKey(x) === c)); }} />
+                ))}
               </BarChart>
             </ResponsiveContainer>
           </div>

@@ -87,7 +87,7 @@ export function ChartTip({
   labelPrefix?: string;
 }) {
   if (!active || !payload || !payload.length) return null;
-  const rows = payload.filter((p) => p && p.value != null);
+  const rows = payload.filter((p) => p && p.value != null && Number(p.value) !== 0);
   if (!rows.length) return null;
   return (
     <div className="rounded-[12px] border border-line bg-card/95 backdrop-blur-[8px] px-3 py-2 shadow-pop text-[12px] min-w-[150px]">

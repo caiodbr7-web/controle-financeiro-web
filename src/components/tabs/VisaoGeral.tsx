@@ -91,11 +91,19 @@ export function VisaoGeral({ dados, months, openModal }: Props) {
       </Panel>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px]">
-        <Panel title="Gastos por cartão / conta" sub="(empilhado)">
-          <StackedBars data={gastoPivot.data} keys={gastoPivot.keys} />
+        <Panel title="Gastos por cartão / conta" sub="(empilhado · clique p/ detalhar)">
+          <StackedBars
+            data={gastoPivot.data}
+            keys={gastoPivot.keys}
+            onSeg={(k, m) => openModal(k + " · " + mesCurto(m), dados.filter((d) => d.competencia === m && ehGasto(d.classe) && d.origem === k))}
+          />
         </Panel>
-        <Panel title="Receitas por banco" sub="(empilhado)">
-          <StackedBars data={recPivot.data} keys={recPivot.keys} />
+        <Panel title="Receitas por banco" sub="(empilhado · clique p/ detalhar)">
+          <StackedBars
+            data={recPivot.data}
+            keys={recPivot.keys}
+            onSeg={(k, m) => openModal(k + " · " + mesCurto(m), dados.filter((d) => d.competencia === m && ehReceita(d.classe) && d.banco === k))}
+          />
         </Panel>
       </div>
 
@@ -127,7 +135,7 @@ export function VisaoGeral({ dados, months, openModal }: Props) {
   );
 }
 
-function StackedBars({ data, keys }: { data: any[]; keys: string[] }) {
+function StackedBars({ data, keys, onSeg }: { data: any[]; keys: string[]; onSeg?: (key: string, m: string) => void }) {
   const cc = useChart();
   return (
     <div className="h-[clamp(280px,42vh,420px)] mt-2">
@@ -138,7 +146,17 @@ function StackedBars({ data, keys }: { data: any[]; keys: string[] }) {
           <YAxis tick={cc.tick} tickFormatter={(v) => brlShort(v)} width={64} axisLine={false} tickLine={false} />
           <Tooltip content={<ChartTip />} cursor={cc.cursor} />
           <Legend wrapperStyle={{ fontSize: 11.5 }} iconType="circle" iconSize={7} />
-          {keys.map((k) => <Bar key={k} dataKey={k} stackId="s" fill={corChave(k)} radius={[3, 3, 0, 0]} />)}
+          {keys.map((k) => (
+            <Bar
+              key={k}
+              dataKey={k}
+              stackId="s"
+              fill={corChave(k)}
+              radius={[3, 3, 0, 0]}
+              cursor={onSeg ? "pointer" : undefined}
+              onClick={(d: any) => { const m = d?.payload?._m ?? d?._m; if (m && onSeg) onSeg(k, m); }}
+            />
+          ))}
         </BarChart>
       </ResponsiveContainer>
     </div>

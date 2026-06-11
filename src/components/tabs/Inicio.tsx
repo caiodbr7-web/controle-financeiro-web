@@ -6,7 +6,7 @@ import { useChart, ChartTip } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
   BRL, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dvSeries,
-  dvDiasNoMes, dvLabel, dvParcialLimite, MES_ABREV, mesCurto, normEstab,
+  dvAddMes, dvDiasNoMes, dvLabel, dvParcialLimite, MES_ABREV, mesCurto, normEstab,
 } from "../../lib/finance";
 
 interface Props {
@@ -45,12 +45,10 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   const hoje = new Date();
   const mesAtual = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
 
-  /* ---------- gasto do mês (data real, cartão + contas) ---------- */
+  /* ---------- gasto do mês de referência: sempre o mês ANTERIOR ao atual ---------- */
   const calc = useMemo(() => {
     const { map } = dvSeries(dados, months, "ambos");
     const lim = dvParcialLimite(allDados);
-    const completos = Object.keys(map).filter((k) => k < lim).sort();
-    const base3 = completos.slice(-3);
 
     const cum = (k: string) => {
       const nd = dvDiasNoMes(k); const out: number[] = []; let s = 0;
@@ -58,6 +56,17 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
       return out;
     };
 
+    // mês de referência: o anterior ao mês civil atual; se sem dados, o último com dados antes do atual
+    let refKey = dvAddMes(mesAtual, -1);
+    if (!map[refKey]) {
+      const cand = Object.keys(map).filter((k) => k < mesAtual).sort();
+      if (!cand.length) return null;
+      refKey = cand[cand.length - 1];
+    }
+    const completo = refKey < lim;
+
+    // benchmark: média acumulada dos 3 meses completos ANTERIORES ao mês de referência
+    const base3 = Object.keys(map).filter((k) => k < refKey && k < lim).sort().slice(-3);
     const bench: (number | null)[] = [];
     for (let j = 0; j < 31; j++) {
       let s = 0, c = 0;
@@ -67,39 +76,26 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
     let benchFim = 0;
     for (let j = 30; j >= 0; j--) if (bench[j] != null) { benchFim = bench[j] as number; break; }
 
-    // mês de referência: o civil atual se já há compras conhecidas; senão o último completo
-    const atualArr = map[mesAtual] ? cum(mesAtual) : [];
-    const atualTot = atualArr.length ? atualArr[Math.min(hoje.getDate(), atualArr.length) - 1] : 0;
-    const emCurso = atualTot > 0;
-    const refKey = emCurso ? mesAtual : completos[completos.length - 1] || "";
-    if (!refKey) return null;
-
     const refArr = cum(refKey);
     const nd = dvDiasNoMes(refKey);
-    const refDia = emCurso ? Math.min(hoje.getDate(), nd) : nd;
-    const refTot = refArr[refDia - 1] || 0;
-    const benchDia = bench[refDia - 1];
-    const delta = benchDia != null ? refTot - benchDia : null;
+    const refTot = refArr[nd - 1] || 0;
+    const delta = base3.length ? refTot - benchFim : null;
 
-    const proj = emCurso
-      ? benchDia != null && benchDia > 0
-        ? refTot + (benchFim - benchDia)
-        : (refTot / Math.max(1, refDia)) * nd
-      : null;
-
-    const antKey = emCurso ? completos[completos.length - 1] : completos[completos.length - 2];
+    // mês com dados imediatamente anterior ao de referência
+    const antCand = Object.keys(map).filter((k) => k < refKey).sort();
+    const antKey = antCand.length ? antCand[antCand.length - 1] : null;
     const antTot = antKey ? (cum(antKey).slice(-1)[0] || 0) : null;
 
+    const serieNome = dvLabel(refKey);
     const chart = Array.from({ length: nd }, (_, i) => ({
       dia: i + 1,
-      [emCurso ? "Este mês" : dvLabel(refKey)]: i < refDia ? refArr[i] : null,
+      [serieNome]: refArr[i],
       "Média 3 meses": bench[i],
     }));
 
     return {
-      emCurso, refKey, refDia, refTot, delta, proj, benchFim, antKey, antTot, chart, nd,
-      serieNome: emCurso ? "Este mês" : dvLabel(refKey),
-      mediaDia: refDia ? refTot / refDia : 0,
+      refKey, completo, refTot, delta, benchFim, antKey, antTot, chart, nd, serieNome,
+      mediaDia: nd ? refTot / nd : 0,
       temBench: base3.length > 0,
     };
   }, [dados, allDados, months, mesAtual]);
@@ -167,7 +163,6 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
 
   if (!calc) return <div className="text-muted p-4">Sem dados ainda — importe os primeiros PDFs para começar.</div>;
 
-  const mesNome = MES_ABREV[+calc.refKey.slice(5, 7) - 1];
   const temPend = pend.classGrupos > 0 || (orc?.pend || 0) > 0 || pend.arqFaltam > 0;
   const roxo = cc.roxoLinha("1");
 
@@ -179,7 +174,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
           <div className="grid grid-cols-1 md:grid-cols-[1.7fr_1fr] gap-5">
             <div className="min-w-0">
               <div className="text-muted text-[12.5px] font-medium">
-                {calc.emCurso ? `Gasto em ${mesNome} · até dia ${calc.refDia}` : `Gasto em ${dvLabel(calc.refKey)} · mês fechado`}
+                Gasto em {dvLabel(calc.refKey)} · {calc.completo ? "mês fechado" : "parcial · faturas por vir"}
               </div>
               <div className="text-[34px] sm:text-[42px] font-semibold tracking-tight tabular-nums leading-tight mt-1">
                 {BRL(calc.refTot)}
@@ -189,7 +184,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                   <span className={`inline-flex items-center gap-1 rounded-full px-[10px] py-[3px] text-[12px] font-semibold ${
                     calc.delta <= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"
                   }`}>
-                    {calc.delta <= 0 ? "▼" : "▲"} {BRL(Math.abs(calc.delta))} vs média 3m{calc.emCurso ? " no mesmo dia" : ""}
+                    {calc.delta <= 0 ? "▼" : "▲"} {BRL(Math.abs(calc.delta))} vs média 3m
                   </span>
                 </div>
               )}
@@ -211,17 +206,14 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                 </ResponsiveContainer>
               </div>
               <div className="text-[11.5px] text-muted mt-2">
-                Pela data real da compra, cartão + contas.{calc.emCurso ? " Compras recentes podem ainda não ter chegado (faturas por vir)." : ""}
+                Pela data real da compra, cartão + contas.{!calc.completo ? " Parte das compras deste mês ainda pode chegar na próxima fatura." : ""}
               </div>
             </div>
 
             <div className="md:border-l md:border-line md:pl-5 divide-y divide-line self-center w-full">
-              {calc.emCurso && calc.proj != null && (
-                <Stat label="Projeção de fechamento" value={BRL(calc.proj)} sub={calc.temBench ? "seguindo o padrão dos últimos meses" : "ritmo atual"} color={calc.proj > calc.benchFim ? "text-red" : "text-green"} />
-              )}
-              <Stat label="Patamar (média 3 meses)" value={BRL(calc.benchFim)} sub="meses completos" />
-              <Stat label="Média por dia" value={BRL(calc.mediaDia)} sub={calc.emCurso ? `até dia ${calc.refDia}` : `${calc.nd} dias`} />
-              {!calc.emCurso && calc.antTot != null && calc.antKey && (
+              <Stat label="Patamar (média 3 meses)" value={BRL(calc.benchFim)} sub="3 meses completos anteriores" />
+              <Stat label="Média por dia" value={BRL(calc.mediaDia)} sub={`${calc.nd} dias`} />
+              {calc.antTot != null && calc.antKey && (
                 <Stat label={`Mês anterior · ${dvLabel(calc.antKey)}`} value={BRL(calc.antTot)} />
               )}
             </div>
@@ -266,7 +258,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px] mt-[18px]">
         <Panel
           title="Onde foi o dinheiro"
-          sub={`(${calc.emCurso ? mesNome : dvLabel(calc.refKey)} · clique p/ detalhar)`}
+          sub={`(${dvLabel(calc.refKey)} · clique p/ detalhar)`}
           right={
             <button onClick={() => go("mensal")} className="bg-transparent border-0 text-accent text-[12.5px] font-medium cursor-pointer p-0 hover:underline">
               Resumo completo ›
@@ -283,7 +275,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                   max={topCats.rows[0].val}
                   color={corCategoria(c.cat)}
                   right={`${BRL(c.val)} · ${topCats.total ? Math.round((c.val / topCats.total) * 100) : 0}%`}
-                  onClick={() => openModal(`${c.cat} · ${calc.emCurso ? mesNome : dvLabel(calc.refKey)}`, c.itens)}
+                  onClick={() => openModal(`${c.cat} · ${dvLabel(calc.refKey)}`, c.itens)}
                 />
               ))}
             </div>
