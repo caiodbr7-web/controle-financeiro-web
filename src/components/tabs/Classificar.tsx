@@ -4,14 +4,43 @@ import { Kpi } from "../ui";
 import { sb } from "../../lib/supabase";
 import { BRL, ehGasto, normEstab, CATEGORIAS } from "../../lib/finance";
 
-interface Props { dados: Lancamento[]; openModal: (t: string, r: Lancamento[]) => void; reload: () => void; }
+interface Props { dados: Lancamento[]; allDados: Lancamento[]; openModal: (t: string, r: Lancamento[]) => void; reload: () => void; }
 
 interface Grupo { key: string; ex: string; ids: number[]; rows: Lancamento[]; total: number; n: number; sugestao: string; }
 
-export function Classificar({ dados, openModal, reload }: Props) {
+export function Classificar({ dados, allDados, openModal, reload }: Props) {
   const [escolhas, setEscolhas] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [regras, setRegras] = useState<Record<string, string>>({}); // padrao(estab) -> categoria aprendida
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await sb.from("regras").select("padrao,categoria");
+      const m: Record<string, string> = {};
+      (data || []).forEach((x: any) => { m[x.padrao] = x.categoria; });
+      setRegras(m);
+    })();
+  }, []);
+
+  async function salvarRegra(key: string, categoria: string) {
+    if (!key || !categoria) return;
+    await sb.from("regras").upsert({ padrao: key, categoria }, { onConflict: "padrao" });
+    setRegras((r) => ({ ...r, [key]: categoria }));
+  }
+
+  // histórico já classificado: estabelecimento -> categoria mais usada (aprende do passado)
+  const histMap = useMemo(() => {
+    const cnt: Record<string, Record<string, number>> = {};
+    allDados.forEach((d) => {
+      if (!ehGasto(d.classe) || !d.categoria_manual) return;
+      const k = normEstab(d.descricao);
+      (cnt[k] = cnt[k] || {})[d.categoria_manual] = (cnt[k][d.categoria_manual] || 0) + 1;
+    });
+    const m: Record<string, string> = {};
+    Object.keys(cnt).forEach((k) => { m[k] = Object.keys(cnt[k]).sort((a, b) => cnt[k][b] - cnt[k][a])[0]; });
+    return m;
+  }, [allDados]);
 
   // grupos de gastos AINDA sem categoria, por estabelecimento, ordenados por valor
   const grupos = useMemo<Grupo[]>(() => {
@@ -28,11 +57,14 @@ export function Classificar({ dados, openModal, reload }: Props) {
       const sug: Record<string, number> = {};
       g.rows.forEach((d) => { const s = d.categoria_auto || ""; if (s) sug[s] = (sug[s] || 0) + Math.abs(d.valor); });
       const top = Object.keys(sug).sort((a, b) => sug[b] - sug[a])[0] || "";
-      return { ...g, sugestao: CATEGORIAS.includes(top) ? top : "" };
+      // prioridade: regra salva -> categoria mais usada no histórico p/ esse estabelecimento -> palpite do parser
+      const hist = histMap[g.key];
+      const sugestao = regras[g.key] || (hist && CATEGORIAS.includes(hist) ? hist : "") || (CATEGORIAS.includes(top) ? top : "");
+      return { ...g, sugestao };
     });
     arr.sort((a, b) => b.total - a.total);
     return arr;
-  }, [dados]);
+  }, [dados, regras, histMap]);
 
   useEffect(() => {
     setEscolhas((prev) => { const i: Record<string, string> = {}; grupos.forEach((g) => { i[g.key] = prev[g.key] ?? g.sugestao; }); return i; });
@@ -53,8 +85,21 @@ export function Classificar({ dados, openModal, reload }: Props) {
   async function aplicarUm(g: Grupo) {
     const cat = escolhas[g.key]; if (!cat || busy) return;
     setBusy(true); setMsg(`Aplicando "${cat}" a ${g.n} lançamento(s)...`);
-    try { await atualizarIds(g.ids, cat); await reload(); setMsg("Aplicado ✓"); }
+    try { await atualizarIds(g.ids, cat); await salvarRegra(g.key, cat); await reload(); setMsg("Aplicado ✓ (virou sugestão p/ os próximos)"); }
     catch (e: any) { setMsg("Erro: " + (e?.message || e)); }
+    finally { setBusy(false); }
+  }
+
+  async function marcarRestantesOutros() {
+    const alvo = grupos.filter((g) => !escolhas[g.key]); // só os ainda sem categoria escolhida
+    if (!alvo.length || busy) return;
+    if (!confirm(`Marcar ${alvo.length} estabelecimentos restantes como "Outros" (${alvo.reduce((s, g) => s + g.n, 0)} lançamentos)?`)) return;
+    setBusy(true);
+    try {
+      let feito = 0;
+      for (const g of alvo) { setMsg(`Outros ${++feito}/${alvo.length}...`); await atualizarIds(g.ids, "Outros"); }
+      await reload(); setMsg(`Pronto — ${alvo.length} marcados como Outros ✓`);
+    } catch (e: any) { setMsg("Erro: " + (e?.message || e)); }
     finally { setBusy(false); }
   }
 
@@ -65,7 +110,7 @@ export function Classificar({ dados, openModal, reload }: Props) {
     setBusy(true);
     try {
       let feito = 0;
-      for (const g of alvo) { setMsg(`Aplicando ${++feito}/${alvo.length}: ${g.ex.slice(0, 28)}...`); await atualizarIds(g.ids, escolhas[g.key]); }
+      for (const g of alvo) { setMsg(`Aplicando ${++feito}/${alvo.length}: ${g.ex.slice(0, 28)}...`); await atualizarIds(g.ids, escolhas[g.key]); await salvarRegra(g.key, escolhas[g.key]); }
       await reload(); setMsg(`Pronto — ${alvo.length} estabelecimentos ✓`);
     } catch (e: any) { setMsg("Erro: " + (e?.message || e)); }
     finally { setBusy(false); }
@@ -81,6 +126,10 @@ export function Classificar({ dados, openModal, reload }: Props) {
           <button disabled={busy || !comEscolha} onClick={aplicarTodas}
             className="bg-accent hover:bg-accent2 disabled:opacity-50 text-white font-medium rounded-[10px] px-4 py-2 cursor-pointer">
             Aplicar todas as sugestões
+          </button>
+          <button disabled={busy || grupos.length === comEscolha} onClick={marcarRestantesOutros}
+            className="bg-transparent border border-line text-muted hover:text-txt disabled:opacity-50 rounded-[10px] px-4 py-[7px] cursor-pointer text-[12.5px]">
+            Marcar restantes como Outros
           </button>
           <div className="text-muted text-[11.5px] min-h-[14px]">{msg}</div>
         </div>

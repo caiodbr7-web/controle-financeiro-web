@@ -82,7 +82,7 @@ export default function App() {
         {aba === "diario" && <EvolucaoDiaria {...tabProps} />}
         {aba === "mesdet" && <ResumoMensal {...tabProps} />}
         {aba === "orcamento" && <Orcamento />}
-        {aba === "classificar" && <Classificar dados={dados} openModal={openModal} reload={reload} />}
+        {aba === "classificar" && <Classificar dados={dados} allDados={allDados} openModal={openModal} reload={reload} />}
         {aba === "arquivos" && <Arquivos {...tabProps} />}
         {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}
       </div>

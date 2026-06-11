@@ -162,7 +162,7 @@ export function normEstab(desc: string): string {
     .replace(/[*#]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 28);
+    .slice(0, 48);
 }
 
 export const CATEGORIAS = [
