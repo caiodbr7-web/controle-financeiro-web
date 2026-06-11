@@ -165,6 +165,17 @@ export function normEstab(desc: string): string {
     .slice(0, 48);
 }
 
+// paleta fixa por categoria (mesma cor no gráfico, na rosca e na legenda)
+export const CAT_CORES: Record<string, string> = {
+  Moradia: "#820ad1", Mercado: "#16a34a", Alimentacao: "#f59e0b", Transporte: "#2f6df6",
+  Saude: "#e0382b", Academia: "#0ea5e9", Vestuario: "#db2777", Compras: "#7c3aed",
+  Assinaturas: "#0891b2", Lazer: "#f97316", Viagem: "#6d28d9", Educacao: "#059669",
+  Servicos: "#64748b", Transferencias: "#94a3b8", "Impostos/Taxas": "#b45309",
+  Presentes: "#ec4899", Pets: "#a16207", Corporativo: "#334155", Outros: "#9ca3af",
+  "Sem categoria": "#cbd5e1",
+};
+export const corCategoria = (c: string) => CAT_CORES[c] || "#9ca3af";
+
 export const CATEGORIAS = [
   "", "Moradia", "Mercado", "Alimentacao", "Transporte", "Saude", "Academia",
   "Vestuario", "Compras", "Assinaturas", "Lazer", "Viagem", "Educacao",

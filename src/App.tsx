@@ -81,7 +81,7 @@ export default function App() {
         {aba === "geral" && <VisaoGeral {...tabProps} />}
         {aba === "diario" && <EvolucaoDiaria {...tabProps} />}
         {aba === "mesdet" && <ResumoMensal {...tabProps} />}
-        {aba === "orcamento" && <Orcamento />}
+        {aba === "orcamento" && <Orcamento allDados={allDados} />}
         {aba === "classificar" && <Classificar dados={dados} allDados={allDados} openModal={openModal} reload={reload} />}
         {aba === "arquivos" && <Arquivos {...tabProps} />}
         {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}
