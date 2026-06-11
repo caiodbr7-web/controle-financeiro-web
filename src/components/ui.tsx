@@ -4,11 +4,11 @@ export function Panel({
   title, sub, right, children, className = "",
 }: { title?: ReactNode; sub?: ReactNode; right?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <div className={`bg-card border border-line rounded-[18px] p-4 sm:p-5 shadow-card mb-5 min-w-0 ${className}`}>
+    <div className={`bg-card border border-line rounded-[18px] p-4 sm:p-5 shadow-card mb-[18px] min-w-0 ${className}`}>
       {(title || right) && (
-        <div className="flex flex-wrap gap-3 items-center justify-between mb-1">
-          <h2 className="text-[16px] font-semibold tracking-tight">
-            {title} {sub && <span className="text-muted text-xs font-normal">{sub}</span>}
+        <div className="flex flex-wrap gap-x-3 gap-y-2 items-center justify-between mb-2">
+          <h2 className="text-[15px] font-semibold tracking-tight">
+            {title} {sub && <span className="text-muted text-[12px] font-normal">{sub}</span>}
           </h2>
           {right}
         </div>
@@ -19,28 +19,37 @@ export function Panel({
 }
 
 export function Kpi({
-  title, value, sub, color = "",
-}: { title: ReactNode; value: ReactNode; sub?: ReactNode; color?: string }) {
+  title, value, sub, color = "", onClick,
+}: { title: ReactNode; value: ReactNode; sub?: ReactNode; color?: string; onClick?: () => void }) {
+  const Tag: any = onClick ? "button" : "div";
   return (
-    <div className="bg-card border border-line rounded-[18px] p-[18px] shadow-card">
-      <div className="text-muted text-[11.5px] uppercase tracking-[.06em] font-semibold">{title}</div>
-      <div className={`text-[20px] sm:text-[25px] font-semibold mt-[7px] tracking-tight ${color}`}>{value}</div>
-      {sub !== undefined && <div className="text-xs mt-[5px] text-muted">{sub}</div>}
-    </div>
+    <Tag
+      onClick={onClick}
+      className={`bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card min-w-0 text-left ${
+        onClick ? "cursor-pointer hover:border-muted/60 transition-colors" : ""
+      }`}
+    >
+      <div className="text-muted text-[12px] font-medium">{title}</div>
+      <div className={`text-[20px] sm:text-[24px] font-semibold mt-[6px] tracking-tight tabular-nums ${color}`}>{value}</div>
+      {sub !== undefined && <div className="text-[11.5px] mt-[4px] text-muted leading-snug">{sub}</div>}
+    </Tag>
   );
 }
 
 export function Seg<T extends string>({
-  value, onChange, options,
-}: { value: T; onChange: (v: T) => void; options: { v: T; label: string }[] }) {
+  value, onChange, options, size = "md",
+}: { value: T; onChange: (v: T) => void; options: { v: T; label: string }[]; size?: "sm" | "md" }) {
+  const pad = size === "sm" ? "px-[10px] py-[5px] text-[12.5px]" : "px-[13px] py-[7px] text-[13px]";
   return (
-    <div className="inline-flex gap-[2px] bg-[#ececf0] p-1 rounded-[11px] flex-wrap">
+    <div className="inline-flex gap-[2px] bg-fill p-[3px] rounded-[10px] flex-wrap">
       {options.map((o) => (
         <button
           key={o.v}
           onClick={() => onChange(o.v)}
-          className={`whitespace-nowrap border-0 px-[13px] py-[7px] text-[13.5px] cursor-pointer rounded-[8px] font-medium transition ${
-            value === o.v ? "bg-card text-txt shadow-[0_1px_3px_rgba(0,0,0,.12)]" : "bg-transparent text-muted hover:text-txt"
+          className={`whitespace-nowrap border-0 ${pad} cursor-pointer rounded-[8px] font-medium transition-all ${
+            value === o.v
+              ? "bg-card text-txt shadow-[0_1px_3px_rgba(0,0,0,.16)]"
+              : "bg-transparent text-muted hover:text-txt"
           }`}
         >
           {o.label}
@@ -57,9 +66,40 @@ export function Select({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={`bg-card text-txt border border-line rounded-[10px] px-3 py-[9px] text-[15px] ${className}`}
+      className={`select-chev bg-card text-txt border border-line rounded-[10px] pl-3 py-[8px] text-[13.5px] cursor-pointer outline-none focus:border-muted transition-colors ${className}`}
     >
       {children}
     </select>
+  );
+}
+
+/* linha padrão de controles no topo de cada aba */
+export function Toolbar({ children, right }: { children?: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-2 items-center justify-between mb-4">
+      <div className="flex flex-wrap gap-x-[10px] gap-y-2 items-center min-w-0">{children}</div>
+      {right && <div className="flex flex-wrap gap-2 items-center">{right}</div>}
+    </div>
+  );
+}
+
+/* barra horizontal fina (ranking de categorias etc.) — leve, sem chart lib */
+export function BarRow({
+  label, value, max, color, right, onClick,
+}: { label: ReactNode; value: number; max: number; color: string; right: ReactNode; onClick?: () => void }) {
+  const Tag: any = onClick ? "button" : "div";
+  return (
+    <Tag onClick={onClick} className={`w-full bg-transparent border-0 p-0 text-left block ${onClick ? "cursor-pointer group" : ""}`}>
+      <div className="flex items-baseline justify-between gap-3 text-[13px] mb-[4px]">
+        <span className={`font-medium truncate ${onClick ? "group-hover:text-accent transition-colors" : ""}`}>{label}</span>
+        <span className="text-muted tabular-nums shrink-0 text-[12.5px]">{right}</span>
+      </div>
+      <div className="h-[5px] rounded-full bg-fill overflow-hidden">
+        <div
+          className="h-full rounded-full transition-[width] duration-300"
+          style={{ width: `${max > 0 ? Math.max(2, (value / max) * 100) : 0}%`, background: color }}
+        />
+      </div>
+    </Tag>
   );
 }

@@ -1,12 +1,13 @@
 import { useState, useMemo } from "react";
 import type { Lancamento } from "../../types";
-import { Kpi } from "../ui";
+import { Kpi, Select } from "../ui";
 import { sb } from "../../lib/supabase";
 import { BRL, mesCurto, ehGasto, ehReceita, CATEGORIAS } from "../../lib/finance";
+import { ArquivosPanel } from "./Arquivos";
 
-interface Props { dados: Lancamento[]; months: string[]; reload: () => void; }
+interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[]; reload: () => void; }
 
-export function Lancamentos({ dados, months }: Props) {
+export function Lancamentos({ dados, allDados, months }: Props) {
   const [busca, setBusca] = useState("");
   const [fComp, setFComp] = useState("");
   const [fBanco, setFBanco] = useState("");
@@ -48,60 +49,76 @@ export function Lancamentos({ dados, months }: Props) {
 
   function th(col: keyof Lancamento, label: string) {
     return (
-      <th className="text-left p-[10px] border-b border-line cursor-pointer sticky top-0 bg-card z-[1]"
-        onClick={() => { if (sortCol === col) setSortDir((x) => x * -1); else { setSortCol(col); setSortDir(col === "valor" ? -1 : 1); } }}>
+      <th
+        className="cursor-pointer select-none sticky top-0 bg-card z-[1]"
+        onClick={() => { if (sortCol === col) setSortDir((x) => x * -1); else { setSortCol(col); setSortDir(col === "valor" ? -1 : 1); } }}
+      >
         {label}{sortCol === col ? (sortDir > 0 ? " ▲" : " ▼") : ""}
       </th>
     );
   }
-  const sel = "bg-card border border-line rounded-[10px] px-3 py-[9px] text-[15px]";
   const MAX = 1500;
 
   return (
     <div>
-      <div className="flex flex-wrap gap-[10px] items-center mb-4">
-        <input className={`${sel} min-w-[200px] flex-1`} placeholder="buscar descrição..." value={busca} onChange={(e) => setBusca(e.target.value)} />
-        <select className={sel} value={fComp} onChange={(e) => setFComp(e.target.value)}><option value="">Todos os meses</option>{months.map((m) => <option key={m} value={m}>{mesCurto(m)}</option>)}</select>
-        <select className={sel} value={fBanco} onChange={(e) => { setFBanco(e.target.value); setFOrigem(""); }}><option value="">Todos os bancos</option>{bancos.map((b) => <option key={b}>{b}</option>)}</select>
-        <select className={sel} value={fOrigem} onChange={(e) => setFOrigem(e.target.value)}><option value="">Todas as origens</option>{origens.map((o) => <option key={o}>{o}</option>)}</select>
-        <select className={sel} value={fClasse} onChange={(e) => setFClasse(e.target.value)}><option value="">Todas as classes</option>{classes.map((c) => <option key={c}>{c}</option>)}</select>
-        <button className="bg-transparent border border-line text-muted rounded-[10px] px-4 py-[9px] cursor-pointer hover:text-txt"
-          onClick={() => { setBusca(""); setFComp(""); setFBanco(""); setFOrigem(""); setFClasse(""); }}>Limpar</button>
+      <ArquivosPanel allDados={allDados} />
+
+      <div className="flex flex-wrap gap-2 items-center mb-4">
+        <input className="input min-w-[200px] flex-1" placeholder="Buscar descrição…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        <Select value={fComp} onChange={setFComp}>
+          <option value="">Todos os meses</option>
+          {months.map((m) => <option key={m} value={m}>{mesCurto(m)}</option>)}
+        </Select>
+        <Select value={fBanco} onChange={(v) => { setFBanco(v); setFOrigem(""); }}>
+          <option value="">Todos os bancos</option>
+          {bancos.map((b) => <option key={b}>{b}</option>)}
+        </Select>
+        <Select value={fOrigem} onChange={setFOrigem}>
+          <option value="">Todas as origens</option>
+          {origens.map((o) => <option key={o}>{o}</option>)}
+        </Select>
+        <Select value={fClasse} onChange={setFClasse}>
+          <option value="">Todas as classes</option>
+          {classes.map((c) => <option key={c}>{c}</option>)}
+        </Select>
+        <button className="btn-ghost" onClick={() => { setBusca(""); setFComp(""); setFBanco(""); setFOrigem(""); setFClasse(""); }}>
+          Limpar
+        </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
         <Kpi title="Gastos" value={BRL(totals.gasto)} color="text-red" />
         <Kpi title="Receitas" value={BRL(totals.receita)} color="text-green" />
         <Kpi title="Saldo" value={BRL(totals.saldo)} color={totals.saldo < 0 ? "text-red" : "text-green"} />
-        <Kpi title="Lançamentos" value={rows.length} />
+        <Kpi title="Lançamentos" value={rows.length.toLocaleString("pt-BR")} />
       </div>
 
       <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
-        <div className="max-h-[560px] overflow-auto">
-          <table className="w-full min-w-[820px] border-collapse text-[13.5px]">
-            <thead><tr className="text-muted text-[11px] uppercase">
+        <div className="max-h-[560px] overflow-auto scroll-thin">
+          <table className="tbl min-w-[820px]">
+            <thead><tr>
               {th("competencia", "Mês")}{th("banco", "Banco")}{th("origem", "Origem")}{th("data_mov", "Data")}
               {th("descricao", "Descrição")}{th("classe", "Classe")}
-              <th className="text-left p-[10px] border-b border-line sticky top-0 bg-card z-[1]">Categoria</th>
+              <th className="sticky top-0 bg-card z-[1]">Categoria</th>
               {th("valor", "Valor")}
             </tr></thead>
             <tbody>
               {rows.slice(0, MAX).map((d) => (
                 <tr key={d.id}>
-                  <td className="text-left p-[10px] border-b border-line">{mesCurto(d.competencia)}</td>
-                  <td className="text-left p-[10px] border-b border-line">{d.banco}</td>
-                  <td className="text-left p-[10px] border-b border-line">{d.origem}</td>
-                  <td className="text-left p-[10px] border-b border-line">{d.data_mov}</td>
-                  <td className="text-left p-[10px] border-b border-line max-w-[230px] truncate" title={d.descricao}>{d.descricao}</td>
-                  <td className="text-left p-[10px] border-b border-line">{d.classe}</td>
-                  <td className="text-left p-[10px] border-b border-line">
-                    <select className="min-w-[130px] px-2 py-[6px] text-[13px] bg-card border border-line rounded-[8px]"
+                  <td>{mesCurto(d.competencia)}</td>
+                  <td>{d.banco}</td>
+                  <td>{d.origem}</td>
+                  <td>{d.data_mov}</td>
+                  <td className="max-w-[230px] truncate" title={d.descricao}>{d.descricao}</td>
+                  <td>{d.classe}</td>
+                  <td>
+                    <select className="select-chev min-w-[130px] pl-2 py-[5px] text-[13px] bg-card text-txt border border-line rounded-[8px] cursor-pointer outline-none"
                       defaultValue={d.categoria_manual || ""} onChange={(e) => salvarCat(d, e.target.value)}>
                       {CATEGORIAS.map((c) => <option key={c} value={c}>{c || "—"}</option>)}
                     </select>
                     {salvos[d.id] && <span className="ml-2 text-[12px] text-green">{salvos[d.id]}</span>}
                   </td>
-                  <td className={`text-right p-[10px] border-b border-line ${d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}`}>{BRL(d.valor)}</td>
+                  <td className={`num ${d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}`}>{BRL(d.valor)}</td>
                 </tr>
               ))}
             </tbody>

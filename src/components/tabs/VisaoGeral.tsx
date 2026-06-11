@@ -3,15 +3,21 @@ import {
   ResponsiveContainer, ComposedChart, Bar, Line, BarChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import type { Lancamento } from "../../types";
-import { Panel, Kpi } from "../ui";
+import { Panel, Kpi, Seg, Toolbar } from "../ui";
+import { useChart, ChartTip } from "../../lib/theme";
 import {
   BRL, brlShort, mesCurto, monthAgg, ehGasto, ehReceita, corChave, ordemChave,
 } from "../../lib/finance";
 
 interface Props { dados: Lancamento[]; months: string[]; openModal: (t: string, r: Lancamento[]) => void; }
 
+const PERIODOS = [
+  { v: "6", label: "6m" }, { v: "12", label: "12m" }, { v: "24", label: "24m" }, { v: "all", label: "Tudo" },
+];
+
 export function VisaoGeral({ dados, months, openModal }: Props) {
   const [periodo, setPeriodo] = useState("12");
+  const cc = useChart();
 
   const vm = useMemo(() => {
     if (!months.length) return [];
@@ -48,38 +54,37 @@ export function VisaoGeral({ dados, months, openModal }: Props) {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-[10px] items-center mb-4">
-        <label className="text-muted text-[13px]">Período:</label>
-        <select value={periodo} onChange={(e) => setPeriodo(e.target.value)} className="bg-card border border-line rounded-[10px] px-3 py-[9px] text-[15px]">
-          <option value="12">Últimos 12 meses</option><option value="6">Últimos 6 meses</option>
-          <option value="24">Últimos 24 meses</option><option value="all">Todo o histórico</option>
-        </select>
-        {vm.length > 0 && <span className="text-muted text-[12.5px]">{mesCurto(vm[0])} — {mesCurto(vm[vm.length - 1])} ({vm.length} meses)</span>}
-      </div>
+      <Toolbar
+        right={vm.length > 0 && (
+          <span className="text-muted text-[12px]">{mesCurto(vm[0])} — {mesCurto(vm[vm.length - 1])} · {vm.length} meses</span>
+        )}
+      >
+        <Seg value={periodo} onChange={setPeriodo} options={PERIODOS} />
+      </Toolbar>
 
       {kpis && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
           <Kpi title="Receitas" value={BRL(kpis.cur.rec)} sub={`${kpis.label} · média 3m ${BRL(kpis.av.rec)}`} color="text-green" />
           <Kpi title="Despesas" value={BRL(kpis.cur.gas)} sub={`${kpis.label} · média 3m ${BRL(kpis.av.gas)}`} color="text-red" />
           <Kpi title="Saldo" value={BRL(kpis.cur.saldo)} sub={`receitas − despesas · média 3m ${BRL(kpis.av.saldo)}`} color={kpis.cur.saldo >= 0 ? "text-green" : "text-red"} />
-          <Kpi title="Transf./Pagtos" value={BRL(kpis.cur.tr)} sub="não é consumo (líquido)" color="text-violet" />
+          <Kpi title="Transf. / Pagtos" value={BRL(kpis.cur.tr)} sub="não é consumo (líquido)" color="text-violet" />
         </div>
       )}
 
-      <Panel title="Evolução mensal" sub="(receitas, despesas e saldo — clique para detalhar)">
+      <Panel title="Evolução mensal" sub="(receitas, despesas e saldo — clique nas barras p/ detalhar)">
         <div className="h-[clamp(280px,42vh,420px)]">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
-              <CartesianGrid stroke="#e6e6eb" />
-              <XAxis dataKey="mes" tick={{ fill: "#86868b", fontSize: 11 }} />
-              <YAxis tick={{ fill: "#86868b", fontSize: 11 }} tickFormatter={(v) => brlShort(v)} width={64} />
-              <Tooltip formatter={(v: any, n: any) => [BRL(Number(v)), n]} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="Receitas" fill="#34c98a" radius={[5, 5, 0, 0]} cursor="pointer"
+              <CartesianGrid stroke={cc.grid} vertical={false} />
+              <XAxis dataKey="mes" tick={cc.tick} axisLine={false} tickLine={false} />
+              <YAxis tick={cc.tick} tickFormatter={(v) => brlShort(v)} width={64} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTip />} cursor={cc.cursor} />
+              <Legend wrapperStyle={{ fontSize: 11.5 }} iconType="circle" iconSize={7} />
+              <Bar dataKey="Receitas" fill={cc.receita} radius={[5, 5, 0, 0]} cursor="pointer"
                 onClick={(d: any) => { const m = d?.payload?._m ?? d?._m; if (m) openModal("Receitas · " + mesCurto(m), dados.filter((x) => x.competencia === m && ehReceita(x.classe))); }} />
-              <Bar dataKey="Despesas" fill="#f06a6a" radius={[5, 5, 0, 0]} cursor="pointer"
+              <Bar dataKey="Despesas" fill={cc.despesa} radius={[5, 5, 0, 0]} cursor="pointer"
                 onClick={(d: any) => { const m = d?.payload?._m ?? d?._m; if (m) openModal("Despesas · " + mesCurto(m), dados.filter((x) => x.competencia === m && ehGasto(x.classe))); }} />
-              <Line type="monotone" dataKey="Saldo" stroke="#f2b84b" strokeWidth={2} dot={{ r: 4 }} isAnimationActive={false} />
+              <Line type="monotone" dataKey="Saldo" stroke={cc.saldo} strokeWidth={2} dot={{ r: 3.5 }} isAnimationActive={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -95,23 +100,23 @@ export function VisaoGeral({ dados, months, openModal }: Props) {
       </div>
 
       <Panel title="Resumo por mês">
-        <div className="overflow-x-auto mt-2">
-          <table className="w-full border-collapse text-[13.5px]">
-            <thead><tr className="text-muted text-[11px] uppercase">
-              <th className="text-left p-2 border-b border-line">Mês</th>
-              <th className="text-right p-2 border-b border-line">Receitas</th>
-              <th className="text-right p-2 border-b border-line">Despesas</th>
-              <th className="text-right p-2 border-b border-line">Saldo</th>
-              <th className="text-right p-2 border-b border-line">Transf./Pagtos</th>
+        <div className="overflow-x-auto scroll-thin mt-2">
+          <table className="tbl">
+            <thead><tr>
+              <th>Mês</th>
+              <th className="num">Receitas</th>
+              <th className="num">Despesas</th>
+              <th className="num">Saldo</th>
+              <th className="num">Transf. / Pagtos</th>
             </tr></thead>
             <tbody>
               {aggs.map((a) => (
                 <tr key={a.m}>
-                  <td className="text-left p-2 border-b border-line">{mesCurto(a.m)}</td>
-                  <td className="text-right p-2 border-b border-line text-green">{BRL(a.rec)}</td>
-                  <td className="text-right p-2 border-b border-line text-red">{BRL(a.gas)}</td>
-                  <td className={`text-right p-2 border-b border-line ${a.saldo >= 0 ? "text-green" : "text-red"}`}>{BRL(a.saldo)}</td>
-                  <td className="text-right p-2 border-b border-line">{BRL(a.tr)}</td>
+                  <td>{mesCurto(a.m)}</td>
+                  <td className="num text-green">{BRL(a.rec)}</td>
+                  <td className="num text-red">{BRL(a.gas)}</td>
+                  <td className={`num ${a.saldo >= 0 ? "text-green" : "text-red"}`}>{BRL(a.saldo)}</td>
+                  <td className="num">{BRL(a.tr)}</td>
                 </tr>
               ))}
             </tbody>
@@ -123,15 +128,16 @@ export function VisaoGeral({ dados, months, openModal }: Props) {
 }
 
 function StackedBars({ data, keys }: { data: any[]; keys: string[] }) {
+  const cc = useChart();
   return (
     <div className="h-[clamp(280px,42vh,420px)] mt-2">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
-          <CartesianGrid stroke="#e6e6eb" />
-          <XAxis dataKey="mes" tick={{ fill: "#86868b", fontSize: 11 }} />
-          <YAxis tick={{ fill: "#86868b", fontSize: 11 }} tickFormatter={(v) => brlShort(v)} width={64} />
-          <Tooltip formatter={(v: any, n: any) => [BRL(Number(v)), n]} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <CartesianGrid stroke={cc.grid} vertical={false} />
+          <XAxis dataKey="mes" tick={cc.tick} axisLine={false} tickLine={false} />
+          <YAxis tick={cc.tick} tickFormatter={(v) => brlShort(v)} width={64} axisLine={false} tickLine={false} />
+          <Tooltip content={<ChartTip />} cursor={cc.cursor} />
+          <Legend wrapperStyle={{ fontSize: 11.5 }} iconType="circle" iconSize={7} />
           {keys.map((k) => <Bar key={k} dataKey={k} stackId="s" fill={corChave(k)} radius={[3, 3, 0, 0]} />)}
         </BarChart>
       </ResponsiveContainer>

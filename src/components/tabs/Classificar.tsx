@@ -118,17 +118,15 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
         <Kpi title="A classificar" value={BRL(totalPendente)} sub={`${grupos.length} estab. · ${linhasPendentes} lançamentos`} color="text-amber" />
         <Kpi title="Com sugestão" value={comEscolha} sub="prontos p/ aplicar" color="text-green" />
         <Kpi title="Sem sugestão" value={grupos.length - comEscolha} sub="precisam de escolha" color={grupos.length - comEscolha ? "text-red" : "text-green"} />
-        <div className="bg-card border border-line rounded-[18px] p-[18px] shadow-card flex flex-col justify-center gap-2">
-          <button disabled={busy || !comEscolha} onClick={aplicarTodas}
-            className="bg-accent hover:bg-accent2 disabled:opacity-50 text-white font-medium rounded-[10px] px-4 py-2 cursor-pointer">
+        <div className="bg-card border border-line rounded-[18px] p-4 shadow-card flex flex-col justify-center gap-2 min-w-0">
+          <button disabled={busy || !comEscolha} onClick={aplicarTodas} className="btn-primary w-full">
             Aplicar todas as sugestões
           </button>
-          <button disabled={busy || grupos.length === comEscolha} onClick={marcarRestantesOutros}
-            className="bg-transparent border border-line text-muted hover:text-txt disabled:opacity-50 rounded-[10px] px-4 py-[7px] cursor-pointer text-[12.5px]">
+          <button disabled={busy || grupos.length === comEscolha} onClick={marcarRestantesOutros} className="btn-ghost w-full !py-[7px] !text-[12.5px]">
             Marcar restantes como Outros
           </button>
           <div className="text-muted text-[11.5px] min-h-[14px]">{msg}</div>
@@ -144,32 +142,32 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
         <div className="bg-card border border-line rounded-[18px] p-6 shadow-card text-muted">Tudo classificado nesta visão. 🎉</div>
       ) : (
         <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
-          <div className="max-h-[600px] overflow-auto">
-            <table className="w-full min-w-[640px] border-collapse text-[13.5px]">
-              <thead><tr className="text-muted text-[11px] uppercase">
-                <th className="text-left p-[10px] border-b border-line sticky top-0 bg-card z-[1]">Estabelecimento</th>
-                <th className="text-right p-[10px] border-b border-line sticky top-0 bg-card z-[1]">Qtd</th>
-                <th className="text-right p-[10px] border-b border-line sticky top-0 bg-card z-[1]">Total</th>
-                <th className="text-left p-[10px] border-b border-line sticky top-0 bg-card z-[1]">Categoria</th>
-                <th className="p-[10px] border-b border-line sticky top-0 bg-card z-[1]"></th>
+          <div className="max-h-[600px] overflow-auto scroll-thin">
+            <table className="tbl min-w-[640px]">
+              <thead><tr>
+                <th className="sticky top-0 bg-card z-[1]">Estabelecimento</th>
+                <th className="sticky top-0 bg-card z-[1] num">Qtd</th>
+                <th className="sticky top-0 bg-card z-[1] num">Total</th>
+                <th className="sticky top-0 bg-card z-[1]">Categoria</th>
+                <th className="sticky top-0 bg-card z-[1]"></th>
               </tr></thead>
               <tbody>
                 {grupos.map((g) => (
                   <tr key={g.key}>
-                    <td className="text-left p-[10px] border-b border-line max-w-[280px] truncate" title={g.ex}>
-                      <button className="text-left hover:text-accent" onClick={() => openModal(g.ex, g.rows)}>{g.ex}</button>
+                    <td className="max-w-[280px] truncate" title={g.ex}>
+                      <button className="text-left bg-transparent border-0 p-0 cursor-pointer text-txt hover:text-accent transition-colors" onClick={() => openModal(g.ex, g.rows)}>{g.ex}</button>
                     </td>
-                    <td className="text-right p-[10px] border-b border-line">{g.n}</td>
-                    <td className="text-right p-[10px] border-b border-line text-red">{BRL(g.total)}</td>
-                    <td className="text-left p-[10px] border-b border-line">
-                      <select className="min-w-[150px] px-2 py-[6px] text-[13px] bg-card border border-line rounded-[8px]"
+                    <td className="num">{g.n}</td>
+                    <td className="num text-red">{BRL(g.total)}</td>
+                    <td>
+                      <select className="select-chev min-w-[150px] pl-2 py-[6px] text-[13px] bg-card text-txt border border-line rounded-[8px] cursor-pointer outline-none"
                         value={escolhas[g.key] ?? ""} onChange={(e) => setEscolhas((s) => ({ ...s, [g.key]: e.target.value }))}>
                         {CATEGORIAS.map((c) => <option key={c} value={c}>{c || "— escolher —"}</option>)}
                       </select>
                     </td>
-                    <td className="p-[10px] border-b border-line text-center">
+                    <td className="!text-center">
                       <button disabled={busy || !escolhas[g.key]} onClick={() => aplicarUm(g)}
-                        className="bg-accent hover:bg-accent2 disabled:opacity-40 text-white text-[12px] rounded-[8px] px-3 py-[6px] cursor-pointer">
+                        className="btn bg-accent hover:bg-accent2 text-white text-[12px] rounded-[8px] px-3 py-[6px] border-0">
                         Aplicar
                       </button>
                     </td>

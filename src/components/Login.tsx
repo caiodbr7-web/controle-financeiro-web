@@ -8,34 +8,36 @@ export function Login({
   const [showEmail, setShowEmail] = useState(false);
 
   return (
-    <div className="max-w-[380px] mx-auto mt-[14vh] bg-card border border-line rounded-[22px] p-[30px_26px] shadow-card">
-      <div className="w-[46px] h-[46px] rounded-[14px] bg-gradient-to-br from-[#820ad1] to-[#a855f7] flex items-center justify-center text-white text-[22px] font-bold mb-4">C</div>
-      <h2 className="text-[21px] tracking-tight mb-1 font-semibold">Controle Financeiro</h2>
-      <p className="text-muted text-sm mb-5">Entre com sua conta Google para acessar seus lançamentos.</p>
-      <button
-        onClick={onGoogle}
-        className="w-full flex items-center justify-center gap-[10px] bg-white text-txt border border-line rounded-[10px] py-3 text-base font-medium shadow-card cursor-pointer hover:bg-[#fafafa]"
-      >
-        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-        </svg>
-        Entrar com Google
-      </button>
-      <div className="text-red text-[13px] min-h-[18px] mt-[10px]">{erro}</div>
-      <div className="mt-[14px]">
-        <button onClick={() => setShowEmail((s) => !s)} className="text-muted text-[13px] cursor-pointer bg-transparent border-0">
-          {showEmail ? "▾" : "▸"} Entrar com e-mail e senha
+    <div className="px-4">
+      <div className="max-w-[380px] mx-auto mt-[14vh] bg-card border border-line rounded-[22px] p-[30px_26px] shadow-card fade-in">
+        <div className="w-[46px] h-[46px] rounded-[14px] bg-gradient-to-br from-[#820ad1] to-[#a855f7] flex items-center justify-center text-white text-[22px] font-bold mb-4 select-none">C</div>
+        <h2 className="text-[21px] tracking-tight mb-1 font-semibold">Controle Financeiro</h2>
+        <p className="text-muted text-sm mb-5">Entre com sua conta Google para acessar seus lançamentos.</p>
+        <button
+          onClick={onGoogle}
+          className="w-full flex items-center justify-center gap-[10px] bg-white text-[#1d1d1f] border border-line rounded-[12px] py-3 text-base font-medium shadow-card cursor-pointer hover:bg-[#fafafa] transition-colors"
+        >
+          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+          </svg>
+          Entrar com Google
         </button>
-        {showEmail && (
-          <div className="mt-3">
-            <input className="w-full mb-[10px] text-base p-[12px_14px] bg-card border border-line rounded-[10px]" type="email" placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input className="w-full mb-[10px] text-base p-[12px_14px] bg-card border border-line rounded-[10px]" type="password" placeholder="senha" value={senha} onChange={(e) => setSenha(e.target.value)} />
-            <button onClick={() => onEmail(email.trim(), senha)} className="w-full bg-transparent border border-line text-muted rounded-[10px] py-3 cursor-pointer hover:text-txt">Entrar</button>
-          </div>
-        )}
+        <div className="text-red text-[13px] min-h-[18px] mt-[10px]">{erro}</div>
+        <div className="mt-[14px]">
+          <button onClick={() => setShowEmail((s) => !s)} className="text-muted text-[13px] cursor-pointer bg-transparent border-0 p-0 hover:text-txt transition-colors">
+            {showEmail ? "▾" : "▸"} Entrar com e-mail e senha
+          </button>
+          {showEmail && (
+            <div className="mt-3">
+              <input className="input w-full mb-[10px] !text-base !p-[12px_14px]" type="email" placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <input className="input w-full mb-[10px] !text-base !p-[12px_14px]" type="password" placeholder="senha" value={senha} onChange={(e) => setSenha(e.target.value)} />
+              <button onClick={() => onEmail(email.trim(), senha)} className="btn-ghost w-full !py-3 !text-base">Entrar</button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

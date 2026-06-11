@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
-import { Kpi } from "../ui";
+import { Kpi, Select, Toolbar } from "../ui";
 import { sb } from "../../lib/supabase";
 import type { Lancamento } from "../../types";
 import { BRL, CATEGORIAS, MES_ABREV, ehGasto } from "../../lib/finance";
@@ -107,24 +107,23 @@ export function Orcamento({ allDados }: { allDados: Lancamento[] }) {
   const preenchidos = itens.filter((it) => dados(it, comp).manual != null).length;
   const totHist = (c: string) => tot((it) => { const d = dados(it, c); return d.efetivo ?? 0; });
 
-  const inp = "bg-card border border-line rounded-[8px] px-2 py-[6px] text-[13px]";
-  const thHist = "text-right p-[10px] border-b border-line text-muted font-normal";
+  const inp = "bg-card text-txt border border-line rounded-[8px] px-2 py-[6px] text-[13px] outline-none focus:border-muted transition-colors placeholder:text-muted/70";
 
   return (
     <div>
-      <div className="flex flex-wrap gap-[10px] items-center mb-4">
-        <label className="text-muted text-[13px]">Mês:</label>
-        <select value={comp} onChange={(e) => setComp(e.target.value)} className="bg-card border border-line rounded-[10px] px-3 py-[9px] text-[15px]">
+      <Toolbar
+        right={<span className="text-muted text-[12px]">{preenchidos}/{itens.length} preenchidos{conflitos ? ` · ${conflitos} conflito(s)` : ""}</span>}
+      >
+        <Select value={comp} onChange={setComp}>
           {meses.map((mm) => <option key={mm.v} value={mm.v}>{mm.label}</option>)}
-        </select>
-        <span className="text-muted text-[12.5px]">{preenchidos}/{itens.length} preenchidos{conflitos ? ` · ${conflitos} conflito(s)` : ""}</span>
-      </div>
+        </Select>
+      </Toolbar>
 
       {erro ? (
         <div className="bg-card border border-line rounded-[18px] p-5 shadow-card text-red">{erro}</div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
             <Kpi title="Previsto" value={BRL(totPrev)} sub={`${itens.length} itens fixos`} />
             <Kpi title={`Real ${labelMes(comp)}`} value={BRL(totReal)} sub={`${preenchidos} de ${itens.length}`} color="text-green" />
             <Kpi title="Fechamento do mês" value={BRL(totEfet)} sub="manual onde houver, senão lançado/previsto" color="text-amber" />
@@ -132,21 +131,21 @@ export function Orcamento({ allDados }: { allDados: Lancamento[] }) {
           </div>
 
           <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[940px] border-collapse text-[13.5px]">
-                <thead className="text-muted text-[11px] uppercase">
+            <div className="overflow-x-auto scroll-thin">
+              <table className="tbl min-w-[940px]">
+                <thead>
                   <tr>
-                    <th rowSpan={2} className="text-left p-[10px] border-b border-line align-bottom">Item</th>
-                    <th rowSpan={2} className="text-left p-[10px] border-b border-line align-bottom">Categoria</th>
-                    <th colSpan={3} className="text-center p-[6px] border-b border-line text-[10px]">Efetivo — meses anteriores</th>
-                    <th colSpan={2} className="text-center p-[6px] border-b border-line text-accent">{labelMes(comp)}</th>
-                    <th rowSpan={2} className="text-center p-[10px] border-b border-line align-bottom">Pago</th>
-                    <th rowSpan={2} className="p-[10px] border-b border-line"></th>
+                    <th rowSpan={2}>Item</th>
+                    <th rowSpan={2}>Categoria</th>
+                    <th colSpan={3} className="!text-center !p-[6px] !text-[10px]">Efetivo — meses anteriores</th>
+                    <th colSpan={2} className="!text-center !p-[6px] text-accent">{labelMes(comp)}</th>
+                    <th rowSpan={2} className="!text-center">Pago</th>
+                    <th rowSpan={2}></th>
                   </tr>
                   <tr>
-                    {histMeses.map((c) => <th key={c} className={thHist}>{labelMes(c)}</th>)}
-                    <th className="text-right p-[10px] border-b border-line">Previsto</th>
-                    <th className="text-right p-[10px] border-b border-line">Real</th>
+                    {histMeses.map((c) => <th key={c} className="num !font-normal">{labelMes(c)}</th>)}
+                    <th className="num">Previsto</th>
+                    <th className="num">Real</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -155,47 +154,47 @@ export function Orcamento({ allDados }: { allDados: Lancamento[] }) {
                     return (
                       <Fragment key={it.id}>
                         <tr>
-                          <td className="text-left p-[10px] border-b border-line font-medium">
+                          <td className="font-medium">
                             {it.nome}{(it.link_categoria || it.link_texto) && <span title={`vínculo: ${it.link_categoria || ""}${it.link_texto ? " · ‘" + it.link_texto + "’" : ""}`} className="ml-1 text-accent text-[11px]">🔗</span>}
                           </td>
-                          <td className="text-left p-[10px] border-b border-line text-muted">{it.categoria || "—"}</td>
-                          {histMeses.map((c) => <td key={c} className="text-right p-[10px] border-b border-line text-muted tabular-nums">{fmt(dados(it, c).efetivo)}</td>)}
-                          <td className="text-right p-[10px] border-b border-line">
+                          <td className="text-muted">{it.categoria || "—"}</td>
+                          {histMeses.map((c) => <td key={c} className="num text-muted">{fmt(dados(it, c).efetivo)}</td>)}
+                          <td className="num">
                             <input className={`${inp} w-[100px] text-right`} defaultValue={it.valor_previsto ? String(it.valor_previsto) : ""} placeholder="0,00" onBlur={(e) => salvarPrevisto(it, e.target.value)} />
                           </td>
-                          <td className="text-right p-[10px] border-b border-line">
-                            <input className={`${inp} w-[100px] text-right ${d.conflito ? "border-red" : ""}`} value={reais[it.id] ?? ""} placeholder={d.auto != null ? fmt(d.auto) : (it.valor_previsto ? String(it.valor_previsto) : "—")}
+                          <td className="num">
+                            <input className={`${inp} w-[100px] text-right ${d.conflito ? "!border-red" : ""}`} value={reais[it.id] ?? ""} placeholder={d.auto != null ? fmt(d.auto) : (it.valor_previsto ? String(it.valor_previsto) : "—")}
                               onChange={(e) => setReais((r) => ({ ...r, [it.id]: e.target.value }))} onBlur={(e) => salvarReal(it, e.target.value)} />
                             {d.auto != null && (d.conflito || d.manual == null) && (
                               <div className={`text-[11px] mt-1 flex items-center gap-1 justify-end ${d.conflito ? "text-red" : "text-muted"}`}>
                                 {d.conflito ? "⚠ lançado" : "lançado"} {fmt(d.auto)}
-                                <button onClick={() => usarLancado(it, d.auto as number)} className="underline text-accent">usar</button>
+                                <button onClick={() => usarLancado(it, d.auto as number)} className="bg-transparent border-0 p-0 cursor-pointer underline text-accent">usar</button>
                               </div>
                             )}
                           </td>
-                          <td className="text-center p-[10px] border-b border-line">
+                          <td className="!text-center">
                             <button onClick={() => togglePago(it)} title={d.pago ? "Pago" : "Marcar pago"}
-                              className={`w-7 h-7 rounded-[8px] border-2 flex items-center justify-center mx-auto text-[15px] font-bold ${d.pago ? "bg-green border-green text-white" : "border-line text-transparent hover:border-green"}`}>✓</button>
+                              className={`w-7 h-7 rounded-[8px] border-2 flex items-center justify-center mx-auto text-[15px] font-bold cursor-pointer transition-colors ${d.pago ? "bg-green border-green text-white" : "bg-transparent border-line text-transparent hover:border-green"}`}>✓</button>
                           </td>
-                          <td className="p-[10px] border-b border-line text-center whitespace-nowrap">
-                            <button onClick={() => abrirLink(it)} className="text-muted hover:text-accent text-[12px]">vincular</button>
+                          <td className="!text-center whitespace-nowrap">
+                            <button onClick={() => abrirLink(it)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-accent text-[12px] transition-colors">vincular</button>
                             <span className="text-line mx-1">·</span>
-                            <button onClick={() => removerItem(it)} className="text-muted hover:text-red text-[12px]">remover</button>
+                            <button onClick={() => removerItem(it)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-red text-[12px] transition-colors">remover</button>
                           </td>
                         </tr>
                         {linkEdit === it.id && (
-                          <tr className="bg-[#faf5ff]">
-                            <td colSpan={9} className="p-[12px] border-b border-line">
+                          <tr className="bg-accent/5">
+                            <td colSpan={9} className="!p-[12px]">
                               <div className="flex flex-wrap items-center gap-2 text-[13px]">
                                 <span className="text-muted">Vincular <b>{it.nome}</b> à despesa real onde:</span>
                                 <span>categoria</span>
-                                <select className={inp} value={linkForm.categoria} onChange={(e) => setLinkForm((f) => ({ ...f, categoria: e.target.value }))}>
+                                <select className={`select-chev ${inp} cursor-pointer`} value={linkForm.categoria} onChange={(e) => setLinkForm((f) => ({ ...f, categoria: e.target.value }))}>
                                   {CATEGORIAS.map((c) => <option key={c} value={c}>{c || "(qualquer)"}</option>)}
                                 </select>
                                 <span>e/ou descrição contém</span>
                                 <input className={`${inp} w-[200px]`} placeholder="ex.: adas imove" value={linkForm.texto} onChange={(e) => setLinkForm((f) => ({ ...f, texto: e.target.value }))} />
-                                <button onClick={() => salvarLink(it)} className="bg-accent hover:bg-accent2 text-white rounded-[8px] px-3 py-[6px] text-[12px]">Salvar vínculo</button>
-                                <button onClick={() => setLinkEdit(null)} className="text-muted text-[12px]">cancelar</button>
+                                <button onClick={() => salvarLink(it)} className="btn bg-accent hover:bg-accent2 text-white rounded-[8px] px-3 py-[6px] text-[12px] border-0">Salvar vínculo</button>
+                                <button onClick={() => setLinkEdit(null)} className="bg-transparent border-0 p-0 cursor-pointer text-muted text-[12px]">cancelar</button>
                               </div>
                             </td>
                           </tr>
@@ -203,30 +202,30 @@ export function Orcamento({ allDados }: { allDados: Lancamento[] }) {
                       </Fragment>
                     );
                   })}
-                  {!carregando && !itens.length && <tr><td colSpan={9} className="p-4 text-muted">Nenhum item ainda. Adicione abaixo.</td></tr>}
-                  <tr className="bg-[#fafafa]">
-                    <td className="p-[10px] border-t border-line"><input className={`${inp} w-full`} placeholder="novo item (ex.: Internet)" value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} /></td>
-                    <td className="p-[10px] border-t border-line">
-                      <select className={inp} value={novo.categoria} onChange={(e) => setNovo({ ...novo, categoria: e.target.value })}>{CATEGORIAS.map((c) => <option key={c} value={c}>{c || "—"}</option>)}</select>
+                  {!carregando && !itens.length && <tr><td colSpan={9} className="!p-4 text-muted">Nenhum item ainda. Adicione abaixo.</td></tr>}
+                  <tr className="bg-card2">
+                    <td className="border-t border-line"><input className={`${inp} w-full`} placeholder="novo item (ex.: Internet)" value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} /></td>
+                    <td className="border-t border-line">
+                      <select className={`select-chev ${inp} cursor-pointer`} value={novo.categoria} onChange={(e) => setNovo({ ...novo, categoria: e.target.value })}>{CATEGORIAS.map((c) => <option key={c} value={c}>{c || "—"}</option>)}</select>
                     </td>
                     <td colSpan={3} className="border-t border-line"></td>
-                    <td className="p-[10px] border-t border-line text-right"><input className={`${inp} w-[100px] text-right`} placeholder="previsto" value={novo.valor} onChange={(e) => setNovo({ ...novo, valor: e.target.value })} /></td>
-                    <td colSpan={3} className="p-[10px] border-t border-line"><button onClick={addItem} className="bg-accent hover:bg-accent2 text-white text-[12px] rounded-[8px] px-3 py-[6px]">Adicionar</button></td>
+                    <td className="num border-t border-line"><input className={`${inp} w-[100px] text-right`} placeholder="previsto" value={novo.valor} onChange={(e) => setNovo({ ...novo, valor: e.target.value })} /></td>
+                    <td colSpan={3} className="border-t border-line"><button onClick={addItem} className="btn bg-accent hover:bg-accent2 text-white text-[12px] rounded-[8px] px-3 py-[6px] border-0">Adicionar</button></td>
                   </tr>
                 </tbody>
                 <tfoot>
                   <tr className="font-semibold">
-                    <td className="p-[10px] border-t-2 border-line" colSpan={2}>Total</td>
-                    {histMeses.map((c) => <td key={c} className="p-[10px] border-t-2 border-line text-right tabular-nums">{fmt(totHist(c))}</td>)}
-                    <td className="p-[10px] border-t-2 border-line text-right">{BRL(totPrev)}</td>
-                    <td className="p-[10px] border-t-2 border-line text-right text-amber">{BRL(totEfet)}</td>
-                    <td className="p-[10px] border-t-2 border-line" colSpan={2}></td>
+                    <td className="!border-b-0 border-t-2 !border-t-line" colSpan={2}>Total</td>
+                    {histMeses.map((c) => <td key={c} className="num !border-b-0 border-t-2 !border-t-line">{fmt(totHist(c))}</td>)}
+                    <td className="num !border-b-0 border-t-2 !border-t-line">{BRL(totPrev)}</td>
+                    <td className="num !border-b-0 border-t-2 !border-t-line text-amber">{BRL(totEfet)}</td>
+                    <td className="!border-b-0 border-t-2 !border-t-line" colSpan={2}></td>
                   </tr>
                 </tfoot>
               </table>
             </div>
           </div>
-          <div className="text-muted text-[12.5px] mt-3">
+          <div className="text-muted text-[12.5px] mt-3 leading-relaxed">
             <b>Vincular</b> liga o item a uma despesa real (categoria e/ou texto na descrição). Onde houver lançamentos, o valor <b>lançado</b> aparece e você aplica com <b>usar</b>; sua informação manual continua sendo a principal. Se o manual divergir do lançado, marca <b className="text-red">conflito</b> e você decide (usar lançado ou manter o seu).
           </div>
         </>

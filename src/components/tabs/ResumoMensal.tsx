@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { ResponsiveContainer, BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Cell, LabelList } from "recharts";
 import type { Lancamento } from "../../types";
-import { Panel, Kpi } from "../ui";
+import { Panel, Kpi, Select, Toolbar } from "../ui";
+import { useChart, ChartTip } from "../../lib/theme";
 import { BRL, brlShort, mesCurto, monthAgg, ehGasto, ehReceita, catKey, corChave, corCategoria, deltaTxt } from "../../lib/finance";
 
 interface Props { dados: Lancamento[]; months: string[]; openModal: (t: string, r: Lancamento[]) => void; }
@@ -15,6 +16,7 @@ function PctLabel(props: any) {
 
 export function ResumoMensal({ dados, months, openModal }: Props) {
   const [mes, setMes] = useState("");
+  const cc = useChart();
   useEffect(() => { if (months.length && !months.includes(mes)) setMes(months[Math.max(0, months.length - 2)]); }, [months]);
 
   const m = mes || months[months.length - 1] || "";
@@ -78,19 +80,19 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-[10px] items-center mb-4">
-        <label className="text-muted text-[13px]">Mês:</label>
-        <select value={m} onChange={(e) => setMes(e.target.value)} className="bg-card border border-line rounded-[10px] px-3 py-[9px] text-[15px]">
+      <Toolbar
+        right={<span className="text-muted text-[12px]">{gRows.length + rRows.length} transações{prev ? ` · vs ${mesCurto(prev)}` : ""}</span>}
+      >
+        <Select value={m} onChange={setMes}>
           {months.map((x) => <option key={x} value={x}>{mesCurto(x)}</option>)}
-        </select>
-        <span className="text-muted text-[12.5px]">{gRows.length + rRows.length} transações{prev ? ` · vs ${mesCurto(prev)}` : ""}</span>
-      </div>
+        </Select>
+      </Toolbar>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
         <Kpi title="Receitas" value={BRL(a.rec)} sub={deltaTxt(a.rec, pa?.rec)} color="text-green" />
         <Kpi title="Despesas" value={BRL(a.gas)} sub={deltaTxt(a.gas, pa?.gas)} color="text-red" />
         <Kpi title="Saldo" value={BRL(a.saldo)} sub={deltaTxt(a.saldo, pa?.saldo)} color={a.saldo >= 0 ? "text-green" : "text-red"} />
-        <Kpi title="Transf./Pagtos" value={BRL(a.tr)} sub={deltaTxt(a.tr, pa?.tr)} color="text-violet" />
+        <Kpi title="Transf. / Pagtos" value={BRL(a.tr)} sub={deltaTxt(a.tr, pa?.tr)} color="text-violet" />
       </div>
 
       {/* ---- topo: 3 colunas (barras · rosca · insights), tudo do mês selecionado ---- */}
@@ -99,11 +101,11 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
           <div className="h-[clamp(280px,40vh,400px)] mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={catData} layout="vertical" margin={{ top: 4, right: 12, left: 8, bottom: 4 }}>
-                <CartesianGrid stroke="#e6e6eb" horizontal={false} />
-                <XAxis type="number" tick={{ fill: "#86868b", fontSize: 11 }} tickFormatter={(v) => brlShort(v)} />
-                <YAxis type="category" dataKey="cat" tick={{ fill: "#1d1d1f", fontSize: 11 }} width={92} />
-                <Tooltip formatter={(v: any) => BRL(Number(v))} />
-                <Bar dataKey="valor" radius={[0, 4, 4, 0]} cursor="pointer"
+                <CartesianGrid stroke={cc.grid} horizontal={false} />
+                <XAxis type="number" tick={cc.tick} tickFormatter={(v) => brlShort(v)} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="cat" tick={cc.tickStrong} width={92} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTip />} cursor={cc.cursor} />
+                <Bar dataKey="valor" name="Gasto" radius={[0, 4, 4, 0]} cursor="pointer"
                   onClick={(d: any) => { const k = d?.payload?.cat ?? d?.cat; if (k) openModal(k + " · " + mesCurto(m), gRows.filter((x) => catKey(x) === k)); }}>
                   {catData.map((e) => <Cell key={e.cat} fill={corCategoria(e.cat)} />)}
                 </Bar>
@@ -118,9 +120,9 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
               <PieChart>
                 <Pie data={catData} dataKey="valor" nameKey="cat" innerRadius="58%" outerRadius="86%" paddingAngle={1}
                   onClick={(d: any) => { const k = d?.payload?.cat ?? d?.cat; if (k) openModal(k + " · " + mesCurto(m), gRows.filter((x) => catKey(x) === k)); }}>
-                  {catData.map((e) => <Cell key={e.cat} fill={corCategoria(e.cat)} stroke="#fff" strokeWidth={1} />)}
+                  {catData.map((e) => <Cell key={e.cat} fill={corCategoria(e.cat)} stroke={cc.cardStroke} strokeWidth={1} />)}
                 </Pie>
-                <Tooltip formatter={(v: any, n: any) => [`${BRL(Number(v))} (${totalGasto ? ((Number(v) / totalGasto) * 100).toFixed(1) : 0}%)`, n]} />
+                <Tooltip content={<ChartTip pctOf={totalGasto} />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -129,7 +131,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
               <div key={c.cat} className="flex items-center gap-[6px] min-w-0">
                 <span className="w-[10px] h-[10px] rounded-full shrink-0" style={{ background: corCategoria(c.cat) }} />
                 <span className="truncate text-muted">{c.cat}</span>
-                <span className="ml-auto font-medium">{totalGasto ? ((c.valor / totalGasto) * 100).toFixed(0) : 0}%</span>
+                <span className="ml-auto font-medium tabular-nums">{totalGasto ? ((c.valor / totalGasto) * 100).toFixed(0) : 0}%</span>
               </div>
             ))}
           </div>
@@ -142,8 +144,8 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
               <div key={c.cat} className="flex items-center gap-2 py-[3px] text-[13.5px]">
                 <span className="w-[10px] h-[10px] rounded-full shrink-0" style={{ background: corCategoria(c.cat) }} />
                 <span>{c.cat}</span>
-                <span className="ml-auto font-medium text-red">{BRL(c.valor)}</span>
-                <span className="text-muted text-[11.5px] w-[42px] text-right">{totalGasto ? ((c.valor / totalGasto) * 100).toFixed(0) : 0}%</span>
+                <span className="ml-auto font-medium text-red tabular-nums">{BRL(c.valor)}</span>
+                <span className="text-muted text-[11.5px] w-[42px] text-right tabular-nums">{totalGasto ? ((c.valor / totalGasto) * 100).toFixed(0) : 0}%</span>
               </div>
             ))}
 
@@ -159,12 +161,12 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
                     <div className="flex items-center gap-2">
                       <span className="w-[10px] h-[10px] rounded-full shrink-0" style={{ background: corCategoria(o.cat) }} />
                       <span>{o.cat}</span>
-                      <span className="ml-auto text-red font-medium">▲ {BRL(o.delta)}</span>
+                      <span className="ml-auto text-red font-medium tabular-nums">▲ {BRL(o.delta)}</span>
                     </div>
                     <div className="text-muted text-[11.5px] ml-[16px]">{BRL(o.atual)} vs média {BRL(o.avg)}</div>
                   </div>
                 ))}
-                <div className="mt-2 p-2 rounded-[10px] bg-[#f0fdf4] text-green text-[12.5px]">
+                <div className="mt-2 p-2 rounded-[10px] bg-green/10 text-green text-[12.5px]">
                   Voltando à média, sobrariam <b>{BRL(insights.economia)}</b> este mês.
                 </div>
               </>
@@ -179,10 +181,10 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
           <div className="h-[clamp(260px,34vh,360px)] mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stack6.dataPct} margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
-                <CartesianGrid stroke="#e6e6eb" vertical={false} />
-                <XAxis dataKey="mes" tick={{ fill: "#86868b", fontSize: 11 }} />
-                <YAxis domain={[0, 100]} tickFormatter={(v) => v + "%"} tick={{ fill: "#86868b", fontSize: 10 }} width={38} />
-                <Tooltip formatter={(v: any, n: any) => [Number(v).toFixed(1) + "%", n]} />
+                <CartesianGrid stroke={cc.grid} vertical={false} />
+                <XAxis dataKey="mes" tick={cc.tick} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} tickFormatter={(v) => v + "%"} tick={cc.tickSm} width={38} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTip pct />} cursor={cc.cursor} />
                 {stack6.cats.map((c) => (
                   <Bar key={c} dataKey={c} stackId="a" fill={corCategoria(c)} isAnimationActive={false}>
                     <LabelList content={PctLabel} />
@@ -196,10 +198,10 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
           <div className="h-[clamp(260px,34vh,360px)] mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stack6.dataVal} margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
-                <CartesianGrid stroke="#e6e6eb" vertical={false} />
-                <XAxis dataKey="mes" tick={{ fill: "#86868b", fontSize: 11 }} />
-                <YAxis tickFormatter={(v) => brlShort(v)} tick={{ fill: "#86868b", fontSize: 10 }} width={56} />
-                <Tooltip formatter={(v: any, n: any) => [BRL(Number(v)), n]} />
+                <CartesianGrid stroke={cc.grid} vertical={false} />
+                <XAxis dataKey="mes" tick={cc.tick} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={(v) => brlShort(v)} tick={cc.tickSm} width={56} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTip />} cursor={cc.cursor} />
                 {stack6.cats.map((c) => <Bar key={c} dataKey={c} stackId="a" fill={corCategoria(c)} isAnimationActive={false} />)}
               </BarChart>
             </ResponsiveContainer>
@@ -220,11 +222,11 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
           <div className="h-[clamp(220px,30vh,320px)] mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={origData} layout="vertical" margin={{ top: 4, right: 12, left: 8, bottom: 4 }}>
-                <CartesianGrid stroke="#e6e6eb" horizontal={false} />
-                <XAxis type="number" tick={{ fill: "#86868b", fontSize: 11 }} tickFormatter={(v) => brlShort(v)} />
-                <YAxis type="category" dataKey="origem" tick={{ fill: "#1d1d1f", fontSize: 11 }} width={110} />
-                <Tooltip formatter={(v: any) => BRL(Number(v))} />
-                <Bar dataKey="valor" radius={[0, 4, 4, 0]} cursor="pointer"
+                <CartesianGrid stroke={cc.grid} horizontal={false} />
+                <XAxis type="number" tick={cc.tick} tickFormatter={(v) => brlShort(v)} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="origem" tick={cc.tickStrong} width={110} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTip />} cursor={cc.cursor} />
+                <Bar dataKey="valor" name="Gasto" radius={[0, 4, 4, 0]} cursor="pointer"
                   onClick={(d: any) => { const k = d?.payload?.origem ?? d?.origem; if (k) openModal(k + " · " + mesCurto(m), gRows.filter((x) => x.origem === k)); }}>
                   {origData.map((e) => <Cell key={e.origem} fill={e.cor} />)}
                 </Bar>
@@ -234,22 +236,22 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
         </Panel>
 
         <Panel title="Receitas por categoria / origem" sub={`(${mesCurto(m)})`}>
-          <div className="overflow-x-auto mt-2">
-            <table className="w-full border-collapse text-[13.5px]">
-              <thead><tr className="text-muted text-[11px] uppercase">
-                <th className="text-left p-2 border-b border-line">Categoria / origem</th>
-                <th className="text-right p-2 border-b border-line">Valor</th>
-                <th className="text-right p-2 border-b border-line">%</th>
+          <div className="overflow-x-auto scroll-thin mt-2">
+            <table className="tbl">
+              <thead><tr>
+                <th>Categoria / origem</th>
+                <th className="num">Valor</th>
+                <th className="num">%</th>
               </tr></thead>
               <tbody>
                 {recData.rows.map((r) => (
                   <tr key={r.k}>
-                    <td className="text-left p-2 border-b border-line">{r.k}</td>
-                    <td className="text-right p-2 border-b border-line text-green">{BRL(r.v)}</td>
-                    <td className="text-right p-2 border-b border-line">{recData.tot ? ((r.v / recData.tot) * 100).toFixed(1) : 0}%</td>
+                    <td>{r.k}</td>
+                    <td className="num text-green">{BRL(r.v)}</td>
+                    <td className="num">{recData.tot ? ((r.v / recData.tot) * 100).toFixed(1) : 0}%</td>
                   </tr>
                 ))}
-                {!recData.rows.length && <tr><td className="p-2 text-muted">Sem receitas neste mês.</td></tr>}
+                {!recData.rows.length && <tr><td className="text-muted" colSpan={3}>Sem receitas neste mês.</td></tr>}
               </tbody>
             </table>
           </div>

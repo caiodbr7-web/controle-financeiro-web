@@ -20,3 +20,4 @@ export interface Lancamento {
 
 export type Visao = "ALL" | "pessoal" | "corporativo";
 export type Modo = "cartao" | "ambos" | "conta";
+export type Aba = "inicio" | "geral" | "mensal" | "diario" | "orcamento" | "classificar" | "lanc";

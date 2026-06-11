@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import type { Lancamento, Modo } from "../../types";
 import { Panel, Kpi, Seg } from "../ui";
+import { useChart, ChartTip } from "../../lib/theme";
 import {
   BRL, brlShort, dvSeries, dvDiasNoMes, dvLabel, dvGasto, dvDataReal,
   mvLimiteParcial, mvSeriesMensal, mvOrigemOk, MODOS, deltaTxt,
@@ -17,12 +18,16 @@ interface Props {
 const MODO_OPTS: { v: Modo; label: string }[] = [
   { v: "cartao", label: "Só cartão" }, { v: "ambos", label: "Cartão + contas" }, { v: "conta", label: "Só contas" },
 ];
+const MESES_OPTS = [
+  { v: "3", label: "3m" }, { v: "6", label: "6m" }, { v: "12", label: "12m" }, { v: "all", label: "Tudo" },
+];
 const ALPHA = (i: number, n: number) => (0.2 + 0.45 * (n > 1 ? i / (n - 1) : 1)).toFixed(3);
 
 export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
   const [modo, setModo] = useState<Modo>("cartao");
   const [mesesSel, setMesesSel] = useState("6");
   const meta = MODOS[modo];
+  const cc = useChart();
 
   const calc = useMemo(() => {
     const { keys, map } = dvSeries(dados, months, modo);
@@ -63,15 +68,9 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
     const pctCard = splitTot ? (cardTot / splitTot) * 100 : 0, pctConta = splitTot ? (contaTot / splitTot) * 100 : 0;
     const mediaDia = diasTot ? modeTot / diasTot : 0, mediaMes = show.length ? modeTot / show.length : 0;
 
-    // tabela mensal (resumo) + benchFim
     let benchFim = 0; for (let j = 30; j >= 0; j--) { if (bench[j] != null) { benchFim = bench[j] as number; break; } }
-    const tabela = [...show].reverse().map((k) => {
-      const nd = dvDiasNoMes(k), tot = (cums[k][nd - 1] as number) || 0;
-      let mx = 0, mxd = 0; for (let j = 0; j < nd; j++) if (map[k][j] > mx) { mx = map[k][j]; mxd = j + 1; }
-      return { k, tot, md: tot / nd, mxd, mx, dif: tot - benchFim };
-    });
 
-    return { show, data, mediaDia, mediaMes, pctCard, pctConta, cardTot, contaTot, tabela, benchFim };
+    return { show, data, mediaDia, mediaMes, pctCard, pctConta, cardTot, contaTot, benchFim };
   }, [dados, allDados, months, modo, mesesSel]);
 
   // seção mensal (barras + linha média móvel)
@@ -85,13 +84,13 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
     const last3 = keys.slice(-3);
     const patamar = last3.length ? last3.reduce((s, k) => s + tot[k], 0) / last3.length : 0;
     const ult = keys.length - 1, ultVal = ult >= 0 ? tot[keys[ult]] : 0, baseAnt = ult >= 0 ? avg[ult] : null;
-    return { data, patamar, ultVal, ultLabel: ult >= 0 ? dvLabel(keys[ult]) : "—", baseAnt, tot };
+    return { data, patamar, ultVal, ultLabel: ult >= 0 ? dvLabel(keys[ult]) : "—", baseAnt };
   }, [dados, allDados, months, modo, mesesSel]);
 
   const stats = [
     { t: "Gasto médio / dia", v: BRL(calc.mediaDia), s: `${meta.rotulo.toLowerCase()} · ${calc.show.length} ${calc.show.length === 1 ? "mês" : "meses"}`, c: "" },
-    { t: "% no cartão", v: `${calc.pctCard.toFixed(0)}%`, s: `${BRL(calc.cardTot)} do total`, c: "text-[#820ad1]" },
-    { t: "% em conta", v: `${calc.pctConta.toFixed(0)}%`, s: `${BRL(calc.contaTot)} · Pix, boleto, débito`, c: "text-[#2f6df6]" },
+    { t: "% no cartão", v: `${calc.pctCard.toFixed(0)}%`, s: `${BRL(calc.cardTot)} do total`, c: "text-accent" },
+    { t: "% em conta", v: `${calc.pctConta.toFixed(0)}%`, s: `${BRL(calc.contaTot)} · Pix, boleto, débito`, c: "text-violet" },
     { t: "Gasto médio / mês", v: BRL(calc.mediaMes), s: `${meta.rotulo.toLowerCase()} · meses completos`, c: "text-amber" },
   ];
 
@@ -101,12 +100,9 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
         title="Gasto acumulado ao longo do mês"
         sub="(pela data real da compra · só meses completos)"
         right={
-          <div className="flex items-center gap-3 flex-wrap">
-            <label className="text-muted text-[13px]">Meses:</label>
-            <select value={mesesSel} onChange={(e) => setMesesSel(e.target.value)} className="bg-card border border-line rounded-[10px] px-3 py-[7px] text-[14px]">
-              <option value="3">Últimos 3</option><option value="6">Últimos 6</option><option value="12">Últimos 12</option><option value="all">Todos</option>
-            </select>
-            <Seg value={modo} onChange={setModo} options={MODO_OPTS} />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Seg size="sm" value={mesesSel} onChange={setMesesSel} options={MESES_OPTS} />
+            <Seg size="sm" value={modo} onChange={setModo} options={MODO_OPTS} />
           </div>
         }
       >
@@ -114,52 +110,51 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
           <div className="h-[300px] md:h-[440px] min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={calc.data} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
-                <CartesianGrid stroke="#e6e6eb" />
-                <XAxis dataKey="dia" tick={{ fill: "#86868b", fontSize: 10 }} minTickGap={6} />
-                <YAxis tick={{ fill: "#86868b", fontSize: 10 }} tickFormatter={(v) => brlShort(v)} width={56} />
-                <Tooltip formatter={(v: any, n: any) => [BRL(Number(v)), n]} labelFormatter={(l) => "Dia " + l} />
+                <CartesianGrid stroke={cc.grid} vertical={false} />
+                <XAxis dataKey="dia" tick={cc.tickSm} minTickGap={6} axisLine={false} tickLine={false} />
+                <YAxis tick={cc.tickSm} tickFormatter={(v) => brlShort(v)} width={56} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTip labelPrefix="Dia " />} />
                 {calc.show.map((k, i) => (
                   <Line key={dvLabel(k)} type="monotone" dataKey={dvLabel(k)}
-                    stroke={`rgba(130,10,209,${ALPHA(i, calc.show.length)})`} strokeWidth={1.6} dot={false} connectNulls={false} isAnimationActive={false} />
+                    stroke={cc.roxoLinha(ALPHA(i, calc.show.length))} strokeWidth={1.6} dot={false} connectNulls={false} isAnimationActive={false} />
                 ))}
-                <Line type="monotone" dataKey="Média 3 meses" stroke="#f0a818" strokeWidth={5} dot={false} connectNulls isAnimationActive={false} />
+                <Line type="monotone" dataKey="Média 3 meses" stroke={cc.media} strokeWidth={4.5} dot={false} connectNulls isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
           <div className="grid grid-cols-2 gap-3 md:flex md:flex-col md:h-full">
             {stats.map((s) => (
-              <div key={s.t} className="md:flex-1 flex flex-col justify-center bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card">
-                <div className="text-muted text-[11.5px] uppercase tracking-[.06em] font-semibold">{s.t}</div>
-                <div className={`text-[22px] sm:text-[30px] font-semibold mt-[6px] tracking-tight ${s.c}`}>{s.v}</div>
-                <div className="text-xs mt-[4px] text-muted">{s.s}</div>
+              <div key={s.t} className="md:flex-1 flex flex-col justify-center bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card min-w-0">
+                <div className="text-muted text-[12px] font-medium">{s.t}</div>
+                <div className={`text-[22px] sm:text-[28px] font-semibold mt-[5px] tracking-tight tabular-nums ${s.c}`}>{s.v}</div>
+                <div className="text-[11.5px] mt-[3px] text-muted">{s.s}</div>
               </div>
             ))}
           </div>
         </div>
-        <div className="text-muted text-[12.5px] mt-5 leading-relaxed">
-          A <b className="text-[#c98a00]">linha laranja grossa</b> é a <b>média dos últimos 3 meses completos</b>, dia a dia — onde você deveria estar.
-          As linhas roxas são os meses completos (mais fortes = mais recentes). À direita, os números do período. Meses parciais (mês atual e faturas por vir) ficam de fora.
+        <div className="text-muted text-[12.5px] mt-4 leading-relaxed">
+          A <b className="text-amber">linha laranja grossa</b> é a <b>média dos últimos 3 meses completos</b>, dia a dia — onde você deveria estar.
+          As linhas roxas são os meses completos (mais fortes = mais recentes). Meses parciais (mês atual e faturas por vir) ficam de fora.
         </div>
       </Panel>
 
       <Panel
         title="Evolução mensal do gasto"
         sub="(só meses completos · média móvel de 3 meses)"
-        right={<Seg value={modo} onChange={setModo} options={MODO_OPTS} />}
       >
         <div className="grid grid-cols-2 md:grid-cols-3 gap-[14px] mt-3 mb-2">
-          <Kpi title="Patamar (média 3m)" value={BRL(mensal.patamar)} sub="média dos últimos 3 meses completos" color="text-[#820ad1]" />
+          <Kpi title="Patamar (média 3m)" value={BRL(mensal.patamar)} sub="média dos últimos 3 meses completos" color="text-accent" />
           <Kpi title={`Último mês · ${mensal.ultLabel}`} value={BRL(mensal.ultVal)} sub={mensal.baseAnt != null ? deltaTxt(mensal.ultVal, mensal.baseAnt) + " vs média 3m" : "—"} />
           <Kpi title="Meses exibidos" value={mensal.data.length} sub="só meses completos" />
         </div>
         <div className="h-[clamp(260px,38vh,380px)]">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={mensal.data} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
-              <CartesianGrid stroke="#e6e6eb" vertical={false} />
-              <XAxis dataKey="mes" tick={{ fill: "#86868b", fontSize: 11 }} />
-              <YAxis tick={{ fill: "#86868b", fontSize: 11 }} tickFormatter={(v) => brlShort(v)} width={64} />
-              <Tooltip formatter={(v: any, n: any) => [BRL(Number(v)), n]} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <CartesianGrid stroke={cc.grid} vertical={false} />
+              <XAxis dataKey="mes" tick={cc.tick} axisLine={false} tickLine={false} />
+              <YAxis tick={cc.tick} tickFormatter={(v) => brlShort(v)} width={64} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTip />} cursor={cc.cursor} />
+              <Legend wrapperStyle={{ fontSize: 11.5 }} iconType="circle" iconSize={7} />
               <Bar dataKey="gasto" name={"Gasto · " + meta.rotulo} fill={meta.cor} radius={[5, 5, 0, 0]}
                 cursor="pointer"
                 onClick={(d: any) => {
@@ -167,17 +162,17 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
                   const rows = dados.filter((x) => { if (!dvGasto(x)) return false; if (!mvOrigemOk(x.origem, modo)) return false; const r = dvDataReal(x); return r && r.k === k; });
                   openModal("Gasto " + meta.rotulo + " · " + dvLabel(k), rows);
                 }} />
-              <Line type="monotone" dataKey="media" name="Média 3 meses" stroke="#f2b84b" strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+              <Line type="monotone" dataKey="media" name="Média 3 meses" stroke={cc.saldo} strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-        <div className="overflow-x-auto mt-3">
-          <table className="w-full border-collapse text-[13.5px]">
-            <thead><tr className="text-muted text-[11px] uppercase">
-              <th className="text-left p-2 border-b border-line">Mês</th>
-              <th className="text-right p-2 border-b border-line">Gasto</th>
-              <th className="text-right p-2 border-b border-line">Média 3m</th>
-              <th className="text-right p-2 border-b border-line">vs média</th>
+        <div className="overflow-x-auto scroll-thin mt-3">
+          <table className="tbl">
+            <thead><tr>
+              <th>Mês</th>
+              <th className="num">Gasto</th>
+              <th className="num">Média 3m</th>
+              <th className="num">vs média</th>
             </tr></thead>
             <tbody>
               {[...mensal.data].reverse().map((r) => {
@@ -185,10 +180,10 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
                 const d = a != null ? r.gasto - a : null;
                 return (
                   <tr key={r.mes}>
-                    <td className="text-left p-2 border-b border-line">{r.mes}</td>
-                    <td className="text-right p-2 border-b border-line text-red">{BRL(r.gasto)}</td>
-                    <td className="text-right p-2 border-b border-line">{a != null ? BRL(a) : "—"}</td>
-                    <td className="text-right p-2 border-b border-line">
+                    <td>{r.mes}</td>
+                    <td className="num text-red">{BRL(r.gasto)}</td>
+                    <td className="num">{a != null ? BRL(a) : "—"}</td>
+                    <td className="num">
                       {d == null ? "—" : d <= 0 ? <span className="text-green">▼ {BRL(Math.abs(d))}</span> : <span className="text-red">▲ {BRL(d)}</span>}
                     </td>
                   </tr>
