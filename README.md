@@ -29,11 +29,45 @@ web/
 
 ## Rodar localmente (no seu PC)
 
+Pré-requisito: **Node 18+** instalado.
+
 ```bash
-cd web
+git clone https://github.com/caiodbr7-web/controle-financeiro-web.git
+cd controle-financeiro-web
 npm install
 npm run dev      # abre em http://localhost:5173
 ```
+
+Não precisa configurar nada: a URL e a *publishable key* do Supabase já vêm no
+código (`src/lib/supabase.ts`) e o RLS só libera dados depois do login — você
+enxerga os **seus próprios dados**, os mesmos do site publicado.
+
+### Testar uma branch antes de mergear (sem gastar deploy do Netlify)
+
+Toda PR pode ser conferida localmente antes do merge, então não é preciso
+depender do deploy preview:
+
+```bash
+git fetch origin
+git switch nome-da-branch   # ex.: claude/unificar-planejamento-orcamento
+npm install                 # só se as dependências mudaram
+npm run dev
+```
+
+Validou? Aí sim faça o merge — o Netlify builda apenas a versão final.
+
+### Abrir no celular (mesma rede Wi-Fi)
+
+```bash
+npm run dev -- --host
+```
+
+O Vite mostra uma URL **Network** (ex.: `http://192.168.0.x:5173`); abra essa
+no navegador do celular.
+
+> ⚠️ O modo local usa o **mesmo banco** do site publicado. Para ver dados e
+> testar telas é ideal; só lembre que itens criados/editados em teste alteram
+> seus dados reais.
 
 ## Build de produção
 
