@@ -8,6 +8,7 @@ import {
   BRL, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dvSeries,
   dvAddMes, dvDiasNoMes, dvLabel, dvParcialLimite, MES_ABREV, mesCurto, normEstab,
 } from "../../lib/finance";
+import { type Plano, contribNoMes, ehReceitaTipo } from "../../lib/projecao";
 
 interface Props {
   dados: Lancamento[];
@@ -152,11 +153,13 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const { data: itens, error } = await sb.from("orcamento_itens").select("id").eq("ativo", true);
+        const { data: itens, error } = await sb.from("planos").select("*").eq("ativo", true);
         if (error || !itens || !itens.length) { setOrc(null); return; }
-        const { data: mensal } = await sb.from("orcamento_mensal").select("item_id,valor_real").eq("competencia", mesAtual);
-        const ok = new Set((mensal || []).filter((x: any) => x.valor_real != null).map((x: any) => x.item_id));
-        setOrc({ pend: (itens as any[]).filter((i) => !ok.has(i.id)).length, total: itens.length });
+        const gastos = (itens as Plano[]).filter((p) => !ehReceitaTipo(p.tipo) && contribNoMes(p, mesAtual) !== 0);
+        if (!gastos.length) { setOrc(null); return; }
+        const { data: mensal } = await sb.from("plano_mensal").select("plano_id,valor_real").eq("competencia", mesAtual);
+        const ok = new Set((mensal || []).filter((x: any) => x.valor_real != null).map((x: any) => x.plano_id));
+        setOrc({ pend: gastos.filter((p) => !ok.has(p.id)).length, total: gastos.length });
       } catch { setOrc(null); }
     })();
   }, [mesAtual]);
@@ -232,9 +235,9 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
               )}
               {(orc?.pend || 0) > 0 && (
                 <ActionRow
-                  label={`Orçamento: ${orc!.pend} ${orc!.pend === 1 ? "conta sem valor" : "contas sem valor"} em ${MES_ABREV[hoje.getMonth()]}`}
+                  label={`Planejamento: ${orc!.pend} ${orc!.pend === 1 ? "conta sem valor" : "contas sem valor"} em ${MES_ABREV[hoje.getMonth()]}`}
                   detail={`${orc!.total - orc!.pend} de ${orc!.total} preenchidas`}
-                  onClick={() => go("orcamento")}
+                  onClick={() => go("planejamento")}
                 />
               )}
               {pend.arqFaltam > 0 && (

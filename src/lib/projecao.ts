@@ -25,6 +25,9 @@ export interface Plano {
   parcelas: number | null; // só parcelamento
   ativo: boolean;
   ordem: number;
+  // vínculo opcional a lançamentos reais (usado na visão "Mês": previsto × realizado)
+  link_categoria?: string | null;
+  link_texto?: string | null;
 }
 
 export const TIPOS: { v: TipoPlano; label: string; icon: string; receita?: boolean }[] = [

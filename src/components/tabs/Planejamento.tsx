@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, Fragment, type ReactNode } from "react";
 import { Kpi, Select, Seg, Toolbar, Panel } from "../ui";
 import { sb } from "../../lib/supabase";
-import { BRL, CATEGORIAS, dvAddMes, dvLabel } from "../../lib/finance";
+import type { Lancamento } from "../../types";
+import { BRL, CATEGORIAS, dvAddMes, dvLabel, ehGasto } from "../../lib/finance";
 import {
   type Plano, type TipoPlano, TIPOS, mesAtual, horizonte, projetar,
   contribNoMes, fimEfetivo, ehReceitaTipo, mesesEntre,
@@ -9,10 +10,15 @@ import {
 
 const inp = "bg-card text-txt border border-line rounded-[8px] px-2 py-[6px] text-[13px] outline-none focus:border-muted transition-colors placeholder:text-muted/70";
 
-// opções de mês: de 6 meses atrás até ~3 anos à frente
+// opções de mês para o formulário: de 6 meses atrás até ~3 anos à frente
 const MES_OPCOES = (() => {
   const start = dvAddMes(mesAtual(), -6);
   return Array.from({ length: 42 }, (_, i) => { const k = dvAddMes(start, i); return { v: k, label: dvLabel(k) }; });
+})();
+// opções de mês para a visão "Mês": atual e 11 anteriores (mais recente primeiro)
+const MES_SELECT = (() => {
+  const cur = mesAtual();
+  return Array.from({ length: 12 }, (_, i) => { const k = dvAddMes(cur, -i); return { v: k, label: dvLabel(k) }; });
 })();
 
 const VALOR_LABEL: Record<TipoPlano, string> = {
@@ -29,8 +35,15 @@ const parseValor = (s: string): number => {
   const n = parseFloat(s.replace(/\./g, "").replace(",", "."));
   return isNaN(n) ? 0 : n;
 };
-// célula compacta: reais inteiros, "·" quando vazio
+const parseValorN = (s: string): number | null => {
+  if (s == null || s.trim() === "") return null;
+  const n = parseFloat(s.replace(/\./g, "").replace(",", "."));
+  return isNaN(n) ? null : n;
+};
+// célula compacta da projeção: reais inteiros
 const fmtCell = (v: number) => (v < 0 ? "-" : "") + Math.abs(Math.round(v)).toLocaleString("pt-BR");
+// célula da visão mês: até 2 casas, "—" quando vazio
+const fmt = (v: number | null | undefined) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 }));
 
 function resumoItem(p: Plano): string {
   const fim = fimEfetivo(p);
@@ -53,19 +66,32 @@ function resumoItem(p: Plano): string {
 
 const VAZIO = { tipo: "fixo" as TipoPlano, nome: "", categoria: "", valor: "", mes_inicio: mesAtual(), mes_fim: "", parcelas: "12" };
 
-const SQL_PLANOS = `create table if not exists public.planos (
+const SQL_HINT = `-- planos: itens; plano_mensal: realizado/pago por mês
+create table if not exists public.planos (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) default auth.uid(),
   tipo text not null check (tipo in ('fixo','parcelamento','pagamento','meta','receita')),
   nome text not null, categoria text, valor numeric not null default 0,
   mes_inicio text not null, mes_fim text, parcelas integer,
   ativo boolean not null default true, ordem integer not null default 0,
+  link_categoria text, link_texto text, origem_orcamento_item bigint,
   criado_em timestamptz not null default now()
 );
+create table if not exists public.plano_mensal (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) default auth.uid(),
+  plano_id bigint not null references public.planos(id) on delete cascade,
+  competencia text not null, valor_real numeric, pago boolean not null default false,
+  unique (plano_id, competencia)
+);
 alter table public.planos enable row level security;
+alter table public.plano_mensal enable row level security;
 drop policy if exists "proprios dados" on public.planos;
-create policy "proprios dados" on public.planos for all
-  using (user_id = auth.uid()) with check (user_id = auth.uid());`;
+create policy "proprios dados" on public.planos for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists "proprios dados" on public.plano_mensal;
+create policy "proprios dados" on public.plano_mensal for all using (user_id = auth.uid()) with check (user_id = auth.uid());`;
+
+interface Mensal { valor_real: number | null; pago: boolean; }
 
 function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
@@ -76,15 +102,28 @@ function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   );
 }
 
-export function Planejamento() {
+export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
   const [planos, setPlanos] = useState<Plano[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
   const [semTabela, setSemTabela] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+  const [view, setView] = useState<"mes" | "proj">("mes");
+
+  // projeção
   const [n, setN] = useState(12);
+  // visão mês
+  const [comp, setComp] = useState(MES_SELECT[0].v);
+  const [mensal, setMensal] = useState<Record<string, Record<number, Mensal>>>({});
+  const [reais, setReais] = useState<Record<number, string>>({});
+  // formulário (compartilhado)
   const [form, setForm] = useState(VAZIO);
   const [editId, setEditId] = useState<number | null>(null);
-  const [copiado, setCopiado] = useState(false);
+  // vínculo a lançamentos
+  const [linkEdit, setLinkEdit] = useState<number | null>(null);
+  const [linkForm, setLinkForm] = useState({ categoria: "", texto: "" });
+
+  const histMeses = useMemo(() => [dvAddMes(comp, -3), dvAddMes(comp, -2), dvAddMes(comp, -1)], [comp]);
 
   const carregar = useCallback(async () => {
     setLoading(true); setErro(""); setSemTabela(false);
@@ -99,25 +138,68 @@ export function Planejamento() {
   }, []);
   useEffect(() => { carregar(); }, [carregar]);
 
-  const meses = useMemo(() => horizonte(n), [n]);
-  const proj = useMemo(() => projetar(planos, meses), [planos, meses]);
+  const carregarMensal = useCallback(async (atual: string, hist: string[]) => {
+    const todos = [...hist, atual];
+    const { data, error } = await sb.from("plano_mensal").select("plano_id,competencia,valor_real,pago").in("competencia", todos);
+    if (error) return;
+    const byComp: Record<string, Record<number, Mensal>> = {}; todos.forEach((c) => (byComp[c] = {}));
+    (data || []).forEach((m: any) => { (byComp[m.competencia] = byComp[m.competencia] || {})[m.plano_id] = { valor_real: m.valor_real, pago: m.pago }; });
+    setMensal(byComp);
+    const r: Record<number, string> = {};
+    Object.entries(byComp[atual] || {}).forEach(([id, m]) => { if (m.valor_real != null) r[+id] = String(m.valor_real); });
+    setReais(r);
+  }, []);
+  useEffect(() => { if (!semTabela) carregarMensal(comp, histMeses); }, [comp, histMeses, semTabela, carregarMensal]);
 
-  const gastoMedio = proj.length ? proj.reduce((s, m) => s + m.gastos, 0) / proj.length : 0;
-  const saldoMedio = proj.length ? proj.reduce((s, m) => s + m.saldo, 0) / proj.length : 0;
-  const maior = proj.reduce((a, m) => (m.gastos > a.gastos ? m : a), proj[0] || { gastos: 0, label: "—" });
-  const comprometidoParc = planos
-    .filter((p) => p.ativo && p.tipo === "parcelamento")
-    .reduce((s, p) => s + meses.reduce((ss, m) => ss + contribNoMes(p, m.k), 0), 0);
+  // ---------- realizado automático (lançamentos vinculados) ----------
+  function matchLink(d: Lancamento, p: Plano) {
+    if (!p.link_categoria && !p.link_texto) return false;
+    if (!ehGasto(d.classe)) return false;
+    if (p.link_categoria && d.categoria_manual !== p.link_categoria) return false;
+    if (p.link_texto && !String(d.descricao || "").toLowerCase().includes(p.link_texto.toLowerCase())) return false;
+    return true;
+  }
+  const autos = useMemo(() => {
+    const todos = [...histMeses, comp];
+    const out: Record<number, Record<string, number | null>> = {};
+    planos.forEach((p) => {
+      out[p.id] = {};
+      todos.forEach((c) => {
+        if (!p.link_categoria && !p.link_texto) { out[p.id][c] = null; return; }
+        let sum = 0, cnt = 0;
+        allDados.forEach((d) => { if (String(d.competencia).slice(0, 7) === c && matchLink(d, p)) { sum += Math.abs(d.valor); cnt++; } });
+        out[p.id][c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
+      });
+    });
+    return out;
+  }, [planos, allDados, comp, histMeses]);
 
+  // previsto/realizado efetivo de um item num mês
+  function dados(p: Plano, c: string) {
+    const previsto = contribNoMes(p, c);
+    const manual = mensal[c]?.[p.id]?.valor_real ?? null;
+    const auto = autos[p.id]?.[c] ?? null;
+    const efetivo = manual != null ? manual : (auto != null ? auto : (previsto || null));
+    const conflito = manual != null && auto != null && Math.abs(manual - auto) > 1;
+    return { previsto, manual, auto, efetivo, conflito, pago: mensal[c]?.[p.id]?.pago ?? false };
+  }
+
+  async function upsert(planoId: number, c: string, valor_real: number | null, pago: boolean) {
+    const { error } = await sb.from("plano_mensal").upsert({ plano_id: planoId, competencia: c, valor_real, pago }, { onConflict: "plano_id,competencia" });
+    if (!error) setMensal((v) => ({ ...v, [c]: { ...(v[c] || {}), [planoId]: { valor_real, pago } } }));
+  }
+  async function salvarReal(p: Plano, valorStr: string) { const v = parseValorN(valorStr); await upsert(p.id, comp, v, v != null || (mensal[comp]?.[p.id]?.pago ?? false)); }
+  async function usarLancado(p: Plano, v: number) { await upsert(p.id, comp, v, true); setReais((r) => ({ ...r, [p.id]: String(v) })); }
+  async function togglePago(p: Plano) { const cur = mensal[comp]?.[p.id]; await upsert(p.id, comp, cur?.valor_real ?? null, !(cur?.pago ?? false)); }
+
+  // ---------- CRUD de itens ----------
   function resetForm() { setForm(VAZIO); setEditId(null); setErro(""); }
-
   async function salvar() {
     const nome = form.nome.trim();
     if (!nome) { setErro("Dê um nome ao item."); return; }
     if (form.tipo === "meta" && !form.mes_fim) { setErro("Uma meta precisa de um mês-alvo."); return; }
     const payload = {
-      tipo: form.tipo,
-      nome,
+      tipo: form.tipo, nome,
       categoria: form.tipo === "receita" ? null : (form.categoria || null),
       valor: parseValor(form.valor),
       mes_inicio: form.mes_inicio,
@@ -131,7 +213,6 @@ export function Planejamento() {
     if (error) { setErro(error.message); return; }
     resetForm(); carregar();
   }
-
   function editar(p: Plano) {
     setEditId(p.id);
     setForm({
@@ -144,7 +225,7 @@ export function Planejamento() {
     window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
   }
   async function remover(p: Plano) {
-    if (!confirm(`Remover "${p.nome}" do planejamento?`)) return;
+    if (!confirm(`Remover "${p.nome}"?`)) return;
     const { error } = await sb.from("planos").delete().eq("id", p.id);
     if (!error) { if (editId === p.id) resetForm(); carregar(); }
   }
@@ -152,20 +233,52 @@ export function Planejamento() {
     const { error } = await sb.from("planos").update({ ativo: !p.ativo }).eq("id", p.id);
     if (!error) setPlanos((arr) => arr.map((x) => (x.id === p.id ? { ...x, ativo: !x.ativo } : x)));
   }
+  function abrirLink(p: Plano) { setLinkEdit(linkEdit === p.id ? null : p.id); setLinkForm({ categoria: p.link_categoria || "", texto: p.link_texto || "" }); }
+  async function salvarLink(p: Plano) {
+    const { error } = await sb.from("planos").update({ link_categoria: linkForm.categoria || null, link_texto: linkForm.texto.trim() || null }).eq("id", p.id);
+    if (!error) { setLinkEdit(null); carregar(); }
+  }
 
-  // ---------- tabela ainda não existe ----------
+  // ---------- projeção ----------
+  const meses = useMemo(() => horizonte(n), [n]);
+  const proj = useMemo(() => projetar(planos, meses), [planos, meses]);
+  const gastoMedio = proj.length ? proj.reduce((s, m) => s + m.gastos, 0) / proj.length : 0;
+  const saldoMedio = proj.length ? proj.reduce((s, m) => s + m.saldo, 0) / proj.length : 0;
+  const maior = proj.reduce((a, m) => (m.gastos > a.gastos ? m : a), proj[0] || { gastos: 0, label: "—" });
+  const comprometidoParc = planos
+    .filter((p) => p.ativo && p.tipo === "parcelamento")
+    .reduce((s, p) => s + meses.reduce((ss, m) => ss + contribNoMes(p, m.k), 0), 0);
+
+  // ---------- visão mês: itens relevantes ----------
+  const janela = useMemo(() => [...histMeses, comp], [histMeses, comp]);
+  function relevante(p: Plano): boolean {
+    if (!p.ativo) return false;
+    return janela.some((c) => contribNoMes(p, c) !== 0 || mensal[c]?.[p.id]?.valor_real != null || (autos[p.id]?.[c] ?? null) != null);
+  }
+  const itensMes = useMemo(() => planos.filter(relevante), [planos, janela, mensal, autos]);
+  const gastosMes = itensMes.filter((p) => !ehReceitaTipo(p.tipo));
+  const receitasMes = itensMes.filter((p) => ehReceitaTipo(p.tipo));
+
+  const somaPrev = (arr: Plano[], c: string) => arr.reduce((s, p) => s + contribNoMes(p, c), 0);
+  const somaEfet = (arr: Plano[], c: string) => arr.reduce((s, p) => s + (dados(p, c).efetivo ?? 0), 0);
+  const prevGastos = somaPrev(gastosMes, comp), efetGastos = somaEfet(gastosMes, comp);
+  const prevRec = somaPrev(receitasMes, comp), efetRec = somaEfet(receitasMes, comp);
+  const preenchidos = gastosMes.filter((p) => dados(p, comp).manual != null).length;
+  const conflitos = itensMes.filter((p) => dados(p, comp).conflito).length;
+
+  // ---------- tabelas ainda não existem ----------
   if (semTabela) {
     return (
-      <Panel title="Quase lá — falta criar a tabela" sub="passo único de configuração">
+      <Panel title="Quase lá — falta criar as tabelas" sub="passo único de configuração">
         <p className="text-[13.5px] leading-relaxed mb-3">
-          O Planejamento guarda seus itens no Supabase (igual ao Orçamento). Rode o SQL abaixo
-          uma vez em <b>Supabase → SQL Editor → New query → Run</b>. Também está salvo em{" "}
-          <code className="text-[12px] bg-fill px-1 py-[1px] rounded">db/migrations/2026-06-15-planejamento.sql</code>.
+          Rode em <b>Supabase → SQL Editor → New query → Run</b> a migração{" "}
+          <code className="text-[12px] bg-fill px-1 py-[1px] rounded">db/migrations/2026-06-15-unificar-planejamento.sql</code>{" "}
+          (traz seus dados de Orçamento). Em uma base nova, basta o SQL abaixo:
         </p>
         <div className="relative">
-          <pre className="bg-fill border border-line rounded-[10px] p-3 text-[11.5px] overflow-x-auto scroll-thin leading-snug">{SQL_PLANOS}</pre>
+          <pre className="bg-fill border border-line rounded-[10px] p-3 text-[11.5px] overflow-x-auto scroll-thin leading-snug">{SQL_HINT}</pre>
           <button
-            onClick={() => { navigator.clipboard?.writeText(SQL_PLANOS); setCopiado(true); setTimeout(() => setCopiado(false), 1500); }}
+            onClick={() => { navigator.clipboard?.writeText(SQL_HINT); setCopiado(true); setTimeout(() => setCopiado(false), 1500); }}
             className="absolute top-2 right-2 btn bg-accent hover:bg-accent2 text-white rounded-[8px] px-3 py-[5px] text-[12px] border-0"
           >{copiado ? "copiado!" : "copiar"}</button>
         </div>
@@ -181,104 +294,206 @@ export function Planejamento() {
   const ehMeta = form.tipo === "meta";
   const ehMesUnico = form.tipo === "pagamento" || form.tipo === "parcelamento";
 
+  // linha de item na visão "Mês"
+  function LinhaMes(p: Plano) {
+    const d = dados(p, comp);
+    const rec = ehReceitaTipo(p.tipo);
+    return (
+      <Fragment key={p.id}>
+        <tr>
+          <td className="font-medium">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={p.ativo} onChange={() => toggleAtivo(p)} title="ativo" className="cursor-pointer" />
+              <div className="min-w-0">
+                <div className="truncate">{p.nome}{(p.link_categoria || p.link_texto) && <span title="vínculo a lançamentos" className="ml-1 text-accent text-[11px]">🔗</span>}</div>
+                <div className="text-muted text-[11px] font-normal">{resumoItem(p)}</div>
+              </div>
+            </div>
+          </td>
+          <td className="text-muted">{p.categoria || "—"}</td>
+          {histMeses.map((c) => <td key={c} className="num text-muted">{fmt(dados(p, c).efetivo)}</td>)}
+          <td className="num text-muted">{d.previsto ? fmt(d.previsto) : "—"}</td>
+          <td className="num">
+            <input className={`${inp} w-[100px] text-right ${d.conflito ? "!border-red" : ""} ${rec ? "text-green" : ""}`} value={reais[p.id] ?? ""}
+              placeholder={d.auto != null ? fmt(d.auto) : (d.previsto ? fmt(d.previsto) : "—")}
+              onChange={(e) => setReais((r) => ({ ...r, [p.id]: e.target.value }))} onBlur={(e) => salvarReal(p, e.target.value)} />
+            {d.auto != null && (d.conflito || d.manual == null) && (
+              <div className={`text-[11px] mt-1 flex items-center gap-1 justify-end ${d.conflito ? "text-red" : "text-muted"}`}>
+                {d.conflito ? "⚠ lançado" : "lançado"} {fmt(d.auto)}
+                <button onClick={() => usarLancado(p, d.auto as number)} className="bg-transparent border-0 p-0 cursor-pointer underline text-accent">usar</button>
+              </div>
+            )}
+          </td>
+          <td className="!text-center">
+            <button onClick={() => togglePago(p)} title={d.pago ? "Pago" : "Marcar pago"}
+              className={`w-7 h-7 rounded-[8px] border-2 flex items-center justify-center mx-auto text-[15px] font-bold cursor-pointer transition-colors ${d.pago ? "bg-green border-green text-white" : "bg-transparent border-line text-transparent hover:border-green"}`}>✓</button>
+          </td>
+          <td className="!text-center whitespace-nowrap text-[12px]">
+            <button onClick={() => abrirLink(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-accent transition-colors">vincular</button>
+            <span className="text-line mx-1">·</span>
+            <button onClick={() => editar(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-accent transition-colors">editar</button>
+            <span className="text-line mx-1">·</span>
+            <button onClick={() => remover(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-red transition-colors">remover</button>
+          </td>
+        </tr>
+        {linkEdit === p.id && (
+          <tr className="bg-accent/5">
+            <td colSpan={9} className="!p-[12px]">
+              <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                <span className="text-muted">Vincular <b>{p.nome}</b> à despesa real onde:</span>
+                <span>categoria</span>
+                <select className={`select-chev ${inp} cursor-pointer`} value={linkForm.categoria} onChange={(e) => setLinkForm((f) => ({ ...f, categoria: e.target.value }))}>
+                  {CATEGORIAS.map((c) => <option key={c} value={c}>{c || "(qualquer)"}</option>)}
+                </select>
+                <span>e/ou descrição contém</span>
+                <input className={`${inp} w-[200px]`} placeholder="ex.: adas imove" value={linkForm.texto} onChange={(e) => setLinkForm((f) => ({ ...f, texto: e.target.value }))} />
+                <button onClick={() => salvarLink(p)} className="btn bg-accent hover:bg-accent2 text-white rounded-[8px] px-3 py-[6px] text-[12px] border-0">Salvar vínculo</button>
+                <button onClick={() => setLinkEdit(null)} className="bg-transparent border-0 p-0 cursor-pointer text-muted text-[12px]">cancelar</button>
+              </div>
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  }
+
   return (
     <div>
       <Toolbar
-        right={<span className="text-muted text-[12px]">{planos.filter((p) => p.ativo).length} itens ativos</span>}
+        right={view === "mes"
+          ? <span className="text-muted text-[12px]">{preenchidos}/{gastosMes.length} preenchidos{conflitos ? ` · ${conflitos} conflito(s)` : ""}</span>
+          : <span className="text-muted text-[12px]">{planos.filter((p) => p.ativo).length} itens ativos</span>}
       >
-        <Seg
-          value={String(n)}
-          onChange={(v) => setN(+v)}
-          options={[{ v: "6", label: "6 meses" }, { v: "12", label: "12 meses" }, { v: "18", label: "18 meses" }]}
-        />
+        <Seg value={view} onChange={(v) => setView(v as "mes" | "proj")} options={[{ v: "mes", label: "Mês · real" }, { v: "proj", label: "Projeção" }]} />
+        {view === "mes"
+          ? <Select value={comp} onChange={setComp}>{MES_SELECT.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}</Select>
+          : <Seg value={String(n)} onChange={(v) => setN(+v)} options={[{ v: "6", label: "6 meses" }, { v: "12", label: "12 meses" }, { v: "18", label: "18 meses" }]} />}
       </Toolbar>
 
       {erro && <div className="bg-card border border-line rounded-[14px] p-3 shadow-card text-red mb-[18px] text-[13px]">{erro}</div>}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
-        <Kpi title="Gasto médio / mês" value={BRL(gastoMedio)} sub={`projeção de ${n} meses`} />
-        <Kpi title={`Maior mês`} value={BRL(maior.gastos)} sub={maior.label} color="text-amber" />
-        <Kpi title="Em parcelas (período)" value={BRL(comprometidoParc)} sub="parcelamentos no horizonte" color="text-violet" />
-        <Kpi title="Saldo médio / mês" value={BRL(saldoMedio)} sub={saldoMedio < 0 ? "no vermelho" : "sobra prevista"} color={saldoMedio < 0 ? "text-red" : "text-green"} />
-      </div>
+      {view === "mes" ? (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
+            <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={BRL(prevGastos)} sub={`${gastosMes.length} itens`} />
+            <Kpi title="Gastos realizados" value={BRL(efetGastos)} sub={`${preenchidos} preenchidos`} color="text-amber" />
+            <Kpi title="Saldo previsto" value={BRL(prevRec - prevGastos)} sub="receita − gastos (plano)" color={prevRec - prevGastos < 0 ? "text-red" : "text-green"} />
+            <Kpi title="Saldo realizado" value={BRL(efetRec - efetGastos)} sub="receita − gastos (real)" color={efetRec - efetGastos < 0 ? "text-red" : "text-green"} />
+          </div>
 
-      <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
-        <div className="overflow-x-auto scroll-thin">
-          <table className="tbl" style={{ minWidth: minW }}>
-            <thead>
-              <tr>
-                <th className="!text-left">Item</th>
-                {meses.map((m, i) => <th key={m.k} className={`num ${i === 0 ? "text-accent" : ""}`}>{m.label}</th>)}
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {TIPOS.map((t) => {
-                const itens = planos.filter((p) => p.tipo === t.v);
-                if (!itens.length) return null;
-                return (
-                  <Fragment key={t.v}>
-                    <tr className="bg-card2">
-                      <td colSpan={colCount} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">
-                        {t.icon} {t.label}
-                      </td>
+          <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
+            <div className="overflow-x-auto scroll-thin">
+              <table className="tbl min-w-[960px]">
+                <thead>
+                  <tr>
+                    <th rowSpan={2} className="!text-left">Item</th>
+                    <th rowSpan={2}>Categoria</th>
+                    <th colSpan={3} className="!text-center !p-[6px] !text-[10px]">Realizado — meses anteriores</th>
+                    <th colSpan={2} className="!text-center text-accent">{dvLabel(comp)}</th>
+                    <th rowSpan={2} className="!text-center">Pago</th>
+                    <th rowSpan={2}></th>
+                  </tr>
+                  <tr>
+                    {histMeses.map((c) => <th key={c} className="num !font-normal">{dvLabel(c)}</th>)}
+                    <th className="num">Previsto</th>
+                    <th className="num">Real</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {!!gastosMes.length && <tr className="bg-card2"><td colSpan={9} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">Gastos</td></tr>}
+                  {gastosMes.map(LinhaMes)}
+                  {!!receitasMes.length && <tr className="bg-card2"><td colSpan={9} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">Receitas</td></tr>}
+                  {receitasMes.map(LinhaMes)}
+                  {!loading && !itensMes.length && <tr><td colSpan={9} className="!p-4 text-muted">Nenhum item ativo neste mês. Adicione abaixo.</td></tr>}
+                  {loading && <tr><td colSpan={9} className="!p-4 text-muted">Carregando…</td></tr>}
+                </tbody>
+                <tfoot>
+                  <tr className="font-semibold">
+                    <td className="border-t-2 !border-t-line" colSpan={2}>Saldo do mês</td>
+                    {histMeses.map((c) => { const s = somaEfet(receitasMes, c) - somaEfet(gastosMes, c); return <td key={c} className={`num border-t-2 !border-t-line ${s < 0 ? "text-red" : "text-green"}`}>{fmtCell(s)}</td>; })}
+                    <td className={`num border-t-2 !border-t-line ${prevRec - prevGastos < 0 ? "text-red" : "text-green"}`}>{fmtCell(prevRec - prevGastos)}</td>
+                    <td className={`num border-t-2 !border-t-line ${efetRec - efetGastos < 0 ? "text-red" : "text-green"}`}>{fmtCell(efetRec - efetGastos)}</td>
+                    <td className="border-t-2 !border-t-line" colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+          <div className="text-muted text-[12px] mt-2 leading-relaxed">
+            <b>Previsto</b> vem da regra de cada item (mensal, parcela ou cota da meta). <b>Real</b> você preenche — ou puxa do <b>lançado</b> (via <b>vincular</b>). O saldo realizado usa o efetivo de cada item.
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
+            <Kpi title="Gasto médio / mês" value={BRL(gastoMedio)} sub={`projeção de ${n} meses`} />
+            <Kpi title="Maior mês" value={BRL(maior.gastos)} sub={maior.label} color="text-amber" />
+            <Kpi title="Em parcelas (período)" value={BRL(comprometidoParc)} sub="parcelamentos no horizonte" color="text-violet" />
+            <Kpi title="Saldo médio / mês" value={BRL(saldoMedio)} sub={saldoMedio < 0 ? "no vermelho" : "sobra prevista"} color={saldoMedio < 0 ? "text-red" : "text-green"} />
+          </div>
+
+          <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
+            <div className="overflow-x-auto scroll-thin">
+              <table className="tbl" style={{ minWidth: minW }}>
+                <thead>
+                  <tr>
+                    <th className="!text-left">Item</th>
+                    {meses.map((m, i) => <th key={m.k} className={`num ${i === 0 ? "text-accent" : ""}`}>{m.label}</th>)}
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {TIPOS.map((t) => {
+                    const itens = planos.filter((p) => p.tipo === t.v);
+                    if (!itens.length) return null;
+                    return (
+                      <Fragment key={t.v}>
+                        <tr className="bg-card2"><td colSpan={colCount} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">{t.icon} {t.label}</td></tr>
+                        {itens.map((p) => (
+                          <tr key={p.id} className={p.ativo ? "" : "opacity-45"}>
+                            <td className="min-w-[230px]">
+                              <div className="flex items-center gap-2">
+                                <input type="checkbox" checked={p.ativo} onChange={() => toggleAtivo(p)} title={p.ativo ? "ativo" : "ignorado"} className="cursor-pointer" />
+                                <div className="min-w-0">
+                                  <div className="font-medium truncate">{p.nome}{p.categoria && <span className="text-muted text-[11px] font-normal"> · {p.categoria}</span>}</div>
+                                  <div className="text-muted text-[11px]">{resumoItem(p)}</div>
+                                </div>
+                              </div>
+                            </td>
+                            {meses.map((m) => { const v = p.ativo ? contribNoMes(p, m.k) : 0; return <td key={m.k} className={`num ${ehReceitaTipo(p.tipo) ? "text-green" : ""}`}>{v ? fmtCell(v) : <span className="text-line">·</span>}</td>; })}
+                            <td className="whitespace-nowrap text-[12px] text-right">
+                              <button onClick={() => editar(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-accent transition-colors">editar</button>
+                              <span className="text-line mx-1">·</span>
+                              <button onClick={() => remover(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-red transition-colors">remover</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    );
+                  })}
+                  {!loading && !planos.length && <tr><td colSpan={colCount} className="!p-4 text-muted">Nenhum item ainda. Adicione abaixo.</td></tr>}
+                  {loading && <tr><td colSpan={colCount} className="!p-4 text-muted">Carregando…</td></tr>}
+                </tbody>
+                {!!planos.length && (
+                  <tfoot>
+                    <tr className="font-semibold">
+                      <td className="border-t-2 !border-t-line">Gastos planejados</td>
+                      {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gastos)}</td>)}
+                      <td className="border-t-2 !border-t-line"></td>
                     </tr>
-                    {itens.map((p) => (
-                      <tr key={p.id} className={p.ativo ? "" : "opacity-45"}>
-                        <td className="min-w-[230px]">
-                          <div className="flex items-center gap-2">
-                            <input type="checkbox" checked={p.ativo} onChange={() => toggleAtivo(p)} title={p.ativo ? "ativo na projeção" : "ignorado"} className="cursor-pointer" />
-                            <div className="min-w-0">
-                              <div className="font-medium truncate">{p.nome}{p.categoria && <span className="text-muted text-[11px] font-normal"> · {p.categoria}</span>}</div>
-                              <div className="text-muted text-[11px]">{resumoItem(p)}</div>
-                            </div>
-                          </div>
-                        </td>
-                        {meses.map((m) => {
-                          const v = p.ativo ? contribNoMes(p, m.k) : 0;
-                          return <td key={m.k} className={`num ${ehReceitaTipo(p.tipo) ? "text-green" : ""}`}>{v ? fmtCell(v) : <span className="text-line">·</span>}</td>;
-                        })}
-                        <td className="whitespace-nowrap text-[12px] text-right">
-                          <button onClick={() => editar(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-accent transition-colors">editar</button>
-                          <span className="text-line mx-1">·</span>
-                          <button onClick={() => remover(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-red transition-colors">remover</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </Fragment>
-                );
-              })}
-              {!loading && !planos.length && (
-                <tr><td colSpan={colCount} className="!p-4 text-muted">Nenhum item ainda. Adicione gastos fixos, parcelamentos, pagamentos, metas e receitas no formulário abaixo.</td></tr>
-              )}
-              {loading && <tr><td colSpan={colCount} className="!p-4 text-muted">Carregando…</td></tr>}
-            </tbody>
-            {!!planos.length && (
-              <tfoot>
-                <tr className="font-semibold">
-                  <td className="border-t-2 !border-t-line">Gastos planejados</td>
-                  {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gastos)}</td>)}
-                  <td className="border-t-2 !border-t-line"></td>
-                </tr>
-                <tr className="text-green">
-                  <td>Receita prevista</td>
-                  {proj.map((m) => <td key={m.k} className="num">{m.receita ? fmtCell(m.receita) : <span className="text-line">·</span>}</td>)}
-                  <td></td>
-                </tr>
-                <tr className="font-bold">
-                  <td>Saldo previsto</td>
-                  {proj.map((m) => <td key={m.k} className={`num ${m.saldo < 0 ? "text-red" : "text-green"}`}>{fmtCell(m.saldo)}</td>)}
-                  <td></td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-      </div>
-      <div className="text-muted text-[12px] mt-2">Valores na tabela em reais (sem centavos) para caber; KPIs e resumos mostram o valor cheio. A primeira coluna é o mês atual.</div>
+                    <tr className="text-green"><td>Receita prevista</td>{proj.map((m) => <td key={m.k} className="num">{m.receita ? fmtCell(m.receita) : <span className="text-line">·</span>}</td>)}<td></td></tr>
+                    <tr className="font-bold"><td>Saldo previsto</td>{proj.map((m) => <td key={m.k} className={`num ${m.saldo < 0 ? "text-red" : "text-green"}`}>{fmtCell(m.saldo)}</td>)}<td></td></tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+          <div className="text-muted text-[12px] mt-2">Valores em reais (sem centavos) para caber; a primeira coluna é o mês atual.</div>
+        </>
+      )}
 
-      {/* ---------- formulário de adicionar / editar ---------- */}
-      <Panel title={editId ? "Editar item" : "Adicionar ao planejamento"} className="mt-[18px]">
+      {/* ---------- formulário de adicionar / editar (compartilhado) ---------- */}
+      <Panel title={editId ? "Editar item" : "Adicionar item"} className="mt-[18px]">
         <div className="flex flex-wrap gap-3 items-end">
           <Field label="Tipo">
             <Select value={form.tipo} onChange={(v) => setForm((f) => ({ ...f, tipo: v as TipoPlano }))} className="w-[180px]">
