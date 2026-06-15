@@ -1,0 +1,110 @@
+import { dvAddMes, dvLabel } from "./finance";
+
+/* ============================================================
+   Planejamento / projeção de gastos futuros.
+   Lógica pura (sem React, sem Supabase) — fácil de testar.
+
+   Tipos de item:
+     fixo         valor = quanto gasta por mês (recorrente até mes_fim ou indefinido)
+     parcelamento valor = valor da parcela; lança por `parcelas` meses a partir do início
+     pagamento    valor = valor único, lança só no mês de início
+     meta         valor = valor TOTAL; diluído igualmente entre início e mes_fim (mês-alvo)
+     receita      valor = quanto entra por mês (recorrente; conta como entrada)
+   ============================================================ */
+
+export type TipoPlano = "fixo" | "parcelamento" | "pagamento" | "meta" | "receita";
+
+export interface Plano {
+  id: number;
+  tipo: TipoPlano;
+  nome: string;
+  categoria: string | null;
+  valor: number;
+  mes_inicio: string; // 'AAAA-MM'
+  mes_fim: string | null; // 'AAAA-MM' (opcional)
+  parcelas: number | null; // só parcelamento
+  ativo: boolean;
+  ordem: number;
+}
+
+export const TIPOS: { v: TipoPlano; label: string; icon: string; receita?: boolean }[] = [
+  { v: "fixo", label: "Gastos fixos", icon: "🔁" },
+  { v: "parcelamento", label: "Parcelamentos", icon: "💳" },
+  { v: "pagamento", label: "Pagamentos futuros", icon: "📌" },
+  { v: "meta", label: "Metas / caixinhas", icon: "✈️" },
+  { v: "receita", label: "Receitas previstas", icon: "💰", receita: true },
+];
+
+export const ehReceitaTipo = (t: TipoPlano) => t === "receita";
+
+/** Mês corrente no formato 'AAAA-MM'. */
+export const mesAtual = () => {
+  const h = new Date();
+  return h.getFullYear() + "-" + String(h.getMonth() + 1).padStart(2, "0");
+};
+
+/** Diferença em meses entre dois 'AAAA-MM' (b - a). */
+export const mesesEntre = (a: string, b: string) =>
+  (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7));
+
+/** Último mês em que o item ainda lança (ou null se for indefinido). */
+export function fimEfetivo(p: Plano): string | null {
+  switch (p.tipo) {
+    case "parcelamento":
+      return dvAddMes(p.mes_inicio, Math.max(1, p.parcelas || 1) - 1);
+    case "pagamento":
+      return p.mes_inicio;
+    case "meta":
+      return p.mes_fim || p.mes_inicio;
+    default: // fixo / receita: pode não ter fim
+      return p.mes_fim;
+  }
+}
+
+/** Quanto o item contribui no mês `mk` (sempre o "tamanho" positivo do item). */
+export function contribNoMes(p: Plano, mk: string): number {
+  if (mk < p.mes_inicio) return 0;
+  switch (p.tipo) {
+    case "fixo":
+    case "receita":
+      return p.mes_fim && mk > p.mes_fim ? 0 : p.valor;
+    case "pagamento":
+      return mk === p.mes_inicio ? p.valor : 0;
+    case "parcelamento": {
+      const fim = dvAddMes(p.mes_inicio, Math.max(1, p.parcelas || 1) - 1);
+      return mk <= fim ? p.valor : 0;
+    }
+    case "meta": {
+      const fim = p.mes_fim || p.mes_inicio;
+      if (mk > fim) return 0;
+      const n = mesesEntre(p.mes_inicio, fim) + 1; // inclusivo
+      return n > 0 ? p.valor / n : 0;
+    }
+  }
+  return 0;
+}
+
+export interface ProjMes { k: string; label: string; gastos: number; receita: number; saldo: number; }
+
+/** Lista de N meses a partir de `start` (default: mês atual). */
+export function horizonte(n: number, start = mesAtual()): { k: string; label: string }[] {
+  return Array.from({ length: n }, (_, i) => {
+    const k = dvAddMes(start, i);
+    return { k, label: dvLabel(k) };
+  });
+}
+
+/** Projeção consolidada: por mês, soma de gastos, receita e saldo (receita − gastos). */
+export function projetar(planos: Plano[], meses: { k: string }[]): ProjMes[] {
+  return meses.map(({ k }) => {
+    let gastos = 0, receita = 0;
+    for (const p of planos) {
+      if (!p.ativo) continue;
+      const v = contribNoMes(p, k);
+      if (!v) continue;
+      if (ehReceitaTipo(p.tipo)) receita += v;
+      else gastos += v;
+    }
+    return { k, label: dvLabel(k), gastos, receita, saldo: receita - gastos };
+  });
+}
