@@ -14,6 +14,7 @@ import { ResumoMensal } from "./components/tabs/ResumoMensal";
 import { Lancamentos } from "./components/tabs/Lancamentos";
 import { Classificar } from "./components/tabs/Classificar";
 import { Orcamento } from "./components/tabs/Orcamento";
+import { Importar } from "./components/tabs/Importar";
 
 /* navegação agrupada: Análise · Planejar · Dados */
 const GRUPOS: { id: Aba; label: string }[][] = [
@@ -25,6 +26,7 @@ const GRUPOS: { id: Aba; label: string }[][] = [
   ],
   [{ id: "orcamento", label: "Orçamento" }],
   [
+    { id: "importar", label: "Importar" },
     { id: "classificar", label: "Classificar" },
     { id: "lanc", label: "Lançamentos" },
   ],
@@ -159,6 +161,7 @@ export default function App() {
           {aba === "orcamento" && <Orcamento allDados={allDados} />}
           {aba === "classificar" && <Classificar dados={dados} allDados={allDados} openModal={openModal} reload={reload} />}
           {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}
+          {aba === "importar" && <Importar reload={reload} />}
         </div>
       </main>
 
