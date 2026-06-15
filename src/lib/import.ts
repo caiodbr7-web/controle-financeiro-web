@@ -116,18 +116,20 @@ export function guessMap(columns: string[]): MapConfig {
 
 export function parseData(v: any): { yyyy: number; mm: number; dd: number } | null {
   if (v == null || v === "") return null;
+  const ok = (d: { yyyy: number; mm: number; dd: number } | null) =>
+    d && d.mm >= 1 && d.mm <= 12 && d.dd >= 1 && d.dd <= 31 && d.yyyy >= 1900 && d.yyyy <= 2200 ? d : null;
   if (v instanceof Date && !isNaN(v.getTime()))
-    return { yyyy: v.getFullYear(), mm: v.getMonth() + 1, dd: v.getDate() };
+    return ok({ yyyy: v.getFullYear(), mm: v.getMonth() + 1, dd: v.getDate() });
   const s = String(v).trim();
   let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); // ISO
-  if (m) return { yyyy: +m[1], mm: +m[2], dd: +m[3] };
+  if (m) return ok({ yyyy: +m[1], mm: +m[2], dd: +m[3] });
   m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/); // dd/mm/aaaa (BR)
-  if (m) { let y = +m[3]; if (y < 100) y += 2000; return { yyyy: y, mm: +m[2], dd: +m[1] }; }
+  if (m) { let y = +m[3]; if (y < 100) y += 2000; return ok({ yyyy: y, mm: +m[2], dd: +m[1] }); }
   if (/^\d+(\.\d+)?$/.test(s)) { // serial do Excel
     const n = +s;
     if (n > 59 && n < 100000) {
       const d = new Date(Date.UTC(1899, 11, 30) + n * 86400000);
-      return { yyyy: d.getUTCFullYear(), mm: d.getUTCMonth() + 1, dd: d.getUTCDate() };
+      return ok({ yyyy: d.getUTCFullYear(), mm: d.getUTCMonth() + 1, dd: d.getUTCDate() });
     }
   }
   return null;
