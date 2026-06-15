@@ -72,8 +72,30 @@ no navegador do celular.
 ## Build de produção
 
 ```bash
-npm run build    # gera web/dist (estático)
+npm run build    # gera dist/ (estático)
 ```
+
+## Link de teste grátis (GitHub Pages)
+
+Um ambiente publicado **grátis e separado do Netlify** (não consome o limite
+dele). O workflow `.github/workflows/pages.yml` builda e publica a `main` a cada
+push, no endereço:
+
+```
+https://caiodbr7-web.github.io/controle-financeiro-web/
+```
+
+**Configuração única** (uma vez só):
+
+1. No GitHub do repo: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. Para o **login com Google** funcionar nessa URL, adicione-a no OAuth:
+   - **Supabase → Authentication → URL Configuration → Redirect URLs**:
+     `https://caiodbr7-web.github.io/controle-financeiro-web/`
+   - **Google Cloud → Credentials → OAuth Client → Authorized JavaScript origins**:
+     `https://caiodbr7-web.github.io`
+   > O login por **e-mail/senha** já funciona sem nenhum desses passos.
+3. Pronto: cada push na `main` republica o link. Também dá para disparar à mão em
+   **Actions → Deploy to GitHub Pages → Run workflow**.
 
 ## Publicar — GitHub + Netlify (deploy automático)
 
