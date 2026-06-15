@@ -25,7 +25,7 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
 
   async function salvarRegra(key: string, categoria: string) {
     if (!key || !categoria) return;
-    await sb.from("regras").upsert({ padrao: key, categoria }, { onConflict: "padrao" });
+    await sb.from("regras").upsert({ padrao: key, categoria }, { onConflict: "user_id,padrao" });
     setRegras((r) => ({ ...r, [key]: categoria }));
   }
 
