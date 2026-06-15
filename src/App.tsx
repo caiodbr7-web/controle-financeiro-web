@@ -14,6 +14,7 @@ import { ResumoMensal } from "./components/tabs/ResumoMensal";
 import { Lancamentos } from "./components/tabs/Lancamentos";
 import { Classificar } from "./components/tabs/Classificar";
 import { Orcamento } from "./components/tabs/Orcamento";
+import { Planejamento } from "./components/tabs/Planejamento";
 import { Importar } from "./components/tabs/Importar";
 
 /* navegação agrupada: Análise · Planejar · Dados */
@@ -24,7 +25,10 @@ const GRUPOS: { id: Aba; label: string }[][] = [
     { id: "mensal", label: "Mensal" },
     { id: "diario", label: "Diário" },
   ],
-  [{ id: "orcamento", label: "Orçamento" }],
+  [
+    { id: "orcamento", label: "Orçamento" },
+    { id: "planejamento", label: "Planejamento" },
+  ],
   [
     { id: "importar", label: "Importar" },
     { id: "classificar", label: "Classificar" },
@@ -159,6 +163,7 @@ export default function App() {
           {aba === "mensal" && <ResumoMensal {...tabProps} />}
           {aba === "diario" && <EvolucaoDiaria {...tabProps} />}
           {aba === "orcamento" && <Orcamento allDados={allDados} />}
+          {aba === "planejamento" && <Planejamento />}
           {aba === "classificar" && <Classificar dados={dados} allDados={allDados} openModal={openModal} reload={reload} />}
           {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}
           {aba === "importar" && <Importar reload={reload} />}
