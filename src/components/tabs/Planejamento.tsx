@@ -545,13 +545,21 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   {loading && <tr><td colSpan={9} className="!p-4 text-muted">Carregando…</td></tr>}
                 </tbody>
                 <tfoot>
+                  {/* Σ total geral consolidado (conta + cartão) — total no topo */}
+                  <tr className="font-bold">
+                    <td className="border-t-2 !border-t-line" colSpan={2}>Σ Gastos gerais</td>
+                    {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line">{fmtCell(geraisEfet(c))}</td>)}
+                    <td className="num border-t-2 !border-t-line">{fmtCell(geraisPrev(comp))}</td>
+                    <td className="num border-t-2 !border-t-line">{fmtCell(geraisEfet(comp))}</td>
+                    <td className="border-t-2 !border-t-line" colSpan={2}></td>
+                  </tr>
                   {/* 🏦 gastos fora do cartão */}
                   <tr className="text-[12.5px]">
-                    <td className="border-t-2 !border-t-line" colSpan={2}>🏦 Gastos na conta</td>
-                    {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line text-muted">{fmtCell(contaEfet(c))}</td>)}
-                    <td className="num border-t-2 !border-t-line text-muted">{fmtCell(contaPrev(comp))}</td>
-                    <td className="num border-t-2 !border-t-line">{fmtCell(contaEfet(comp))}</td>
-                    <td className="border-t-2 !border-t-line" colSpan={2}></td>
+                    <td colSpan={2}>🏦 Gastos na conta</td>
+                    {histMeses.map((c) => <td key={c} className="num text-muted">{fmtCell(contaEfet(c))}</td>)}
+                    <td className="num text-muted">{fmtCell(contaPrev(comp))}</td>
+                    <td className="num text-muted">{fmtCell(contaEfet(comp))}</td>
+                    <td colSpan={2}></td>
                   </tr>
                   {/* 💳 total no cartão — você digita o orçamento (Previsto) e o real do mês */}
                   <tr className="text-violet text-[12.5px]" title="total do cartão — os itens marcados 💳 já estão aqui dentro, não somam de novo">
@@ -588,14 +596,6 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       )}
                     </td>
                     <td></td>
-                  </tr>
-                  {/* Σ total geral consolidado (conta + cartão) */}
-                  <tr className="font-bold">
-                    <td colSpan={2}>Σ Gastos gerais</td>
-                    {histMeses.map((c) => <td key={c} className="num">{fmtCell(geraisEfet(c))}</td>)}
-                    <td className="num">{fmtCell(geraisPrev(comp))}</td>
-                    <td className="num">{fmtCell(geraisEfet(comp))}</td>
-                    <td colSpan={2}></td>
                   </tr>
                   {/* 🔁 recorrentes: fixos mensais — recorte por recorrência (informativo) */}
                   <tr className="text-[12.5px]" title="gastos fixos que se repetem todo mês — não inclui parcelas, metas nem pagamentos únicos">
@@ -676,22 +676,22 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                 </tbody>
                 {(!!planos.length || cartaoPlano) && (
                   <tfoot>
+                    {/* Σ total geral consolidado — total no topo */}
+                    <tr className="font-bold">
+                      <td className="border-t-2 !border-t-line">Σ Gastos gerais</td>
+                      {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gerais)}</td>)}
+                      <td className="border-t-2 !border-t-line"></td>
+                    </tr>
                     {/* 🏦 gastos fora do cartão */}
                     <tr className="text-[12.5px]">
-                      <td className="border-t-2 !border-t-line">🏦 Gastos na conta</td>
-                      {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line text-muted ${i === 0 ? "!text-accent" : ""}`}>{m.conta ? fmtCell(m.conta) : <span className="text-line">·</span>}</td>)}
-                      <td className="border-t-2 !border-t-line"></td>
+                      <td>🏦 Gastos na conta</td>
+                      {proj.map((m, i) => <td key={m.k} className={`num text-muted ${i === 0 ? "!text-accent" : ""}`}>{m.conta ? fmtCell(m.conta) : <span className="text-line">·</span>}</td>)}
+                      <td></td>
                     </tr>
                     {/* 💳 total no cartão (orçamento, senão soma dos itens marcados) */}
                     <tr className="text-violet text-[12.5px]" title="total do cartão: orçamento definido, senão soma dos itens marcados 💳">
                       <td>💳 Cartão de crédito</td>
                       {proj.map((m) => <td key={m.k} className="num">{m.cartao ? fmtCell(m.cartao) : <span className="text-line">·</span>}</td>)}
-                      <td></td>
-                    </tr>
-                    {/* Σ total geral consolidado */}
-                    <tr className="font-bold">
-                      <td>Σ Gastos gerais</td>
-                      {proj.map((m, i) => <td key={m.k} className={`num ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gerais)}</td>)}
                       <td></td>
                     </tr>
                     <tr className="text-green"><td>Receita prevista</td>{proj.map((m) => <td key={m.k} className="num">{m.receita ? fmtCell(m.receita) : <span className="text-line">·</span>}</td>)}<td></td></tr>
