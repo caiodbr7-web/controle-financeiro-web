@@ -25,6 +25,8 @@ export interface Plano {
   parcelas: number | null; // só parcelamento
   ativo: boolean;
   ordem: number;
+  // item pago no cartão de crédito (entra no subtotal "No cartão", sem somar em dobro)
+  no_cartao?: boolean;
   // vínculo opcional a lançamentos reais (usado na visão "Mês": previsto × realizado)
   link_categoria?: string | null;
   link_texto?: string | null;
@@ -87,7 +89,7 @@ export function contribNoMes(p: Plano, mk: string): number {
   return 0;
 }
 
-export interface ProjMes { k: string; label: string; gastos: number; receita: number; saldo: number; }
+export interface ProjMes { k: string; label: string; gastos: number; receita: number; saldo: number; cartao: number; }
 
 /** Lista de N meses a partir de `start` (default: mês atual). */
 export function horizonte(n: number, start = mesAtual()): { k: string; label: string }[] {
@@ -100,14 +102,15 @@ export function horizonte(n: number, start = mesAtual()): { k: string; label: st
 /** Projeção consolidada: por mês, soma de gastos, receita e saldo (receita − gastos). */
 export function projetar(planos: Plano[], meses: { k: string }[]): ProjMes[] {
   return meses.map(({ k }) => {
-    let gastos = 0, receita = 0;
+    let gastos = 0, receita = 0, cartao = 0;
     for (const p of planos) {
       if (!p.ativo) continue;
       const v = contribNoMes(p, k);
       if (!v) continue;
       if (ehReceitaTipo(p.tipo)) receita += v;
-      else gastos += v;
+      else { gastos += v; if (p.no_cartao) cartao += v; }
     }
-    return { k, label: dvLabel(k), gastos, receita, saldo: receita - gastos };
+    // `cartao` é um subtotal de `gastos` (itens marcados) — não soma em dobro.
+    return { k, label: dvLabel(k), gastos, receita, saldo: receita - gastos, cartao };
   });
 }

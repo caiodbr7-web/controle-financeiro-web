@@ -64,7 +64,11 @@ function resumoItem(p: Plano): string {
   return "";
 }
 
-const VAZIO = { tipo: "fixo" as TipoPlano, nome: "", categoria: "", valor: "", mes_inicio: mesAtual(), mes_fim: "", parcelas: "12" };
+const VAZIO = { tipo: "fixo" as TipoPlano, nome: "", categoria: "", valor: "", mes_inicio: mesAtual(), mes_fim: "", parcelas: "12", no_cartao: false };
+
+// erro de coluna ainda não criada (migração do cartão não rodada)
+const faltaColunaCartao = (msg?: string) => /no_cartao|could not find|schema cache/i.test(msg || "");
+const MSG_MIGRACAO_CARTAO = 'Para usar o cartão de crédito, rode em Supabase → SQL Editor a migração db/migrations/2026-06-16-cartao-credito.sql (uma vez só).';
 
 const SQL_HINT = `-- planos: itens; plano_mensal: realizado/pago por mês
 create table if not exists public.planos (
@@ -74,6 +78,7 @@ create table if not exists public.planos (
   nome text not null, categoria text, valor numeric not null default 0,
   mes_inicio text not null, mes_fim text, parcelas integer,
   ativo boolean not null default true, ordem integer not null default 0,
+  no_cartao boolean not null default false,
   link_categoria text, link_texto text, origem_orcamento_item bigint,
   criado_em timestamptz not null default now()
 );
@@ -107,6 +112,7 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
   const [semTabela, setSemTabela] = useState(false);
+  const [temCartaoCol, setTemCartaoCol] = useState(true); // coluna no_cartao existe?
   const [copiado, setCopiado] = useState(false);
   const [view, setView] = useState<"mes" | "proj">("mes");
 
@@ -134,6 +140,9 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
       setLoading(false); return;
     }
     setPlanos((data || []) as Plano[]);
+    // detecta se a coluna no_cartao já existe (migração rodada)
+    if (data && data.length) setTemCartaoCol("no_cartao" in (data[0] as object));
+    else { const probe = await sb.from("planos").select("no_cartao").limit(1); setTemCartaoCol(!probe.error); }
     setLoading(false);
   }, []);
   useEffect(() => { carregar(); }, [carregar]);
@@ -206,11 +215,13 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
       mes_fim: form.tipo === "fixo" || form.tipo === "receita" || form.tipo === "meta" ? (form.mes_fim || null) : null,
       parcelas: form.tipo === "parcelamento" ? Math.max(1, parseInt(form.parcelas) || 1) : null,
       ativo: true,
+      // só manda no_cartao se a coluna existe (não quebra antes da migração)
+      ...(temCartaoCol ? { no_cartao: form.tipo === "receita" ? false : !!form.no_cartao } : {}),
     };
     const { error } = editId
       ? await sb.from("planos").update(payload).eq("id", editId)
       : await sb.from("planos").insert(payload);
-    if (error) { setErro(error.message); return; }
+    if (error) { setErro(faltaColunaCartao(error.message) ? MSG_MIGRACAO_CARTAO : error.message); if (faltaColunaCartao(error.message)) setTemCartaoCol(false); return; }
     resetForm(); carregar();
   }
   function editar(p: Plano) {
@@ -220,6 +231,7 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
       valor: p.valor ? String(p.valor).replace(".", ",") : "",
       mes_inicio: p.mes_inicio, mes_fim: p.mes_fim || "",
       parcelas: p.parcelas ? String(p.parcelas) : "12",
+      no_cartao: !!p.no_cartao,
     });
     setErro("");
     window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
@@ -232,6 +244,13 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
   async function toggleAtivo(p: Plano) {
     const { error } = await sb.from("planos").update({ ativo: !p.ativo }).eq("id", p.id);
     if (!error) setPlanos((arr) => arr.map((x) => (x.id === p.id ? { ...x, ativo: !x.ativo } : x)));
+  }
+  async function toggleCartao(p: Plano) {
+    const novo = !p.no_cartao;
+    const { error } = await sb.from("planos").update({ no_cartao: novo }).eq("id", p.id);
+    if (error) { setErro(faltaColunaCartao(error.message) ? MSG_MIGRACAO_CARTAO : error.message); if (faltaColunaCartao(error.message)) setTemCartaoCol(false); return; }
+    setErro("");
+    setPlanos((arr) => arr.map((x) => (x.id === p.id ? { ...x, no_cartao: novo } : x)));
   }
   function abrirLink(p: Plano) { setLinkEdit(linkEdit === p.id ? null : p.id); setLinkForm({ categoria: p.link_categoria || "", texto: p.link_texto || "" }); }
   async function salvarLink(p: Plano) {
@@ -248,6 +267,7 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
   const comprometidoParc = planos
     .filter((p) => p.ativo && p.tipo === "parcelamento")
     .reduce((s, p) => s + meses.reduce((ss, m) => ss + contribNoMes(p, m.k), 0), 0);
+  const temCartaoMarcado = planos.some((p) => p.ativo && p.no_cartao && !ehReceitaTipo(p.tipo));
 
   // ---------- visão mês: itens relevantes ----------
   const janela = useMemo(() => [...histMeses, comp], [histMeses, comp]);
@@ -258,6 +278,7 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
   const itensMes = useMemo(() => planos.filter(relevante), [planos, janela, mensal, autos]);
   const gastosMes = itensMes.filter((p) => !ehReceitaTipo(p.tipo));
   const receitasMes = itensMes.filter((p) => ehReceitaTipo(p.tipo));
+  const cartaoMes = gastosMes.filter((p) => p.no_cartao);
 
   const somaPrev = (arr: Plano[], c: string) => arr.reduce((s, p) => s + contribNoMes(p, c), 0);
   const somaEfet = (arr: Plano[], c: string) => arr.reduce((s, p) => s + (dados(p, c).efetivo ?? 0), 0);
@@ -294,6 +315,18 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
   const ehMeta = form.tipo === "meta";
   const ehMesUnico = form.tipo === "pagamento" || form.tipo === "parcelamento";
 
+  // botão 💳 por item: marca que o gasto cai no cartão de crédito
+  function CartaoToggle({ p }: { p: Plano }) {
+    if (!temCartaoCol || ehReceitaTipo(p.tipo)) return null;
+    return (
+      <button
+        onClick={() => toggleCartao(p)}
+        title={p.no_cartao ? "Está no cartão de crédito — clique para tirar" : "Marcar: este gasto cai no cartão de crédito"}
+        className={`shrink-0 text-[12px] leading-none rounded-[7px] px-[7px] py-[4px] border transition-colors cursor-pointer ${p.no_cartao ? "bg-violet/15 border-violet text-violet" : "bg-transparent border-line text-muted hover:border-violet hover:text-violet"}`}
+      >💳</button>
+    );
+  }
+
   // linha de item na visão "Mês"
   function LinhaMes(p: Plano) {
     const d = dados(p, comp);
@@ -308,6 +341,7 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
                 <div className="truncate">{p.nome}{(p.link_categoria || p.link_texto) && <span title="vínculo a lançamentos" className="ml-1 text-accent text-[11px]">🔗</span>}</div>
                 <div className="text-muted text-[11px] font-normal">{resumoItem(p)}</div>
               </div>
+              <CartaoToggle p={p} />
             </div>
           </td>
           <td className="text-muted">{p.categoria || "—"}</td>
@@ -415,12 +449,24 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
                     <td className={`num border-t-2 !border-t-line ${efetRec - efetGastos < 0 ? "text-red" : "text-green"}`}>{fmtCell(efetRec - efetGastos)}</td>
                     <td className="border-t-2 !border-t-line" colSpan={2}></td>
                   </tr>
+                  {!!cartaoMes.length && (
+                    <tr className="text-violet text-[12.5px]" title="subtotal dos itens marcados — já contados acima, não soma em dobro">
+                      <td colSpan={2}>💳 No cartão de crédito</td>
+                      {histMeses.map((c) => <td key={c} className="num">{fmtCell(somaEfet(cartaoMes, c))}</td>)}
+                      <td className="num">{fmtCell(somaPrev(cartaoMes, comp))}</td>
+                      <td className="num">{fmtCell(somaEfet(cartaoMes, comp))}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  )}
                 </tfoot>
               </table>
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
             <b>Previsto</b> vem da regra de cada item (mensal, parcela ou cota da meta). <b>Real</b> você preenche — ou puxa do <b>lançado</b> (via <b>vincular</b>). O saldo realizado usa o efetivo de cada item.
+            {temCartaoCol
+              ? <> Use o <b className="text-violet">💳</b> para marcar gastos que caem no cartão — a linha <b>no cartão de crédito</b> soma só esses (sem contar em dobro).</>
+              : <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           </div>
         </>
       ) : (
@@ -458,6 +504,7 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
                                   <div className="font-medium truncate">{p.nome}{p.categoria && <span className="text-muted text-[11px] font-normal"> · {p.categoria}</span>}</div>
                                   <div className="text-muted text-[11px]">{resumoItem(p)}</div>
                                 </div>
+                                <CartaoToggle p={p} />
                               </div>
                             </td>
                             {meses.map((m) => { const v = p.ativo ? contribNoMes(p, m.k) : 0; return <td key={m.k} className={`num ${ehReceitaTipo(p.tipo) ? "text-green" : ""}`}>{v ? fmtCell(v) : <span className="text-line">·</span>}</td>; })}
@@ -481,6 +528,13 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
                       {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gastos)}</td>)}
                       <td className="border-t-2 !border-t-line"></td>
                     </tr>
+                    {temCartaoMarcado && (
+                      <tr className="text-violet text-[12.5px]" title="subtotal dos itens marcados — já incluídos em Gastos planejados, não soma em dobro">
+                        <td className="pl-6">↳ 💳 no cartão de crédito</td>
+                        {proj.map((m) => <td key={m.k} className="num">{m.cartao ? fmtCell(m.cartao) : <span className="text-line">·</span>}</td>)}
+                        <td></td>
+                      </tr>
+                    )}
                     <tr className="text-green"><td>Receita prevista</td>{proj.map((m) => <td key={m.k} className="num">{m.receita ? fmtCell(m.receita) : <span className="text-line">·</span>}</td>)}<td></td></tr>
                     <tr className="font-bold"><td>Saldo previsto</td>{proj.map((m) => <td key={m.k} className={`num ${m.saldo < 0 ? "text-red" : "text-green"}`}>{fmtCell(m.saldo)}</td>)}<td></td></tr>
                   </tfoot>
@@ -488,7 +542,12 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
               </table>
             </div>
           </div>
-          <div className="text-muted text-[12px] mt-2">Valores em reais (sem centavos) para caber; a primeira coluna é o mês atual.</div>
+          <div className="text-muted text-[12px] mt-2 leading-relaxed">
+            Valores em reais (sem centavos) para caber; a primeira coluna é o mês atual.
+            {temCartaoCol
+              ? <> Marque um gasto com <b className="text-violet">💳</b> e ele entra na linha <b>no cartão de crédito</b> — um subtotal dos <b>Gastos planejados</b> (não soma em dobro).</>
+              : <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
+          </div>
         </>
       )}
 
@@ -537,6 +596,15 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
                 <option value="">—</option>
                 {MES_OPCOES.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
               </Select>
+            </Field>
+          )}
+          {podeCategoria && temCartaoCol && (
+            <Field label="No cartão?">
+              <button type="button" onClick={() => setForm((f) => ({ ...f, no_cartao: !f.no_cartao }))}
+                title="marque se este gasto cai no cartão de crédito"
+                className={`btn rounded-[8px] px-3 py-[7px] text-[13px] border transition-colors cursor-pointer ${form.no_cartao ? "bg-violet/15 border-violet text-violet" : "bg-card border-line text-muted hover:border-violet"}`}>
+                💳 {form.no_cartao ? "Sim" : "Não"}
+              </button>
             </Field>
           )}
           <button onClick={salvar} className="btn bg-accent hover:bg-accent2 text-white rounded-[8px] px-4 py-[8px] text-[13px] border-0">{editId ? "Salvar" : "Adicionar"}</button>
