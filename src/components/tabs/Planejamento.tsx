@@ -109,7 +109,9 @@ function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   );
 }
 
-export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
+// `lancamentos` já vem filtrado pela Visão (Pessoal/Corp/Tudo) — o realizado (vínculo e
+// total do cartão) respeita o filtro; os itens do plano não têm natureza, então não filtram.
+export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const [planos, setPlanos] = useState<Plano[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
@@ -201,12 +203,12 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
       todos.forEach((c) => {
         if (!p.link_categoria && !p.link_texto) { out[p.id][c] = null; return; }
         let sum = 0, cnt = 0;
-        allDados.forEach((d) => { if (String(d.competencia).slice(0, 7) === c && matchLink(d, p)) { sum += Math.abs(d.valor); cnt++; } });
+        lancamentos.forEach((d) => { if (String(d.competencia).slice(0, 7) === c && matchLink(d, p)) { sum += Math.abs(d.valor); cnt++; } });
         out[p.id][c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
       });
     });
     return out;
-  }, [planos, allDados, comp, histMeses]);
+  }, [planos, lancamentos, comp, histMeses]);
 
   // ---------- total REAL do cartão (lançamentos com origem "Cartao...") por mês ----------
   // O que de fato caiu no cartão em cada mês: soma dos gastos importados cuja origem
@@ -216,13 +218,13 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
     const out: Record<string, number | null> = {};
     todos.forEach((c) => {
       let sum = 0, cnt = 0;
-      allDados.forEach((d) => {
+      lancamentos.forEach((d) => {
         if (String(d.competencia).slice(0, 7) === c && ehGasto(d.classe) && String(d.origem || "").startsWith("Cartao")) { sum += Math.abs(d.valor); cnt++; }
       });
       out[c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
     });
     return out;
-  }, [allDados, comp, histMeses]);
+  }, [lancamentos, comp, histMeses]);
 
   // previsto/realizado efetivo de um item num mês
   function dados(p: Plano, c: string) {
