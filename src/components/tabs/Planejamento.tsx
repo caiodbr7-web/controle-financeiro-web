@@ -20,6 +20,8 @@ const MES_SELECT = (() => {
   const cur = mesAtual();
   return Array.from({ length: 12 }, (_, i) => { const k = dvAddMes(cur, -i); return { v: k, label: dvLabel(k) }; });
 })();
+// início da linha do total do cartão: bem no passado, para cobrir o histórico exibido
+const CARTAO_INICIO = dvAddMes(mesAtual(), -36);
 
 const VALOR_LABEL: Record<TipoPlano, string> = {
   fixo: "Valor por mês", receita: "Valor por mês", pagamento: "Valor",
@@ -78,7 +80,7 @@ create table if not exists public.planos (
   nome text not null, categoria text, valor numeric not null default 0,
   mes_inicio text not null, mes_fim text, parcelas integer,
   ativo boolean not null default true, ordem integer not null default 0,
-  no_cartao boolean not null default false,
+  no_cartao boolean not null default false, eh_cartao_total boolean not null default false,
   link_categoria text, link_texto text, origem_orcamento_item bigint,
   criado_em timestamptz not null default now()
 );
@@ -113,6 +115,10 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
   const [erro, setErro] = useState("");
   const [semTabela, setSemTabela] = useState(false);
   const [temCartaoCol, setTemCartaoCol] = useState(true); // coluna no_cartao existe?
+  const [temOrcCartao, setTemOrcCartao] = useState(true); // coluna eh_cartao_total existe?
+  const [cartaoPlano, setCartaoPlano] = useState<Plano | null>(null); // linha especial do TOTAL do cartão
+  const [cartaoOrc, setCartaoOrc] = useState(""); // orçamento mensal do cartão (texto do input)
+  const [cartaoReal, setCartaoReal] = useState(""); // total real do cartão no mês selecionado (texto)
   const [copiado, setCopiado] = useState(false);
   const [view, setView] = useState<"mes" | "proj">("mes");
 
@@ -139,10 +145,20 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
       else setErro(error.message);
       setLoading(false); return;
     }
-    setPlanos((data || []) as Plano[]);
-    // detecta se a coluna no_cartao já existe (migração rodada)
-    if (data && data.length) setTemCartaoCol("no_cartao" in (data[0] as object));
-    else { const probe = await sb.from("planos").select("no_cartao").limit(1); setTemCartaoCol(!probe.error); }
+    const todos = (data || []) as Plano[];
+    // separa a linha especial do TOTAL do cartão dos itens comuns
+    const card = todos.find((p) => (p as any).eh_cartao_total) || null;
+    setCartaoPlano(card);
+    setPlanos(card ? todos.filter((p) => p.id !== card.id) : todos);
+    // detecta se as colunas do cartão já existem (migração rodada)
+    if (todos.length) {
+      setTemCartaoCol("no_cartao" in (todos[0] as object));
+      setTemOrcCartao("eh_cartao_total" in (todos[0] as object));
+    } else {
+      const p1 = await sb.from("planos").select("no_cartao").limit(1);
+      const p2 = await sb.from("planos").select("eh_cartao_total").limit(1);
+      setTemCartaoCol(!p1.error); setTemOrcCartao(!p2.error);
+    }
     setLoading(false);
   }, []);
   useEffect(() => { carregar(); }, [carregar]);
@@ -159,6 +175,15 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
     setReais(r);
   }, []);
   useEffect(() => { if (!semTabela) carregarMensal(comp, histMeses); }, [comp, histMeses, semTabela, carregarMensal]);
+
+  // mantém os inputs do total do cartão sincronizados com o que está salvo
+  useEffect(() => {
+    setCartaoOrc(cartaoPlano?.valor ? String(cartaoPlano.valor).replace(".", ",") : "");
+  }, [cartaoPlano]);
+  useEffect(() => {
+    const v = cartaoPlano ? (mensal[comp]?.[cartaoPlano.id]?.valor_real ?? null) : null;
+    setCartaoReal(v != null ? String(v).replace(".", ",") : "");
+  }, [cartaoPlano, mensal, comp]);
 
   // ---------- realizado automático (lançamentos vinculados) ----------
   function matchLink(d: Lancamento, p: Plano) {
@@ -252,6 +277,38 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
     setErro("");
     setPlanos((arr) => arr.map((x) => (x.id === p.id ? { ...x, no_cartao: novo } : x)));
   }
+
+  // ---------- total do cartão (linha especial: orçamento mensal + real por mês) ----------
+  async function garantirCartaoPlano(): Promise<Plano | null> {
+    if (cartaoPlano) return cartaoPlano;
+    const payload = {
+      tipo: "fixo", nome: "Cartão de crédito", categoria: null, valor: 0,
+      mes_inicio: CARTAO_INICIO, mes_fim: null, parcelas: null, ativo: true,
+      no_cartao: false, eh_cartao_total: true,
+    };
+    const { data, error } = await sb.from("planos").insert(payload).select().single();
+    if (error) { setErro(faltaColunaCartao(error.message) ? MSG_MIGRACAO_CARTAO : error.message); if (faltaColunaCartao(error.message)) setTemOrcCartao(false); return null; }
+    const novo = data as Plano; setCartaoPlano(novo); return novo;
+  }
+  async function salvarOrcamentoCartao(valorStr: string) {
+    const v = parseValor(valorStr);
+    if (!v && !cartaoPlano) return; // nada digitado e nada salvo: não cria à toa
+    const p = await garantirCartaoPlano(); if (!p) return;
+    const { error } = await sb.from("planos").update({ valor: v }).eq("id", p.id);
+    if (!error) setCartaoPlano({ ...p, valor: v });
+  }
+  async function salvarRealCartao(valorStr: string) {
+    const v = parseValorN(valorStr);
+    if (v == null && !cartaoPlano) return;
+    const p = await garantirCartaoPlano(); if (!p) return;
+    await upsert(p.id, comp, v, v != null || (mensal[comp]?.[p.id]?.pago ?? false));
+  }
+  async function togglePagoCartao() {
+    const p = await garantirCartaoPlano(); if (!p) return;
+    const cur = mensal[comp]?.[p.id];
+    await upsert(p.id, comp, cur?.valor_real ?? null, !(cur?.pago ?? false));
+  }
+
   function abrirLink(p: Plano) { setLinkEdit(linkEdit === p.id ? null : p.id); setLinkForm({ categoria: p.link_categoria || "", texto: p.link_texto || "" }); }
   async function salvarLink(p: Plano) {
     const { error } = await sb.from("planos").update({ link_categoria: linkForm.categoria || null, link_texto: linkForm.texto.trim() || null }).eq("id", p.id);
@@ -260,14 +317,13 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
 
   // ---------- projeção ----------
   const meses = useMemo(() => horizonte(n), [n]);
-  const proj = useMemo(() => projetar(planos, meses), [planos, meses]);
-  const gastoMedio = proj.length ? proj.reduce((s, m) => s + m.gastos, 0) / proj.length : 0;
+  const proj = useMemo(() => projetar(planos, meses, cartaoPlano), [planos, meses, cartaoPlano]);
+  const gastoMedio = proj.length ? proj.reduce((s, m) => s + m.gerais, 0) / proj.length : 0;
   const saldoMedio = proj.length ? proj.reduce((s, m) => s + m.saldo, 0) / proj.length : 0;
-  const maior = proj.reduce((a, m) => (m.gastos > a.gastos ? m : a), proj[0] || { gastos: 0, label: "—" });
+  const maior = proj.reduce((a, m) => (m.gerais > a.gerais ? m : a), proj[0] || { gerais: 0, label: "—" });
   const comprometidoParc = planos
     .filter((p) => p.ativo && p.tipo === "parcelamento")
     .reduce((s, p) => s + meses.reduce((ss, m) => ss + contribNoMes(p, m.k), 0), 0);
-  const temCartaoMarcado = planos.some((p) => p.ativo && p.no_cartao && !ehReceitaTipo(p.tipo));
 
   // ---------- visão mês: itens relevantes ----------
   const janela = useMemo(() => [...histMeses, comp], [histMeses, comp]);
@@ -278,12 +334,29 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
   const itensMes = useMemo(() => planos.filter(relevante), [planos, janela, mensal, autos]);
   const gastosMes = itensMes.filter((p) => !ehReceitaTipo(p.tipo));
   const receitasMes = itensMes.filter((p) => ehReceitaTipo(p.tipo));
-  const cartaoMes = gastosMes.filter((p) => p.no_cartao);
 
   const somaPrev = (arr: Plano[], c: string) => arr.reduce((s, p) => s + contribNoMes(p, c), 0);
   const somaEfet = (arr: Plano[], c: string) => arr.reduce((s, p) => s + (dados(p, c).efetivo ?? 0), 0);
-  const prevGastos = somaPrev(gastosMes, comp), efetGastos = somaEfet(gastosMes, comp);
+
+  // ---------- consolidação: conta + cartão = gerais (sem contar em dobro) ----------
+  const gastosCartaoFlag = gastosMes.filter((p) => p.no_cartao); // itens marcados (detalhe do cartão)
+  const gastosConta = gastosMes.filter((p) => !p.no_cartao);     // gastos fora do cartão
+  const orcCartao = (c: string) => (cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, c) : 0);
+  const realCartao = (c: string) => (cartaoPlano ? (mensal[c]?.[cartaoPlano.id]?.valor_real ?? null) : null);
+  // total do cartão no mês:
+  //  Previsto = orçamento digitado; sem orçamento, soma dos itens marcados.
+  //  Real     = total digitado da fatura; sem isso, soma realizada dos itens marcados
+  //             (não assume o orçamento como gasto, e mantém o histórico igual ao de antes).
+  const cartaoPrev = (c: string) => { const o = orcCartao(c); return o > 0 ? o : somaPrev(gastosCartaoFlag, c); };
+  const cartaoEfet = (c: string) => { const r = realCartao(c); return r != null ? r : somaEfet(gastosCartaoFlag, c); };
+  const contaPrev = (c: string) => somaPrev(gastosConta, c);
+  const contaEfet = (c: string) => somaEfet(gastosConta, c);
+  const geraisPrev = (c: string) => contaPrev(c) + cartaoPrev(c);
+  const geraisEfet = (c: string) => contaEfet(c) + cartaoEfet(c);
+  const pagoCartao = cartaoPlano ? (mensal[comp]?.[cartaoPlano.id]?.pago ?? false) : false;
+
   const prevRec = somaPrev(receitasMes, comp), efetRec = somaEfet(receitasMes, comp);
+  const prevGer = geraisPrev(comp), efetGer = geraisEfet(comp);
   const preenchidos = gastosMes.filter((p) => dados(p, comp).manual != null).length;
   const conflitos = itensMes.filter((p) => dados(p, comp).conflito).length;
 
@@ -409,10 +482,10 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
       {view === "mes" ? (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
-            <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={BRL(prevGastos)} sub={`${gastosMes.length} itens`} />
-            <Kpi title="Gastos realizados" value={BRL(efetGastos)} sub={`${preenchidos} preenchidos`} color="text-amber" />
-            <Kpi title="Saldo previsto" value={BRL(prevRec - prevGastos)} sub="receita − gastos (plano)" color={prevRec - prevGastos < 0 ? "text-red" : "text-green"} />
-            <Kpi title="Saldo realizado" value={BRL(efetRec - efetGastos)} sub="receita − gastos (real)" color={efetRec - efetGastos < 0 ? "text-red" : "text-green"} />
+            <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={BRL(prevGer)} sub="conta + cartão" />
+            <Kpi title="Gastos realizados" value={BRL(efetGer)} sub={`${preenchidos} preenchidos`} color="text-amber" />
+            <Kpi title="Saldo previsto" value={BRL(prevRec - prevGer)} sub="receita − gastos (plano)" color={prevRec - prevGer < 0 ? "text-red" : "text-green"} />
+            <Kpi title="Saldo realizado" value={BRL(efetRec - efetGer)} sub="receita − gastos (real)" color={efetRec - efetGer < 0 ? "text-red" : "text-green"} />
           </div>
 
           <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
@@ -442,38 +515,71 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
                   {loading && <tr><td colSpan={9} className="!p-4 text-muted">Carregando…</td></tr>}
                 </tbody>
                 <tfoot>
-                  <tr className="font-semibold">
-                    <td className="border-t-2 !border-t-line" colSpan={2}>Saldo do mês</td>
-                    {histMeses.map((c) => { const s = somaEfet(receitasMes, c) - somaEfet(gastosMes, c); return <td key={c} className={`num border-t-2 !border-t-line ${s < 0 ? "text-red" : "text-green"}`}>{fmtCell(s)}</td>; })}
-                    <td className={`num border-t-2 !border-t-line ${prevRec - prevGastos < 0 ? "text-red" : "text-green"}`}>{fmtCell(prevRec - prevGastos)}</td>
-                    <td className={`num border-t-2 !border-t-line ${efetRec - efetGastos < 0 ? "text-red" : "text-green"}`}>{fmtCell(efetRec - efetGastos)}</td>
+                  {/* 🏦 gastos fora do cartão */}
+                  <tr className="text-[12.5px]">
+                    <td className="border-t-2 !border-t-line" colSpan={2}>🏦 Gastos na conta</td>
+                    {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line text-muted">{fmtCell(contaEfet(c))}</td>)}
+                    <td className="num border-t-2 !border-t-line text-muted">{fmtCell(contaPrev(comp))}</td>
+                    <td className="num border-t-2 !border-t-line">{fmtCell(contaEfet(comp))}</td>
                     <td className="border-t-2 !border-t-line" colSpan={2}></td>
                   </tr>
-                  {!!cartaoMes.length && (
-                    <tr className="text-violet text-[12.5px]" title="subtotal dos itens marcados — já contados acima, não soma em dobro">
-                      <td colSpan={2}>💳 No cartão de crédito</td>
-                      {histMeses.map((c) => <td key={c} className="num">{fmtCell(somaEfet(cartaoMes, c))}</td>)}
-                      <td className="num">{fmtCell(somaPrev(cartaoMes, comp))}</td>
-                      <td className="num">{fmtCell(somaEfet(cartaoMes, comp))}</td>
-                      <td colSpan={2}></td>
-                    </tr>
-                  )}
+                  {/* 💳 total no cartão — você digita o orçamento (Previsto) e o real do mês */}
+                  <tr className="text-violet text-[12.5px]" title="total do cartão — os itens marcados 💳 já estão aqui dentro, não somam de novo">
+                    <td colSpan={2}>
+                      💳 Cartão de crédito
+                      {!!gastosCartaoFlag.length && <span className="text-muted font-normal ml-1">· {gastosCartaoFlag.length} marcado(s): {fmtCell(somaPrev(gastosCartaoFlag, comp))}</span>}
+                    </td>
+                    {histMeses.map((c) => <td key={c} className="num">{fmtCell(cartaoEfet(c))}</td>)}
+                    <td className="num">
+                      {temOrcCartao
+                        ? <input className={`${inp} w-[90px] text-right text-violet`} value={cartaoOrc} placeholder="orçar"
+                            title="orçamento do cartão — vale todo mês" onChange={(e) => setCartaoOrc(e.target.value)} onBlur={(e) => salvarOrcamentoCartao(e.target.value)} />
+                        : fmtCell(cartaoPrev(comp))}
+                    </td>
+                    <td className="num">
+                      {temOrcCartao
+                        ? <input className={`${inp} w-[90px] text-right text-violet`} value={cartaoReal} placeholder={fmt(cartaoPrev(comp))}
+                            title="total que veio no cartão neste mês" onChange={(e) => setCartaoReal(e.target.value)} onBlur={(e) => salvarRealCartao(e.target.value)} />
+                        : fmtCell(cartaoEfet(comp))}
+                    </td>
+                    <td className="!text-center">
+                      {temOrcCartao && (
+                        <button onClick={togglePagoCartao} title={pagoCartao ? "Pago" : "Marcar pago"}
+                          className={`w-7 h-7 rounded-[8px] border-2 flex items-center justify-center mx-auto text-[15px] font-bold cursor-pointer transition-colors ${pagoCartao ? "bg-green border-green text-white" : "bg-transparent border-line text-transparent hover:border-green"}`}>✓</button>
+                      )}
+                    </td>
+                    <td></td>
+                  </tr>
+                  {/* Σ total geral consolidado (conta + cartão) */}
+                  <tr className="font-bold">
+                    <td colSpan={2}>Σ Gastos gerais</td>
+                    {histMeses.map((c) => <td key={c} className="num">{fmtCell(geraisEfet(c))}</td>)}
+                    <td className="num">{fmtCell(geraisPrev(comp))}</td>
+                    <td className="num">{fmtCell(geraisEfet(comp))}</td>
+                    <td colSpan={2}></td>
+                  </tr>
+                  {/* saldo do mês = receita − gerais */}
+                  <tr className="font-semibold">
+                    <td colSpan={2}>Saldo do mês</td>
+                    {histMeses.map((c) => { const s = somaEfet(receitasMes, c) - geraisEfet(c); return <td key={c} className={`num ${s < 0 ? "text-red" : "text-green"}`}>{fmtCell(s)}</td>; })}
+                    <td className={`num ${prevRec - prevGer < 0 ? "text-red" : "text-green"}`}>{fmtCell(prevRec - prevGer)}</td>
+                    <td className={`num ${efetRec - efetGer < 0 ? "text-red" : "text-green"}`}>{fmtCell(efetRec - efetGer)}</td>
+                    <td colSpan={2}></td>
+                  </tr>
                 </tfoot>
               </table>
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            <b>Previsto</b> vem da regra de cada item (mensal, parcela ou cota da meta). <b>Real</b> você preenche — ou puxa do <b>lançado</b> (via <b>vincular</b>). O saldo realizado usa o efetivo de cada item.
-            {temCartaoCol
-              ? <> Use o <b className="text-violet">💳</b> para marcar gastos que caem no cartão — a linha <b>no cartão de crédito</b> soma só esses (sem contar em dobro).</>
-              : <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
+            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total que você digita (Previsto = orçamento, Real = a fatura — os itens 💳 já estão dentro dele, não somam de novo) e <b>Σ gerais</b> é tudo junto.
+            {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           </div>
         </>
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
             <Kpi title="Gasto médio / mês" value={BRL(gastoMedio)} sub={`projeção de ${n} meses`} />
-            <Kpi title="Maior mês" value={BRL(maior.gastos)} sub={maior.label} color="text-amber" />
+            <Kpi title="Maior mês" value={BRL(maior.gerais)} sub={maior.label} color="text-amber" />
             <Kpi title="Em parcelas (período)" value={BRL(comprometidoParc)} sub="parcelamentos no horizonte" color="text-violet" />
             <Kpi title="Saldo médio / mês" value={BRL(saldoMedio)} sub={saldoMedio < 0 ? "no vermelho" : "sobra prevista"} color={saldoMedio < 0 ? "text-red" : "text-green"} />
           </div>
@@ -521,20 +627,26 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
                   {!loading && !planos.length && <tr><td colSpan={colCount} className="!p-4 text-muted">Nenhum item ainda. Adicione abaixo.</td></tr>}
                   {loading && <tr><td colSpan={colCount} className="!p-4 text-muted">Carregando…</td></tr>}
                 </tbody>
-                {!!planos.length && (
+                {(!!planos.length || cartaoPlano) && (
                   <tfoot>
-                    <tr className="font-semibold">
-                      <td className="border-t-2 !border-t-line">Gastos planejados</td>
-                      {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gastos)}</td>)}
+                    {/* 🏦 gastos fora do cartão */}
+                    <tr className="text-[12.5px]">
+                      <td className="border-t-2 !border-t-line">🏦 Gastos na conta</td>
+                      {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line text-muted ${i === 0 ? "!text-accent" : ""}`}>{m.conta ? fmtCell(m.conta) : <span className="text-line">·</span>}</td>)}
                       <td className="border-t-2 !border-t-line"></td>
                     </tr>
-                    {temCartaoMarcado && (
-                      <tr className="text-violet text-[12.5px]" title="subtotal dos itens marcados — já incluídos em Gastos planejados, não soma em dobro">
-                        <td className="pl-6">↳ 💳 no cartão de crédito</td>
-                        {proj.map((m) => <td key={m.k} className="num">{m.cartao ? fmtCell(m.cartao) : <span className="text-line">·</span>}</td>)}
-                        <td></td>
-                      </tr>
-                    )}
+                    {/* 💳 total no cartão (orçamento, senão soma dos itens marcados) */}
+                    <tr className="text-violet text-[12.5px]" title="total do cartão: orçamento definido, senão soma dos itens marcados 💳">
+                      <td>💳 Cartão de crédito</td>
+                      {proj.map((m) => <td key={m.k} className="num">{m.cartao ? fmtCell(m.cartao) : <span className="text-line">·</span>}</td>)}
+                      <td></td>
+                    </tr>
+                    {/* Σ total geral consolidado */}
+                    <tr className="font-bold">
+                      <td>Σ Gastos gerais</td>
+                      {proj.map((m, i) => <td key={m.k} className={`num ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gerais)}</td>)}
+                      <td></td>
+                    </tr>
                     <tr className="text-green"><td>Receita prevista</td>{proj.map((m) => <td key={m.k} className="num">{m.receita ? fmtCell(m.receita) : <span className="text-line">·</span>}</td>)}<td></td></tr>
                     <tr className="font-bold"><td>Saldo previsto</td>{proj.map((m) => <td key={m.k} className={`num ${m.saldo < 0 ? "text-red" : "text-green"}`}>{fmtCell(m.saldo)}</td>)}<td></td></tr>
                   </tfoot>
@@ -543,10 +655,8 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            Valores em reais (sem centavos) para caber; a primeira coluna é o mês atual.
-            {temCartaoCol
-              ? <> Marque um gasto com <b className="text-violet">💳</b> e ele entra na linha <b>no cartão de crédito</b> — um subtotal dos <b>Gastos planejados</b> (não soma em dobro).</>
-              : <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
+            Valores em reais (sem centavos); a primeira coluna é o mês atual. O rodapé separa <b>🏦 conta</b>, <b className="text-violet">💳 cartão</b> e <b>Σ gerais</b>. Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
+            {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           </div>
         </>
       )}
