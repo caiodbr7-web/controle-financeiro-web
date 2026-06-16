@@ -208,6 +208,22 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
     return out;
   }, [planos, allDados, comp, histMeses]);
 
+  // ---------- total REAL do cartão (lançamentos com origem "Cartao...") por mês ----------
+  // O que de fato caiu no cartão em cada mês: soma dos gastos importados cuja origem
+  // começa com "Cartao" (mesmo critério das outras telas, ver mvOrigemOk em finance.ts).
+  const autosCartao = useMemo(() => {
+    const todos = [...histMeses, comp];
+    const out: Record<string, number | null> = {};
+    todos.forEach((c) => {
+      let sum = 0, cnt = 0;
+      allDados.forEach((d) => {
+        if (String(d.competencia).slice(0, 7) === c && ehGasto(d.classe) && String(d.origem || "").startsWith("Cartao")) { sum += Math.abs(d.valor); cnt++; }
+      });
+      out[c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
+    });
+    return out;
+  }, [allDados, comp, histMeses]);
+
   // previsto/realizado efetivo de um item num mês
   function dados(p: Plano, c: string) {
     const previsto = contribNoMes(p, c);
@@ -308,6 +324,12 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
     const cur = mensal[comp]?.[p.id];
     await upsert(p.id, comp, cur?.valor_real ?? null, !(cur?.pago ?? false));
   }
+  // grava o total real do cartão lançado (origem cartão) como valor do mês
+  async function usarCartaoLancado(v: number) {
+    const p = await garantirCartaoPlano(); if (!p) return;
+    await upsert(p.id, comp, v, true);
+    setCartaoReal(String(v).replace(".", ","));
+  }
 
   function abrirLink(p: Plano) { setLinkEdit(linkEdit === p.id ? null : p.id); setLinkForm({ categoria: p.link_categoria || "", texto: p.link_texto || "" }); }
   async function salvarLink(p: Plano) {
@@ -345,10 +367,15 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
   const realCartao = (c: string) => (cartaoPlano ? (mensal[c]?.[cartaoPlano.id]?.valor_real ?? null) : null);
   // total do cartão no mês:
   //  Previsto = orçamento digitado; sem orçamento, soma dos itens marcados.
-  //  Real     = total digitado da fatura; sem isso, soma realizada dos itens marcados
-  //             (não assume o orçamento como gasto, e mantém o histórico igual ao de antes).
+  //  Real     = o que REALMENTE caiu no cartão: valor digitado da fatura; sem isso, o total
+  //             dos lançamentos de cartão importados (autosCartao); sem dados, a soma dos
+  //             itens marcados. Assim os meses passados batem com o gasto real do cartão.
   const cartaoPrev = (c: string) => { const o = orcCartao(c); return o > 0 ? o : somaPrev(gastosCartaoFlag, c); };
-  const cartaoEfet = (c: string) => { const r = realCartao(c); return r != null ? r : somaEfet(gastosCartaoFlag, c); };
+  const cartaoEfet = (c: string) => {
+    const r = realCartao(c); if (r != null) return r;
+    const a = autosCartao[c]; if (a != null) return a;
+    const o = orcCartao(c); return o > 0 ? o : somaEfet(gastosCartaoFlag, c);
+  };
   const contaPrev = (c: string) => somaPrev(gastosConta, c);
   const contaEfet = (c: string) => somaEfet(gastosConta, c);
   const geraisPrev = (c: string) => contaPrev(c) + cartaoPrev(c);
@@ -537,10 +564,19 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
                         : fmtCell(cartaoPrev(comp))}
                     </td>
                     <td className="num">
-                      {temOrcCartao
-                        ? <input className={`${inp} w-[90px] text-right text-violet`} value={cartaoReal} placeholder={fmt(cartaoPrev(comp))}
-                            title="total que veio no cartão neste mês" onChange={(e) => setCartaoReal(e.target.value)} onBlur={(e) => salvarRealCartao(e.target.value)} />
-                        : fmtCell(cartaoEfet(comp))}
+                      {temOrcCartao ? (
+                        <>
+                          <input className={`${inp} w-[90px] text-right text-violet`} value={cartaoReal}
+                            placeholder={autosCartao[comp] != null ? fmt(autosCartao[comp]) : fmt(cartaoPrev(comp))}
+                            title="total que veio no cartão neste mês (deixe em branco para usar o lançado)" onChange={(e) => setCartaoReal(e.target.value)} onBlur={(e) => salvarRealCartao(e.target.value)} />
+                          {autosCartao[comp] != null && realCartao(comp) == null && (
+                            <div className="text-[11px] mt-1 flex items-center gap-1 justify-end text-muted font-normal">
+                              lançado {fmt(autosCartao[comp])}
+                              <button onClick={() => usarCartaoLancado(autosCartao[comp] as number)} className="bg-transparent border-0 p-0 cursor-pointer underline text-accent">usar</button>
+                            </div>
+                          )}
+                        </>
+                      ) : fmtCell(cartaoEfet(comp))}
                     </td>
                     <td className="!text-center">
                       {temOrcCartao && (
@@ -571,7 +607,7 @@ export function Planejamento({ allDados }: { allDados: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total que você digita (Previsto = orçamento, Real = a fatura — os itens 💳 já estão dentro dele, não somam de novo) e <b>Σ gerais</b> é tudo junto.
+            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Os itens 💳 já estão dentro do cartão, não somam de novo.
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           </div>
         </>
