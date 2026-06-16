@@ -118,6 +118,27 @@ https://caiodbr7-web.github.io/controle-financeiro-web/
 > Dica: depois, em *Site configuration → Domain*, dá para apontar o site
 > `legendary-bubblegum-6dc676` (ou criar um novo) para este repositório.
 
+## Separar dados por login (multiusuário)
+
+Cada login enxerga **apenas os próprios dados** — orçamento, planejamento,
+lançamentos e regras — graças ao *Row Level Security* (RLS) do Supabase. O app
+não mistura usuários: confia 100% no RLS para filtrar.
+
+Se duas contas (e-mails diferentes) estiverem **vendo os dados uma da outra**, é
+sinal de que no banco o RLS está desligado em alguma tabela ou sobrou uma
+política permissiva (ex.: *"Enable read access for all users"* criada no painel).
+Para garantir o isolamento, rode uma única vez em **Supabase → SQL Editor → New
+query → Run**:
+
+```
+db/migrations/2026-06-16-separar-orcamento-planejamento.sql
+```
+
+Ele é idempotente (pode rodar de novo), **não apaga dados** e atribui os
+registros sem dono ao titular (ajuste o e-mail no topo do arquivo se preciso).
+No fim do arquivo há 3 `SELECT`s comentados para **conferir** que o RLS ficou
+ligado e que cada linha pertence ao usuário certo.
+
 ## Observações
 
 - A *publishable key* no `lib/supabase.ts` é pública de propósito; o RLS do
