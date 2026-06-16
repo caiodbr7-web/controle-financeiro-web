@@ -365,6 +365,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   // ---------- consolidação: conta + cartão = gerais (sem contar em dobro) ----------
   const gastosCartaoFlag = gastosMes.filter((p) => p.no_cartao); // itens marcados (detalhe do cartão)
   const gastosConta = gastosMes.filter((p) => !p.no_cartao);     // gastos fora do cartão
+  const gastosRecorrentes = gastosMes.filter((p) => p.tipo === "fixo"); // fixos mensais (recorrentes)
   const orcCartao = (c: string) => (cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, c) : 0);
   const realCartao = (c: string) => (cartaoPlano ? (mensal[c]?.[cartaoPlano.id]?.valor_real ?? null) : null);
   // total do cartão no mês:
@@ -594,6 +595,14 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                     {histMeses.map((c) => <td key={c} className="num">{fmtCell(geraisEfet(c))}</td>)}
                     <td className="num">{fmtCell(geraisPrev(comp))}</td>
                     <td className="num">{fmtCell(geraisEfet(comp))}</td>
+                    <td colSpan={2}></td>
+                  </tr>
+                  {/* 🔁 recorrentes: fixos mensais — recorte por recorrência (informativo) */}
+                  <tr className="text-[12.5px]" title="gastos fixos que se repetem todo mês — não inclui parcelas, metas nem pagamentos únicos">
+                    <td colSpan={2}>🔁 Gastos recorrentes <span className="text-muted font-normal">· fixos mensais</span></td>
+                    {histMeses.map((c) => <td key={c} className="num text-muted">{fmtCell(somaEfet(gastosRecorrentes, c))}</td>)}
+                    <td className="num text-muted">{fmtCell(somaPrev(gastosRecorrentes, comp))}</td>
+                    <td className="num text-muted">{fmtCell(somaEfet(gastosRecorrentes, comp))}</td>
                     <td colSpan={2}></td>
                   </tr>
                   {/* saldo do mês = receita − gerais */}
