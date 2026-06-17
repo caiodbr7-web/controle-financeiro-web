@@ -226,7 +226,21 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     return out;
   }, [lancamentos, comp, histMeses]);
 
-  // previsto/realizado efetivo de um item num mês
+  // ---------- total REAL da conta (lançamentos com origem "Conta...") por mês ----------
+  // O que de fato saiu da conta (Pix, débito, transferências) em cada mês.
+  const autosConta = useMemo(() => {
+    const todos = [...histMeses, comp];
+    const out: Record<string, number | null> = {};
+    todos.forEach((c) => {
+      let sum = 0, cnt = 0;
+      lancamentos.forEach((d) => {
+        if (String(d.competencia).slice(0, 7) === c && ehGasto(d.classe) && String(d.origem || "").startsWith("Conta")) { sum += Math.abs(d.valor); cnt++; }
+      });
+      out[c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
+    });
+    return out;
+  }, [lancamentos, comp, histMeses]);
+
   function dados(p: Plano, c: string) {
     const previsto = contribNoMes(p, c);
     const manual = mensal[c]?.[p.id]?.valor_real ?? null;
@@ -362,28 +376,41 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const somaPrev = (arr: Plano[], c: string) => arr.reduce((s, p) => s + contribNoMes(p, c), 0);
   const somaEfet = (arr: Plano[], c: string) => arr.reduce((s, p) => s + (dados(p, c).efetivo ?? 0), 0);
 
-  // ---------- consolidação: conta + cartão = gerais (sem contar em dobro) ----------
-  const gastosCartaoFlag = gastosMes.filter((p) => p.no_cartao); // itens marcados (detalhe do cartão)
-  const gastosConta = gastosMes.filter((p) => !p.no_cartao);     // gastos fora do cartão
-  const gastosRecorrentes = gastosMes.filter((p) => p.tipo === "fixo"); // fixos mensais (recorrentes)
+  // ---------- consolidação em 3 baldes que NÃO se sobrepõem (nada conta em dobro) ----------
+  //  1) recorrentes  — itens fixos, qualquer forma de pagamento
+  //  2) conta variável — o que saiu da conta (Pix/débito) ALÉM dos recorrentes
+  //  3) cartão variável — o que caiu no cartão ALÉM dos recorrentes marcados
+  const gastosRecorrentes = gastosMes.filter((p) => p.tipo === "fixo");        // fixos mensais
+  const recorrNaConta = gastosRecorrentes.filter((p) => !p.no_cartao);          // recorrentes pagos na conta
+  const recorrNoCartao = gastosRecorrentes.filter((p) => p.no_cartao);          // recorrentes pagos no cartão
+  const gastosCartaoFlag = gastosMes.filter((p) => p.no_cartao);                // marcados como cartão
   const orcCartao = (c: string) => (cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, c) : 0);
   const realCartao = (c: string) => (cartaoPlano ? (mensal[c]?.[cartaoPlano.id]?.valor_real ?? null) : null);
-  // total do cartão no mês:
-  //  Previsto = orçamento digitado; sem orçamento, soma dos itens marcados.
-  //  Real     = o que REALMENTE caiu no cartão: valor digitado da fatura; sem isso, o total
-  //             dos lançamentos de cartão importados (autosCartao); sem dados, a soma dos
-  //             itens marcados. Assim os meses passados batem com o gasto real do cartão.
-  const cartaoPrev = (c: string) => { const o = orcCartao(c); return o > 0 ? o : somaPrev(gastosCartaoFlag, c); };
-  const cartaoEfet = (c: string) => {
+
+  // 1) recorrentes (fixos), independentemente da forma de pagamento
+  const recorrPrev = (c: string) => somaPrev(gastosRecorrentes, c);
+  const recorrEfet = (c: string) => somaEfet(gastosRecorrentes, c);
+
+  // total REAL do cartão no mês: fatura digitada → lançado importado → soma dos marcados
+  const cartaoTotalEfet = (c: string) => {
     const r = realCartao(c); if (r != null) return r;
     const a = autosCartao[c]; if (a != null) return a;
     const o = orcCartao(c); return o > 0 ? o : somaEfet(gastosCartaoFlag, c);
   };
-  const contaPrev = (c: string) => somaPrev(gastosConta, c);
-  const contaEfet = (c: string) => somaEfet(gastosConta, c);
-  const geraisPrev = (c: string) => contaPrev(c) + cartaoPrev(c);
-  const geraisEfet = (c: string) => contaEfet(c) + cartaoEfet(c);
-  const pagoCartao = cartaoPlano ? (mensal[comp]?.[cartaoPlano.id]?.pago ?? false) : false;
+
+  // 2) conta variável = total real da conta (lançamentos origem Conta) − recorrentes pagos na conta
+  const contaVarPrev = (_c: string): number | null => null; // não há orçamento p/ variável de conta
+  const contaVarEfet = (c: string): number | null => {
+    const a = autosConta[c];
+    return a == null ? null : Math.max(0, a - somaEfet(recorrNaConta, c));
+  };
+  // 3) cartão variável = total do cartão − recorrentes já marcados como cartão
+  const cartaoVarPrev = (c: string): number | null => { const o = orcCartao(c); return o > 0 ? Math.max(0, o - somaPrev(recorrNoCartao, c)) : null; };
+  const cartaoVarEfet = (c: string) => Math.max(0, cartaoTotalEfet(c) - somaEfet(recorrNoCartao, c));
+
+  // total geral consolidado (recorrentes + variável conta + variável cartão)
+  const geraisPrev = (c: string) => recorrPrev(c) + (contaVarPrev(c) ?? 0) + (cartaoVarPrev(c) ?? 0);
+  const geraisEfet = (c: string) => recorrEfet(c) + (contaVarEfet(c) ?? 0) + cartaoVarEfet(c);
 
   const prevRec = somaPrev(receitasMes, comp), efetRec = somaEfet(receitasMes, comp);
   const prevGer = geraisPrev(comp), efetGer = geraisEfet(comp);
@@ -512,8 +539,8 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       {view === "mes" ? (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
-            <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={BRL(prevGer)} sub="conta + cartão" />
-            <Kpi title="Gastos realizados" value={BRL(efetGer)} sub={`${preenchidos} preenchidos`} color="text-amber" />
+            <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={BRL(prevGer)} sub="recorrentes (plano)" />
+            <Kpi title="Gastos realizados" value={BRL(efetGer)} sub="recorrente + conta + cartão" color="text-amber" />
             <Kpi title="Saldo previsto" value={BRL(prevRec - prevGer)} sub="receita − gastos (plano)" color={prevRec - prevGer < 0 ? "text-red" : "text-green"} />
             <Kpi title="Saldo realizado" value={BRL(efetRec - efetGer)} sub="receita − gastos (real)" color={efetRec - efetGer < 0 ? "text-red" : "text-green"} />
           </div>
@@ -537,83 +564,71 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   </tr>
                 </thead>
                 <tbody>
+                  {/* GASTOS — itens recorrentes (fixos) listados */}
                   {!!gastosMes.length && <tr className="bg-card2"><td colSpan={9} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">Gastos</td></tr>}
                   {gastosMes.map(LinhaMes)}
-                  {!!receitasMes.length && <tr className="bg-card2"><td colSpan={9} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">Receitas</td></tr>}
+
+                  {!loading && !!itensMes.length && (
+                    <Fragment key="resumo-gastos">
+                      {/* 🔁 soma dos recorrentes (logo após os itens) */}
+                      <tr className="font-bold">
+                        <td className="border-t-2 !border-t-line" colSpan={2}>🔁 Gastos recorrentes <span className="text-muted font-normal">· fixos mensais</span></td>
+                        {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line">{fmtCell(recorrEfet(c))}</td>)}
+                        <td className="num border-t-2 !border-t-line">{fmtCell(recorrPrev(comp))}</td>
+                        <td className="num border-t-2 !border-t-line">{fmtCell(recorrEfet(comp))}</td>
+                        <td className="border-t-2 !border-t-line" colSpan={2}></td>
+                      </tr>
+                      {/* 🏦 conta variável (Pix/débito), fora os recorrentes */}
+                      <tr className="text-[12.5px]" title="o que saiu da conta (Pix/débito) além dos recorrentes — vem dos lançamentos importados (origem Conta)">
+                        <td colSpan={2}>🏦 Gastos na conta <span className="text-muted font-normal">· fora os recorrentes</span></td>
+                        {histMeses.map((c) => { const v = contaVarEfet(c); return <td key={c} className="num text-muted">{v == null ? "—" : fmtCell(v)}</td>; })}
+                        <td className="num text-muted">{contaVarPrev(comp) == null ? "—" : fmtCell(contaVarPrev(comp) as number)}</td>
+                        <td className="num text-muted">{(() => { const v = contaVarEfet(comp); return v == null ? "—" : fmtCell(v); })()}</td>
+                        <td colSpan={2}></td>
+                      </tr>
+                      {/* 💳 cartão variável, fora os recorrentes marcados */}
+                      <tr className="text-violet text-[12.5px]" title="o que caiu no cartão além dos recorrentes marcados — vem dos lançamentos importados (origem Cartao)">
+                        <td colSpan={2}>💳 Gastos no cartão <span className="text-muted font-normal">· fora os recorrentes</span></td>
+                        {histMeses.map((c) => <td key={c} className="num">{fmtCell(cartaoVarEfet(c))}</td>)}
+                        <td className="num">{cartaoVarPrev(comp) == null ? "—" : fmtCell(cartaoVarPrev(comp) as number)}</td>
+                        <td className="num">{fmtCell(cartaoVarEfet(comp))}</td>
+                        <td colSpan={2}></td>
+                      </tr>
+                      {/* Σ total geral consolidado */}
+                      <tr className="font-bold">
+                        <td colSpan={2}>Σ Gastos gerais</td>
+                        {histMeses.map((c) => <td key={c} className="num">{fmtCell(geraisEfet(c))}</td>)}
+                        <td className="num">{fmtCell(geraisPrev(comp))}</td>
+                        <td className="num">{fmtCell(geraisEfet(comp))}</td>
+                        <td colSpan={2}></td>
+                      </tr>
+                      {/* Saldo do mês = receita − gerais */}
+                      <tr className="font-bold">
+                        <td className="border-t-2 !border-t-line" colSpan={2}>Saldo do mês</td>
+                        {histMeses.map((c) => { const s = somaEfet(receitasMes, c) - geraisEfet(c); return <td key={c} className={`num border-t-2 !border-t-line ${s < 0 ? "text-red" : "text-green"}`}>{fmtCell(s)}</td>; })}
+                        <td className={`num border-t-2 !border-t-line ${prevRec - prevGer < 0 ? "text-red" : "text-green"}`}>{fmtCell(prevRec - prevGer)}</td>
+                        <td className={`num border-t-2 !border-t-line ${efetRec - efetGer < 0 ? "text-red" : "text-green"}`}>{fmtCell(efetRec - efetGer)}</td>
+                        <td className="border-t-2 !border-t-line" colSpan={2}></td>
+                      </tr>
+                    </Fragment>
+                  )}
+
+                  {/* RECEITAS — abaixo do saldo */}
+                  {!!receitasMes.length && <tr className="bg-card2"><td colSpan={9} className="!pt-[14px] !pb-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">Receitas</td></tr>}
                   {receitasMes.map(LinhaMes)}
+                  {!!receitasMes.length && (
+                    <tr className="font-bold text-green">
+                      <td colSpan={2}>Σ Receitas</td>
+                      {histMeses.map((c) => <td key={c} className="num">{fmtCell(somaEfet(receitasMes, c))}</td>)}
+                      <td className="num">{fmtCell(somaPrev(receitasMes, comp))}</td>
+                      <td className="num">{fmtCell(somaEfet(receitasMes, comp))}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  )}
+
                   {!loading && !itensMes.length && <tr><td colSpan={9} className="!p-4 text-muted">Nenhum item ativo neste mês. Adicione abaixo.</td></tr>}
                   {loading && <tr><td colSpan={9} className="!p-4 text-muted">Carregando…</td></tr>}
                 </tbody>
-                <tfoot>
-                  {/* Σ total geral consolidado (conta + cartão) — total no topo */}
-                  <tr className="font-bold">
-                    <td className="border-t-2 !border-t-line" colSpan={2}>Σ Gastos gerais</td>
-                    {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line">{fmtCell(geraisEfet(c))}</td>)}
-                    <td className="num border-t-2 !border-t-line">{fmtCell(geraisPrev(comp))}</td>
-                    <td className="num border-t-2 !border-t-line">{fmtCell(geraisEfet(comp))}</td>
-                    <td className="border-t-2 !border-t-line" colSpan={2}></td>
-                  </tr>
-                  {/* 🏦 gastos fora do cartão */}
-                  <tr className="text-[12.5px]">
-                    <td colSpan={2}>🏦 Gastos na conta</td>
-                    {histMeses.map((c) => <td key={c} className="num text-muted">{fmtCell(contaEfet(c))}</td>)}
-                    <td className="num text-muted">{fmtCell(contaPrev(comp))}</td>
-                    <td className="num text-muted">{fmtCell(contaEfet(comp))}</td>
-                    <td colSpan={2}></td>
-                  </tr>
-                  {/* 💳 total no cartão — você digita o orçamento (Previsto) e o real do mês */}
-                  <tr className="text-violet text-[12.5px]" title="total do cartão — os itens marcados 💳 já estão aqui dentro, não somam de novo">
-                    <td colSpan={2}>
-                      💳 Cartão de crédito
-                      {!!gastosCartaoFlag.length && <span className="text-muted font-normal ml-1">· {gastosCartaoFlag.length} marcado(s): {fmtCell(somaPrev(gastosCartaoFlag, comp))}</span>}
-                    </td>
-                    {histMeses.map((c) => <td key={c} className="num">{fmtCell(cartaoEfet(c))}</td>)}
-                    <td className="num">
-                      {temOrcCartao
-                        ? <input className={`${inp} w-[90px] text-right text-violet`} value={cartaoOrc} placeholder="orçar"
-                            title="orçamento do cartão — vale todo mês" onChange={(e) => setCartaoOrc(e.target.value)} onBlur={(e) => salvarOrcamentoCartao(e.target.value)} />
-                        : fmtCell(cartaoPrev(comp))}
-                    </td>
-                    <td className="num">
-                      {temOrcCartao ? (
-                        <>
-                          <input className={`${inp} w-[90px] text-right text-violet`} value={cartaoReal}
-                            placeholder={autosCartao[comp] != null ? fmt(autosCartao[comp]) : fmt(cartaoPrev(comp))}
-                            title="total que veio no cartão neste mês (deixe em branco para usar o lançado)" onChange={(e) => setCartaoReal(e.target.value)} onBlur={(e) => salvarRealCartao(e.target.value)} />
-                          {autosCartao[comp] != null && realCartao(comp) == null && (
-                            <div className="text-[11px] mt-1 flex items-center gap-1 justify-end text-muted font-normal">
-                              lançado {fmt(autosCartao[comp])}
-                              <button onClick={() => usarCartaoLancado(autosCartao[comp] as number)} className="bg-transparent border-0 p-0 cursor-pointer underline text-accent">usar</button>
-                            </div>
-                          )}
-                        </>
-                      ) : fmtCell(cartaoEfet(comp))}
-                    </td>
-                    <td className="!text-center">
-                      {temOrcCartao && (
-                        <button onClick={togglePagoCartao} title={pagoCartao ? "Pago" : "Marcar pago"}
-                          className={`w-7 h-7 rounded-[8px] border-2 flex items-center justify-center mx-auto text-[15px] font-bold cursor-pointer transition-colors ${pagoCartao ? "bg-green border-green text-white" : "bg-transparent border-line text-transparent hover:border-green"}`}>✓</button>
-                      )}
-                    </td>
-                    <td></td>
-                  </tr>
-                  {/* 🔁 recorrentes: fixos mensais — recorte por recorrência (informativo) */}
-                  <tr className="text-[12.5px]" title="gastos fixos que se repetem todo mês — não inclui parcelas, metas nem pagamentos únicos">
-                    <td colSpan={2}>🔁 Gastos recorrentes <span className="text-muted font-normal">· fixos mensais</span></td>
-                    {histMeses.map((c) => <td key={c} className="num text-muted">{fmtCell(somaEfet(gastosRecorrentes, c))}</td>)}
-                    <td className="num text-muted">{fmtCell(somaPrev(gastosRecorrentes, comp))}</td>
-                    <td className="num text-muted">{fmtCell(somaEfet(gastosRecorrentes, comp))}</td>
-                    <td colSpan={2}></td>
-                  </tr>
-                  {/* saldo do mês = receita − gerais */}
-                  <tr className="font-semibold">
-                    <td colSpan={2}>Saldo do mês</td>
-                    {histMeses.map((c) => { const s = somaEfet(receitasMes, c) - geraisEfet(c); return <td key={c} className={`num ${s < 0 ? "text-red" : "text-green"}`}>{fmtCell(s)}</td>; })}
-                    <td className={`num ${prevRec - prevGer < 0 ? "text-red" : "text-green"}`}>{fmtCell(prevRec - prevGer)}</td>
-                    <td className={`num ${efetRec - efetGer < 0 ? "text-red" : "text-green"}`}>{fmtCell(efetRec - efetGer)}</td>
-                    <td colSpan={2}></td>
-                  </tr>
-                </tfoot>
               </table>
             </div>
           </div>
