@@ -1,0 +1,160 @@
+import { useCallback, useEffect, useState } from "react";
+import { PluggyConnect } from "react-pluggy-connect";
+import { Panel } from "../ui";
+import {
+  getConnectToken,
+  syncItem,
+  listItems,
+  type PluggyItemRow,
+  type SyncResult,
+} from "../../lib/pluggy";
+
+/* Aba "Conectar": conecta bancos via Open Finance (Pluggy) e importa as
+   transacoes direto para a tabela `lancamentos`. Modo hibrido com PDFs:
+   a "data de corte" evita contar a mesma transacao duas vezes. */
+export function Conectar({ reload }: { reload: () => void }) {
+  const hoje = new Date();
+  const inicioMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-01`;
+
+  const [corte, setCorte] = useState(inicioMes);
+  const [token, setToken] = useState<string | null>(null);
+  const [itens, setItens] = useState<PluggyItemRow[]>([]);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const carregar = useCallback(async () => {
+    try {
+      setItens(await listItems());
+    } catch (e) {
+      setMsg("Erro ao listar conexoes: " + (e as Error).message);
+    }
+  }, []);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  // abre o widget pedindo um connect token ao backend
+  const conectar = useCallback(async (itemId?: string) => {
+    setMsg("");
+    setBusy(true);
+    try {
+      setToken(await getConnectToken(itemId));
+    } catch (e) {
+      setMsg("Erro ao iniciar conexao: " + (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  // sincroniza um item ja conectado
+  const sincronizar = useCallback(async (itemId: string) => {
+    setMsg("Sincronizando…");
+    setBusy(true);
+    try {
+      const r: SyncResult = await syncItem(itemId, corte);
+      setMsg(`✓ ${r.inseridos} lançamentos importados (${r.contas} conta(s), a partir de ${r.from}).`);
+      await carregar();
+      reload();
+    } catch (e) {
+      setMsg("Erro na sincronização: " + (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [corte, carregar, reload]);
+
+  // callback de sucesso do widget: pega o itemId e ja sincroniza
+  const onSuccess = useCallback(async (data: { item: { id: string } }) => {
+    setToken(null);
+    const itemId = data?.item?.id;
+    if (itemId) await sincronizar(itemId);
+  }, [sincronizar]);
+
+  return (
+    <div>
+      <Panel
+        title="Conectar banco (Open Finance)"
+        sub="via Pluggy"
+      >
+        <p className="text-[13.5px] text-muted leading-relaxed mb-4">
+          Conecte suas contas e cartões pelo Open Finance para importar as transações
+          automaticamente, sem precisar baixar PDFs. A conexão é feita no ambiente
+          seguro do Pluggy — o app nunca vê sua senha do banco.
+        </p>
+
+        <div className="flex flex-wrap items-end gap-3 mb-2">
+          <label className="text-[13px] text-muted">
+            Importar a partir de
+            <input
+              type="date"
+              value={corte}
+              onChange={(e) => setCorte(e.target.value)}
+              className="block mt-1 bg-card text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13.5px] outline-none focus:border-muted"
+            />
+          </label>
+          <button
+            onClick={() => conectar()}
+            disabled={busy}
+            className="bg-accent text-white border-0 rounded-[10px] px-4 py-[10px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
+          >
+            + Conectar banco
+          </button>
+        </div>
+        <p className="text-[12px] text-muted leading-relaxed">
+          Dica (modo híbrido com PDFs): use como data de corte o dia seguinte ao
+          último extrato/fatura que você já importou por PDF, para não duplicar
+          lançamentos.
+        </p>
+
+        {msg && <div className="mt-4 text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2">{msg}</div>}
+      </Panel>
+
+      {itens.length > 0 && (
+        <Panel title="Bancos conectados">
+          <div className="flex flex-col gap-2">
+            {itens.map((it) => (
+              <div
+                key={it.item_id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-line rounded-[12px] px-3 py-[10px]"
+              >
+                <span className="text-[14px] font-semibold">{it.connector_name || "Banco"}</span>
+                <span className={`text-[12px] ${it.status === "UPDATED" ? "text-green" : "text-amber"}`}>
+                  {it.status || "—"}
+                </span>
+                {it.last_synced_at && (
+                  <span className="text-[12px] text-muted">
+                    última sync: {new Date(it.last_synced_at).toLocaleString("pt-BR")}
+                    {it.last_result?.transacoes != null && ` · ${it.last_result.transacoes} transações`}
+                  </span>
+                )}
+                <div className="ml-auto flex gap-2">
+                  <button
+                    onClick={() => sincronizar(it.item_id)}
+                    disabled={busy}
+                    className="bg-fill text-txt border border-line rounded-[9px] px-3 py-[7px] text-[12.5px] font-medium cursor-pointer disabled:opacity-50 hover:border-muted transition-colors"
+                  >
+                    Sincronizar
+                  </button>
+                  <button
+                    onClick={() => conectar(it.item_id)}
+                    disabled={busy}
+                    className="bg-transparent text-muted border border-line rounded-[9px] px-3 py-[7px] text-[12.5px] font-medium cursor-pointer disabled:opacity-50 hover:text-txt transition-colors"
+                  >
+                    Reconectar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {token && (
+        <PluggyConnect
+          connectToken={token}
+          onSuccess={onSuccess}
+          onError={() => { setToken(null); setMsg("Conexão cancelada ou com erro."); }}
+          onClose={() => setToken(null)}
+        />
+      )}
+    </div>
+  );
+}

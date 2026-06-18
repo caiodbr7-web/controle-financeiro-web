@@ -89,6 +89,12 @@ export function dvGasto(d: Lancamento): number {
   return 0;
 }
 
+// mês pela DATA REAL do movimento ("YYYY-MM"); cai no mês de competência quando não há data válida
+export function mesReal(d: Lancamento): string {
+  const r = dvDataReal(d);
+  return r ? r.k : String(d.competencia).slice(0, 7);
+}
+
 export function mvOrigemOk(origem: string, modo: Modo): boolean {
   const o = String(origem || "");
   if (modo === "cartao") return o.startsWith("Cartao");

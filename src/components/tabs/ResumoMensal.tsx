@@ -3,9 +3,12 @@ import { ResponsiveContainer, BarChart, Bar, PieChart, Pie, XAxis, YAxis, Cartes
 import type { Lancamento } from "../../types";
 import { Panel, Kpi, Select, Toolbar } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
-import { BRL, brlShort, mesCurto, monthAgg, ehGasto, ehReceita, catKey, corChave, corCategoria, deltaTxt } from "../../lib/finance";
+import {
+  BRL, brlShort, ehGasto, ehReceita, ehTransfer, catKey, corChave, corCategoria,
+  deltaTxt, dvLabel, dvParcialLimite, mesReal,
+} from "../../lib/finance";
 
-interface Props { dados: Lancamento[]; months: string[]; openModal: (t: string, r: Lancamento[]) => void; }
+interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[]; openModal: (t: string, r: Lancamento[]) => void; }
 
 // rótulo de % dentro do segmento — só mostra se o pedaço for grande o bastante
 function PctLabel(props: any) {
@@ -14,18 +17,48 @@ function PctLabel(props: any) {
   return <text x={x + width / 2} y={y + height / 2} fill="#fff" fontSize={10} fontWeight={600} textAnchor="middle" dominantBaseline="central">{Math.round(value)}%</text>;
 }
 
-export function ResumoMensal({ dados, months, openModal }: Props) {
+/* Toda esta aba agrupa pelo MÊS REAL da compra/movimento (não pela competência da fatura). */
+export function ResumoMensal({ dados, allDados, openModal }: Props) {
   const [mes, setMes] = useState("");
   const cc = useChart();
-  useEffect(() => { if (months.length && !months.includes(mes)) setMes(months[Math.max(0, months.length - 2)]); }, [months]);
 
-  const m = mes || months[months.length - 1] || "";
-  const idx = months.indexOf(m), prev = idx > 0 ? months[idx - 1] : null;
-  const a = useMemo(() => monthAgg(dados, m), [dados, m]);
-  const pa = useMemo(() => (prev ? monthAgg(dados, prev) : null), [dados, prev]);
+  // lançamentos decorados com o mês real (1 passada)
+  const rows = useMemo(() => dados.map((d) => ({ d, mk: mesReal(d) })), [dados]);
+  const mesesReais = useMemo(() => [...new Set(rows.map((r) => r.mk))].sort(), [rows]);
+  const lim = useMemo(() => dvParcialLimite(allDados), [allDados]);
 
-  const gRows = useMemo(() => dados.filter((d) => d.competencia === m && ehGasto(d.classe)), [dados, m]);
-  const rRows = useMemo(() => dados.filter((d) => d.competencia === m && ehReceita(d.classe)), [dados, m]);
+  const hoje = new Date();
+  const mesAtualK = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
+
+  // default: o mês anterior ao atual (o atual está sempre incompleto)
+  useEffect(() => {
+    if (!mesesReais.length) return;
+    if (mes && mesesReais.includes(mes)) return;
+    const antes = mesesReais.filter((k) => k < mesAtualK);
+    setMes(antes.length ? antes[antes.length - 1] : mesesReais[mesesReais.length - 1]);
+  }, [mesesReais]);
+
+  const m = mes && mesesReais.includes(mes)
+    ? mes
+    : (mesesReais.filter((k) => k < mesAtualK).slice(-1)[0] || mesesReais[mesesReais.length - 1] || "");
+  const idx = mesesReais.indexOf(m), prev = idx > 0 ? mesesReais[idx - 1] : null;
+  const parcial = m >= lim;
+
+  const agg = (k: string) => {
+    let rec = 0, gas = 0, tr = 0;
+    for (const r of rows) {
+      if (r.mk !== k) continue;
+      if (ehGasto(r.d.classe)) gas += Math.abs(r.d.valor);
+      else if (ehReceita(r.d.classe)) rec += Math.abs(r.d.valor);
+      else if (ehTransfer(r.d.classe)) tr += r.d.valor;
+    }
+    return { rec, gas, tr, saldo: rec - gas };
+  };
+  const a = useMemo(() => agg(m), [rows, m]);
+  const pa = useMemo(() => (prev ? agg(prev) : null), [rows, prev]);
+
+  const gRows = useMemo(() => rows.filter((r) => r.mk === m && ehGasto(r.d.classe)).map((r) => r.d), [rows, m]);
+  const rRows = useMemo(() => rows.filter((r) => r.mk === m && ehReceita(r.d.classe)).map((r) => r.d), [rows, m]);
 
   const catData = useMemo(() => {
     const cat: Record<string, number> = {};
@@ -47,44 +80,52 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
     return { rows: Object.keys(rc).map((k) => ({ k, v: rc[k] })).sort((x, y) => y.v - x.v), tot };
   }, [rRows]);
 
-  // insights: maiores gastos + onde está acima da média dos 3 meses anteriores
+  // insights: maiores gastos + onde está acima da média dos 3 meses reais anteriores
   const insights = useMemo(() => {
-    const prevMeses = months.slice(Math.max(0, idx - 3), idx);
-    const catMes = (cat: string, comp: string) => dados
-      .filter((d) => d.competencia === comp && ehGasto(d.classe) && catKey(d) === cat)
-      .reduce((s, d) => s + Math.abs(d.valor), 0);
+    const prevMeses = mesesReais.slice(Math.max(0, idx - 3), idx);
+    const catMes = (cat: string, k: string) => rows
+      .filter((r) => r.mk === k && ehGasto(r.d.classe) && catKey(r.d) === cat)
+      .reduce((s, r) => s + Math.abs(r.d.valor), 0);
     const oport = catData.map((c) => {
       const avg = prevMeses.length ? prevMeses.reduce((s, pm) => s + catMes(c.cat, pm), 0) / prevMeses.length : 0;
       return { cat: c.cat, atual: c.valor, avg, delta: c.valor - avg };
     }).filter((o) => o.delta > 30 && o.avg > 0).sort((x, y) => y.delta - x.delta);
     const economia = oport.reduce((s, o) => s + o.delta, 0);
     return { top: catData.slice(0, 4), oport: oport.slice(0, 3), economia, temPrev: prevMeses.length > 0 };
-  }, [catData, dados, months, idx]);
+  }, [catData, rows, mesesReais, idx]);
 
-  // composição empilhada dos últimos 6 meses (% e R$)
+  // composição empilhada: 6 meses reais terminando no mês selecionado (% e R$)
   const stack6 = useMemo(() => {
-    const meses6 = months.slice(-6);
+    const meses6 = mesesReais.filter((k) => k <= m).slice(-6);
     const catTot: Record<string, number> = {};
-    const porMes = meses6.map((c) => {
+    const porMes = meses6.map((k) => {
       const cat: Record<string, number> = {};
-      dados.forEach((d) => { if (String(d.competencia) !== c || !ehGasto(d.classe)) return; const k = catKey(d); cat[k] = (cat[k] || 0) + Math.abs(d.valor); catTot[k] = (catTot[k] || 0) + Math.abs(d.valor); });
-      return { c, cat, total: Object.values(cat).reduce((s, v) => s + v, 0) };
+      rows.forEach((r) => { if (r.mk !== k || !ehGasto(r.d.classe)) return; const ck = catKey(r.d); cat[ck] = (cat[ck] || 0) + Math.abs(r.d.valor); catTot[ck] = (catTot[ck] || 0) + Math.abs(r.d.valor); });
+      return { k, cat, total: Object.values(cat).reduce((s, v) => s + v, 0) };
     });
     const cats = Object.keys(catTot).sort((a, b) => catTot[b] - catTot[a]);
-    const dataPct = porMes.map(({ c, cat, total }) => { const row: any = { mes: mesCurto(c), _c: c }; cats.forEach((k) => { row[k] = total ? +(((cat[k] || 0) / total) * 100).toFixed(2) : 0; }); return row; });
-    const dataVal = porMes.map(({ c, cat }) => { const row: any = { mes: mesCurto(c), _c: c }; cats.forEach((k) => { row[k] = cat[k] || 0; }); return row; });
+    const dataPct = porMes.map(({ k, cat, total }) => { const row: any = { mes: dvLabel(k), _c: k }; cats.forEach((c) => { row[c] = total ? +(((cat[c] || 0) / total) * 100).toFixed(2) : 0; }); return row; });
+    const dataVal = porMes.map(({ k, cat }) => { const row: any = { mes: dvLabel(k), _c: k }; cats.forEach((c) => { row[c] = cat[c] || 0; }); return row; });
     return { cats, dataPct, dataVal };
-  }, [dados, months]);
+  }, [rows, mesesReais, m]);
+
+  const segClick = (c: string, comp: string) =>
+    openModal(c + " · " + dvLabel(comp), rows.filter((r) => r.mk === comp && ehGasto(r.d.classe) && catKey(r.d) === c).map((r) => r.d));
 
   if (!m) return <div className="text-muted">Sem dados.</div>;
 
   return (
     <div>
       <Toolbar
-        right={<span className="text-muted text-[12px]">{gRows.length + rRows.length} transações{prev ? ` · vs ${mesCurto(prev)}` : ""}</span>}
+        right={
+          <span className="text-muted text-[12px]">
+            pela data da compra · {gRows.length + rRows.length} transações
+            {parcial ? " · mês parcial (faturas por vir)" : prev ? ` · vs ${dvLabel(prev)}` : ""}
+          </span>
+        }
       >
         <Select value={m} onChange={setMes}>
-          {months.map((x) => <option key={x} value={x}>{mesCurto(x)}</option>)}
+          {mesesReais.map((x) => <option key={x} value={x}>{dvLabel(x)}{x >= lim ? " *" : ""}</option>)}
         </Select>
       </Toolbar>
 
@@ -97,7 +138,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
 
       {/* ---- topo: 3 colunas (barras · rosca · insights), tudo do mês selecionado ---- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-[18px]">
-        <Panel title="Despesas por categoria" sub={`(${mesCurto(m)} · clique p/ detalhar)`}>
+        <Panel title="Despesas por categoria" sub={`(${dvLabel(m)} · clique p/ detalhar)`}>
           <div className="h-[clamp(280px,40vh,400px)] mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={catData} layout="vertical" margin={{ top: 4, right: 12, left: 8, bottom: 4 }}>
@@ -106,7 +147,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
                 <YAxis type="category" dataKey="cat" tick={cc.tickStrong} width={92} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTip />} cursor={cc.cursor} />
                 <Bar dataKey="valor" name="Gasto" radius={[0, 4, 4, 0]} cursor="pointer"
-                  onClick={(d: any) => { const k = d?.payload?.cat ?? d?.cat; if (k) openModal(k + " · " + mesCurto(m), gRows.filter((x) => catKey(x) === k)); }}>
+                  onClick={(d: any) => { const k = d?.payload?.cat ?? d?.cat; if (k) openModal(k + " · " + dvLabel(m), gRows.filter((x) => catKey(x) === k)); }}>
                   {catData.map((e) => <Cell key={e.cat} fill={corCategoria(e.cat)} />)}
                 </Bar>
               </BarChart>
@@ -119,7 +160,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={catData} dataKey="valor" nameKey="cat" innerRadius="58%" outerRadius="86%" paddingAngle={1}
-                  onClick={(d: any) => { const k = d?.payload?.cat ?? d?.cat; if (k) openModal(k + " · " + mesCurto(m), gRows.filter((x) => catKey(x) === k)); }}>
+                  onClick={(d: any) => { const k = d?.payload?.cat ?? d?.cat; if (k) openModal(k + " · " + dvLabel(m), gRows.filter((x) => catKey(x) === k)); }}>
                   {catData.map((e) => <Cell key={e.cat} fill={corCategoria(e.cat)} stroke={cc.cardStroke} strokeWidth={1} />)}
                 </Pie>
                 <Tooltip content={<ChartTip pctOf={totalGasto} />} />
@@ -137,7 +178,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
           </div>
         </Panel>
 
-        <Panel title="Insights do mês" sub={`(${mesCurto(m)})`}>
+        <Panel title="Insights do mês" sub={`(${dvLabel(m)})`}>
           <div className="mt-2">
             <div className="text-[11px] uppercase tracking-[.05em] text-muted font-semibold mb-1">Maiores gastos</div>
             {insights.top.map((c) => (
@@ -175,9 +216,9 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
         </Panel>
       </div>
 
-      {/* ---- composição dos últimos 6 meses: 100% e em R$ ---- */}
+      {/* ---- composição: 6 meses reais até o mês selecionado, 100% e em R$ ---- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px] mt-1">
-        <Panel title="Composição mensal" sub="(% por categoria · últimos 6 meses · clique p/ detalhar)">
+        <Panel title="Composição mensal" sub="(% por categoria · 6 meses até o selecionado · clique p/ detalhar)">
           <div className="h-[clamp(260px,34vh,360px)] mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stack6.dataPct} margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
@@ -187,7 +228,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
                 <Tooltip content={<ChartTip pct />} cursor={cc.cursor} />
                 {stack6.cats.map((c) => (
                   <Bar key={c} dataKey={c} stackId="a" fill={corCategoria(c)} isAnimationActive={false} cursor="pointer"
-                    onClick={(d: any) => { const comp = d?.payload?._c; if (comp) openModal(c + " · " + mesCurto(comp), dados.filter((x) => x.competencia === comp && ehGasto(x.classe) && catKey(x) === c)); }}>
+                    onClick={(d: any) => { const comp = d?.payload?._c; if (comp) segClick(c, comp); }}>
                     <LabelList content={PctLabel} />
                   </Bar>
                 ))}
@@ -195,7 +236,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
             </ResponsiveContainer>
           </div>
         </Panel>
-        <Panel title="Composição mensal" sub="(em R$ · últimos 6 meses · clique p/ detalhar)">
+        <Panel title="Composição mensal" sub="(em R$ · 6 meses até o selecionado · clique p/ detalhar)">
           <div className="h-[clamp(260px,34vh,360px)] mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stack6.dataVal} margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
@@ -205,7 +246,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
                 <Tooltip content={<ChartTip />} cursor={cc.cursor} />
                 {stack6.cats.map((c) => (
                   <Bar key={c} dataKey={c} stackId="a" fill={corCategoria(c)} isAnimationActive={false} cursor="pointer"
-                    onClick={(d: any) => { const comp = d?.payload?._c; if (comp) openModal(c + " · " + mesCurto(comp), dados.filter((x) => x.competencia === comp && ehGasto(x.classe) && catKey(x) === c)); }} />
+                    onClick={(d: any) => { const comp = d?.payload?._c; if (comp) segClick(c, comp); }} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -222,7 +263,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
 
       {/* ---- abaixo: cartão/conta + receitas ---- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px] mt-1">
-        <Panel title="Despesas por cartão / conta" sub={`(${mesCurto(m)})`}>
+        <Panel title="Despesas por cartão / conta" sub={`(${dvLabel(m)})`}>
           <div className="h-[clamp(220px,30vh,320px)] mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={origData} layout="vertical" margin={{ top: 4, right: 12, left: 8, bottom: 4 }}>
@@ -231,7 +272,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
                 <YAxis type="category" dataKey="origem" tick={cc.tickStrong} width={110} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTip />} cursor={cc.cursor} />
                 <Bar dataKey="valor" name="Gasto" radius={[0, 4, 4, 0]} cursor="pointer"
-                  onClick={(d: any) => { const k = d?.payload?.origem ?? d?.origem; if (k) openModal(k + " · " + mesCurto(m), gRows.filter((x) => x.origem === k)); }}>
+                  onClick={(d: any) => { const k = d?.payload?.origem ?? d?.origem; if (k) openModal(k + " · " + dvLabel(m), gRows.filter((x) => x.origem === k)); }}>
                   {origData.map((e) => <Cell key={e.origem} fill={e.cor} />)}
                 </Bar>
               </BarChart>
@@ -239,7 +280,7 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
           </div>
         </Panel>
 
-        <Panel title="Receitas por categoria / origem" sub={`(${mesCurto(m)})`}>
+        <Panel title="Receitas por categoria / origem" sub={`(${dvLabel(m)})`}>
           <div className="overflow-x-auto scroll-thin mt-2">
             <table className="tbl">
               <thead><tr>
@@ -260,6 +301,9 @@ export function ResumoMensal({ dados, months, openModal }: Props) {
             </table>
           </div>
         </Panel>
+      </div>
+      <div className="text-muted text-[12px] mt-1">
+        Tudo nesta aba é agrupado pela <b>data real da compra/movimento</b>, não pela competência da fatura. Meses marcados com * ainda podem receber compras das próximas faturas.
       </div>
     </div>
   );

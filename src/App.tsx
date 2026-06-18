@@ -15,6 +15,8 @@ import { Lancamentos } from "./components/tabs/Lancamentos";
 import { Classificar } from "./components/tabs/Classificar";
 import { Planejamento } from "./components/tabs/Planejamento";
 import { Importar } from "./components/tabs/Importar";
+import { Conectar } from "./components/tabs/Conectar";
+import { OpenBanking } from "./components/tabs/OpenBanking";
 
 /* navegação agrupada: Análise · Planejar · Dados */
 const GRUPOS: { id: Aba; label: string }[][] = [
@@ -29,6 +31,8 @@ const GRUPOS: { id: Aba; label: string }[][] = [
     { id: "importar", label: "Importar" },
     { id: "classificar", label: "Classificar" },
     { id: "lanc", label: "Lançamentos" },
+    { id: "conectar", label: "Conectar" },
+    { id: "openbanking", label: "Open Banking" },
   ],
 ];
 
@@ -162,6 +166,8 @@ export default function App() {
           {aba === "classificar" && <Classificar dados={dados} allDados={allDados} openModal={openModal} reload={reload} />}
           {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}
           {aba === "importar" && <Importar reload={reload} />}
+          {aba === "conectar" && <Conectar reload={reload} />}
+          {aba === "openbanking" && <OpenBanking />}
         </div>
       </main>
 

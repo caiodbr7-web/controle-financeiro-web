@@ -6,57 +6,90 @@ import type { Lancamento } from "../../types";
 import { Panel, Kpi, Seg, Toolbar } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import {
-  BRL, brlShort, mesCurto, monthAgg, ehGasto, ehReceita, corChave, ordemChave,
+  BRL, brlShort, ehGasto, ehReceita, ehTransfer, corChave, ordemChave,
+  dvLabel, dvParcialLimite, mesReal,
 } from "../../lib/finance";
 
-interface Props { dados: Lancamento[]; months: string[]; openModal: (t: string, r: Lancamento[]) => void; }
+interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[]; openModal: (t: string, r: Lancamento[]) => void; }
 
 const PERIODOS = [
   { v: "6", label: "6m" }, { v: "12", label: "12m" }, { v: "24", label: "24m" }, { v: "all", label: "Tudo" },
 ];
 
-export function VisaoGeral({ dados, months, openModal }: Props) {
+/* Toda esta aba agrupa pelo MÊS REAL da compra/movimento (não pela competência da fatura). */
+export function VisaoGeral({ dados, allDados, openModal }: Props) {
   const [periodo, setPeriodo] = useState("12");
   const cc = useChart();
 
+  const rows = useMemo(() => dados.map((d) => ({ d, mk: mesReal(d) })), [dados]);
+  const lim = useMemo(() => dvParcialLimite(allDados), [allDados]);
+
+  // meses reais disponíveis, sem o mês civil atual (sempre incompleto)
+  const mesesReais = useMemo(() => {
+    const h = new Date();
+    const atual = h.getFullYear() + "-" + String(h.getMonth() + 1).padStart(2, "0");
+    return [...new Set(rows.map((r) => r.mk))].filter((k) => k < atual).sort();
+  }, [rows]);
+
   const vm = useMemo(() => {
-    if (!months.length) return [];
-    if (periodo === "all") return months;
-    return months.slice(-(parseInt(periodo, 10) || 12));
-  }, [months, periodo]);
+    if (!mesesReais.length) return [];
+    if (periodo === "all") return mesesReais;
+    return mesesReais.slice(-(parseInt(periodo, 10) || 12));
+  }, [mesesReais, periodo]);
 
-  const aggs = useMemo(() => vm.map((m) => ({ m, ...monthAgg(dados, m) })), [dados, vm]);
+  const rotulo = (k: string) => dvLabel(k) + (k >= lim ? "*" : "");
 
+  const agg = (k: string) => {
+    let rec = 0, gas = 0, tr = 0;
+    for (const r of rows) {
+      if (r.mk !== k) continue;
+      if (ehGasto(r.d.classe)) gas += Math.abs(r.d.valor);
+      else if (ehReceita(r.d.classe)) rec += Math.abs(r.d.valor);
+      else if (ehTransfer(r.d.classe)) tr += r.d.valor;
+    }
+    return { rec, gas, tr, saldo: rec - gas };
+  };
+  const aggs = useMemo(() => vm.map((k) => ({ m: k, ...agg(k) })), [rows, vm]);
+
+  // KPIs: referência = último mês completo do recorte; média 3m termina nele
   const kpis = useMemo(() => {
-    let ri = vm.length - 2; if (ri < 0) ri = vm.length - 1;
-    const ref = vm[ri]; if (!ref) return null;
-    const cur = monthAgg(dados, ref);
+    if (!vm.length) return null;
+    let ri = -1;
+    for (let i = vm.length - 1; i >= 0; i--) if (vm[i] < lim) { ri = i; break; }
+    if (ri < 0) ri = vm.length - 1;
+    const ref = vm[ri];
+    const cur = agg(ref);
     const last3 = vm.slice(Math.max(0, ri - 2), ri + 1); const n = last3.length || 1;
     const av = { rec: 0, gas: 0, saldo: 0 };
-    last3.forEach((x) => { const a = monthAgg(dados, x); av.rec += a.rec; av.gas += a.gas; av.saldo += a.saldo; });
-    return { label: mesCurto(ref), cur, av: { rec: av.rec / n, gas: av.gas / n, saldo: av.saldo / n } };
-  }, [dados, vm]);
+    last3.forEach((x) => { const aa = agg(x); av.rec += aa.rec; av.gas += aa.gas; av.saldo += aa.saldo; });
+    return { label: dvLabel(ref), cur, av: { rec: av.rec / n, gas: av.gas / n, saldo: av.saldo / n } };
+  }, [rows, vm, lim]);
 
   const pivot = (classFn: (c: string | null) => boolean, keyFn: (d: Lancamento) => string) => {
-    const keys = [...new Set(dados.filter((d) => classFn(d.classe)).map(keyFn))]
+    const keys = [...new Set(rows.filter((r) => classFn(r.d.classe)).map((r) => keyFn(r.d)))]
       .sort((a, b) => ordemChave(a) - ordemChave(b) || String(a).localeCompare(String(b)));
-    const data = vm.map((m) => {
-      const row: any = { mes: mesCurto(m), _m: m };
-      keys.forEach((k) => { row[k] = dados.filter((d) => d.competencia === m && classFn(d.classe) && keyFn(d) === k).reduce((s, d) => s + Math.abs(d.valor), 0); });
+    const data = vm.map((k) => {
+      const row: any = { mes: rotulo(k), _m: k };
+      keys.forEach((kk) => { row[kk] = rows.filter((r) => r.mk === k && classFn(r.d.classe) && keyFn(r.d) === kk).reduce((s, r) => s + Math.abs(r.d.valor), 0); });
       return row;
     });
     return { keys, data };
   };
-  const gastoPivot = useMemo(() => pivot(ehGasto, (d) => d.origem), [dados, vm]);
-  const recPivot = useMemo(() => pivot(ehReceita, (d) => d.banco), [dados, vm]);
+  const gastoPivot = useMemo(() => pivot(ehGasto, (d) => d.origem), [rows, vm, lim]);
+  const recPivot = useMemo(() => pivot(ehReceita, (d) => d.banco), [rows, vm, lim]);
 
-  const chartData = aggs.map((a) => ({ mes: mesCurto(a.m), Receitas: a.rec, Despesas: a.gas, Saldo: a.saldo, _m: a.m }));
+  const chartData = aggs.map((a) => ({ mes: rotulo(a.m), Receitas: a.rec, Despesas: a.gas, Saldo: a.saldo, _m: a.m }));
+
+  const rowsDoMes = (k: string, classFn: (c: string | null) => boolean) =>
+    rows.filter((r) => r.mk === k && classFn(r.d.classe)).map((r) => r.d);
 
   return (
     <div>
       <Toolbar
         right={vm.length > 0 && (
-          <span className="text-muted text-[12px]">{mesCurto(vm[0])} — {mesCurto(vm[vm.length - 1])} · {vm.length} meses</span>
+          <span className="text-muted text-[12px]">
+            pela data da compra · {dvLabel(vm[0])} — {dvLabel(vm[vm.length - 1])} · {vm.length} meses
+          </span>
         )}
       >
         <Seg value={periodo} onChange={setPeriodo} options={PERIODOS} />
@@ -71,7 +104,7 @@ export function VisaoGeral({ dados, months, openModal }: Props) {
         </div>
       )}
 
-      <Panel title="Evolução mensal" sub="(receitas, despesas e saldo — clique nas barras p/ detalhar)">
+      <Panel title="Evolução mensal" sub="(pela data da compra · clique nas barras p/ detalhar)">
         <div className="h-[clamp(280px,42vh,420px)]">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
@@ -81,9 +114,9 @@ export function VisaoGeral({ dados, months, openModal }: Props) {
               <Tooltip content={<ChartTip />} cursor={cc.cursor} />
               <Legend wrapperStyle={{ fontSize: 11.5 }} iconType="circle" iconSize={7} />
               <Bar dataKey="Receitas" fill={cc.receita} radius={[5, 5, 0, 0]} cursor="pointer"
-                onClick={(d: any) => { const m = d?.payload?._m ?? d?._m; if (m) openModal("Receitas · " + mesCurto(m), dados.filter((x) => x.competencia === m && ehReceita(x.classe))); }} />
+                onClick={(d: any) => { const k = d?.payload?._m ?? d?._m; if (k) openModal("Receitas · " + dvLabel(k), rowsDoMes(k, ehReceita)); }} />
               <Bar dataKey="Despesas" fill={cc.despesa} radius={[5, 5, 0, 0]} cursor="pointer"
-                onClick={(d: any) => { const m = d?.payload?._m ?? d?._m; if (m) openModal("Despesas · " + mesCurto(m), dados.filter((x) => x.competencia === m && ehGasto(x.classe))); }} />
+                onClick={(d: any) => { const k = d?.payload?._m ?? d?._m; if (k) openModal("Despesas · " + dvLabel(k), rowsDoMes(k, ehGasto)); }} />
               <Line type="monotone" dataKey="Saldo" stroke={cc.saldo} strokeWidth={2} dot={{ r: 3.5 }} isAnimationActive={false} />
             </ComposedChart>
           </ResponsiveContainer>
@@ -95,14 +128,14 @@ export function VisaoGeral({ dados, months, openModal }: Props) {
           <StackedBars
             data={gastoPivot.data}
             keys={gastoPivot.keys}
-            onSeg={(k, m) => openModal(k + " · " + mesCurto(m), dados.filter((d) => d.competencia === m && ehGasto(d.classe) && d.origem === k))}
+            onSeg={(k, m) => openModal(k + " · " + dvLabel(m), rows.filter((r) => r.mk === m && ehGasto(r.d.classe) && r.d.origem === k).map((r) => r.d))}
           />
         </Panel>
         <Panel title="Receitas por banco" sub="(empilhado · clique p/ detalhar)">
           <StackedBars
             data={recPivot.data}
             keys={recPivot.keys}
-            onSeg={(k, m) => openModal(k + " · " + mesCurto(m), dados.filter((d) => d.competencia === m && ehReceita(d.classe) && d.banco === k))}
+            onSeg={(k, m) => openModal(k + " · " + dvLabel(m), rows.filter((r) => r.mk === m && ehReceita(r.d.classe) && r.d.banco === k).map((r) => r.d))}
           />
         </Panel>
       </div>
@@ -120,7 +153,7 @@ export function VisaoGeral({ dados, months, openModal }: Props) {
             <tbody>
               {aggs.map((a) => (
                 <tr key={a.m}>
-                  <td>{mesCurto(a.m)}</td>
+                  <td>{rotulo(a.m)}</td>
                   <td className="num text-green">{BRL(a.rec)}</td>
                   <td className="num text-red">{BRL(a.gas)}</td>
                   <td className={`num ${a.saldo >= 0 ? "text-green" : "text-red"}`}>{BRL(a.saldo)}</td>
@@ -129,6 +162,9 @@ export function VisaoGeral({ dados, months, openModal }: Props) {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="text-muted text-[12px] mt-2">
+          Agrupado pela <b>data real da compra/movimento</b> (não pela competência da fatura). Meses com * ainda podem receber compras das próximas faturas; o mês atual fica de fora.
         </div>
       </Panel>
     </div>
