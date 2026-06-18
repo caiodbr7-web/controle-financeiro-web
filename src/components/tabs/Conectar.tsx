@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { PluggyConnect } from "react-pluggy-connect";
 import { Panel } from "../ui";
+import { bankOf } from "../../lib/finance";
+import { semAcento } from "../../lib/texto";
 import {
   getConnectToken,
   syncItem,
@@ -9,6 +11,31 @@ import {
   type PluggyItemRow,
   type SyncResult,
 } from "../../lib/pluggy";
+
+const BANCO_LABEL: Record<string, string> = { itau: "Itaú", nubank: "Nubank", picpay: "PicPay" };
+
+/* Nome do banco para exibir: usa o conector; se não for reconhecido (ex.: o
+   Sandbox vem como "MeuPluggy"), tenta deduzir pelo nome das contas. */
+function nomeBanco(it: PluggyItemRow): string {
+  const cands = [it.connector_name ?? "", ...Object.keys(it.last_result?.por_conta ?? {})];
+  for (const c of cands) {
+    const b = bankOf(semAcento(c));
+    if (b !== "outro") return BANCO_LABEL[b];
+  }
+  return it.connector_name || "Banco";
+}
+
+/* "2026-06-01" -> "01/06/2026" (sem passar por Date, evita fuso) */
+function fmtCorte(s: string | null): string | null {
+  if (!s) return null;
+  const [y, m, d] = s.slice(0, 10).split("-");
+  return y && m && d ? `${d}/${m}/${y}` : null;
+}
+
+/* nomes das contas sincronizadas, para distinguir conexões do mesmo banco */
+function nomeContas(it: PluggyItemRow): string {
+  return Object.keys(it.last_result?.por_conta ?? {}).join(" · ");
+}
 
 /* Aba "Conectar": conecta bancos via Open Finance (Pluggy) e importa as
    transacoes direto para a tabela `lancamentos`. Modo hibrido com PDFs:
@@ -116,16 +143,27 @@ export function Conectar({ reload }: { reload: () => void }) {
                 key={it.item_id}
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-line rounded-[12px] px-3 py-[10px]"
               >
-                <span className="text-[14px] font-semibold">{it.connector_name || "Banco"}</span>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[14px] font-semibold">{nomeBanco(it)}</span>
+                  {nomeContas(it) && (
+                    <span className="text-[11.5px] text-muted truncate max-w-[280px]" title={nomeContas(it)}>
+                      {nomeContas(it)}
+                    </span>
+                  )}
+                </div>
                 <span className={`text-[12px] ${it.status === "UPDATED" ? "text-green" : "text-amber"}`}>
                   {it.status || "—"}
                 </span>
-                {it.last_synced_at && (
-                  <span className="text-[12px] text-muted">
-                    última sync: {new Date(it.last_synced_at).toLocaleString("pt-BR")}
-                    {it.last_result?.transacoes != null && ` · ${it.last_result.transacoes} transações`}
-                  </span>
-                )}
+                <span className="text-[12px] text-muted">
+                  {fmtCorte(it.sync_from) && <>importado a partir de {fmtCorte(it.sync_from)}</>}
+                  {it.last_synced_at && (
+                    <>
+                      {fmtCorte(it.sync_from) && " · "}
+                      última sync: {new Date(it.last_synced_at).toLocaleString("pt-BR")}
+                    </>
+                  )}
+                  {it.last_result?.transacoes != null && ` · ${it.last_result.transacoes} transações`}
+                </span>
                 <div className="ml-auto flex gap-2">
                   <button
                     onClick={() => sincronizar(it.item_id)}

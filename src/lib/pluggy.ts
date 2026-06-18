@@ -51,7 +51,9 @@ export interface PluggyItemRow {
   status: string | null;
   sync_from: string | null;
   last_synced_at: string | null;
-  last_result: { contas?: number; transacoes?: number } | null;
+  last_result:
+    | { contas?: number; transacoes?: number; lancamentos?: number; por_conta?: Record<string, number> }
+    | null;
 }
 
 /** Lista os bancos ja conectados (tabela pluggy_items). */
