@@ -25,6 +25,10 @@ export interface Plano {
   parcelas: number | null; // só parcelamento
   ativo: boolean;
   ordem: number;
+  // item pago no cartão de crédito (entra no total do cartão, sem somar em dobro)
+  no_cartao?: boolean;
+  // linha especial: representa o TOTAL do cartão (orçamento mensal digitado), não é um item comum
+  eh_cartao_total?: boolean;
   // vínculo opcional a lançamentos reais (usado na visão "Mês": previsto × realizado)
   link_categoria?: string | null;
   link_texto?: string | null;
@@ -87,7 +91,13 @@ export function contribNoMes(p: Plano, mk: string): number {
   return 0;
 }
 
-export interface ProjMes { k: string; label: string; gastos: number; receita: number; saldo: number; }
+export interface ProjMes {
+  k: string; label: string;
+  conta: number;   // gastos fora do cartão (itens não marcados)
+  cartao: number;  // total no cartão: orçamento definido, senão soma dos itens marcados
+  gerais: number;  // conta + cartão (consolidado, sem contar em dobro)
+  receita: number; saldo: number;
+}
 
 /** Lista de N meses a partir de `start` (default: mês atual). */
 export function horizonte(n: number, start = mesAtual()): { k: string; label: string }[] {
@@ -97,17 +107,26 @@ export function horizonte(n: number, start = mesAtual()): { k: string; label: st
   });
 }
 
-/** Projeção consolidada: por mês, soma de gastos, receita e saldo (receita − gastos). */
-export function projetar(planos: Plano[], meses: { k: string }[]): ProjMes[] {
+/**
+ * Projeção consolidada por mês: gastos na conta, total no cartão, gerais e saldo.
+ * `cartaoPlano` (opcional) é a linha especial com o orçamento mensal do cartão; quando
+ * não há orçamento, o total do cartão cai na soma dos itens marcados (no_cartao).
+ * Itens marcados NÃO entram em `conta` — eles já estão dentro do total do cartão.
+ */
+export function projetar(planos: Plano[], meses: { k: string }[], cartaoPlano?: Plano | null): ProjMes[] {
   return meses.map(({ k }) => {
-    let gastos = 0, receita = 0;
+    let conta = 0, receita = 0, flag = 0;
     for (const p of planos) {
       if (!p.ativo) continue;
       const v = contribNoMes(p, k);
       if (!v) continue;
       if (ehReceitaTipo(p.tipo)) receita += v;
-      else gastos += v;
+      else if (p.no_cartao) flag += v; // itens marcados vão para o total do cartão
+      else conta += v;
     }
-    return { k, label: dvLabel(k), gastos, receita, saldo: receita - gastos };
+    const orc = cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, k) : 0;
+    const cartao = orc > 0 ? orc : flag; // orçamento definido; sem ele, soma dos itens marcados
+    const gerais = conta + cartao; // itens marcados já estão no cartão — não soma de novo
+    return { k, label: dvLabel(k), conta, cartao, gerais, receita, saldo: receita - gerais };
   });
 }

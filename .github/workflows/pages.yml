@@ -1,11 +1,15 @@
 name: Deploy to GitHub Pages
 
 # Publica o app num link gratuito do GitHub Pages, separado do Netlify.
-# Roda a cada push na main e também pode ser disparado manualmente.
+# É o PRIMEIRO deploy: roda a cada push no main e nas branches de trabalho
+# (claude/**), além do disparo manual. Assim o link do GitHub Pages recebe as
+# mudanças ANTES da produção (Netlify, que faz deploy a partir do main).
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "claude/**"
   workflow_dispatch:
 
 permissions:
