@@ -99,6 +99,14 @@ body {
    com tamanho fixo (320x568) e max-width: 500px. O id do box termina sempre em
    "_modal" (prefixo aleatório por instância), então miramos por esse sufixo +
    !important p/ vencer o <style> embutido do SDK. */
+
+/* O overlay do SDK usa z-index: 5000000000, que estoura o limite de inteiro do
+   CSS e é ignorado pelo browser -> o modal cai ATRÁS do cabeçalho (sticky z-20).
+   Forçamos um z-index válido e alto p/ ficar acima de tudo. */
+#PluggyConnect [id$="_modal-overlay"],
+#PluggyConnect {
+  z-index: 2147483000 !important;
+}
 #PluggyConnect [id$="_modal"] {
   /* escala com a página, mas em proporção confortável (form do Pluggy é estreito) */
   width: clamp(320px, 40vw, 480px) !important;
