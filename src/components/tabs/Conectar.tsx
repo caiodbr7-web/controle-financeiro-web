@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { PluggyConnect } from "react-pluggy-connect";
 import { Panel } from "../ui";
-import { bankOf } from "../../lib/finance";
-import { semAcento } from "../../lib/texto";
+import { resolverBanco } from "../../lib/bancos";
 import {
   getConnectToken,
   syncItem,
@@ -12,17 +11,9 @@ import {
   type SyncResult,
 } from "../../lib/pluggy";
 
-const BANCO_LABEL: Record<string, string> = { itau: "Itaú", nubank: "Nubank", picpay: "PicPay" };
-
-/* Nome do banco para exibir: usa o conector; se não for reconhecido (ex.: o
-   Sandbox vem como "MeuPluggy"), tenta deduzir pelo nome das contas. */
+/* Nome do banco para exibir: resolvedor único (conector + nomes das contas). */
 function nomeBanco(it: PluggyItemRow): string {
-  const cands = [it.connector_name ?? "", ...Object.keys(it.last_result?.por_conta ?? {})];
-  for (const c of cands) {
-    const b = bankOf(semAcento(c));
-    if (b !== "outro") return BANCO_LABEL[b];
-  }
-  return it.connector_name || "Banco";
+  return resolverBanco(it.connector_name, Object.keys(it.last_result?.por_conta ?? {}));
 }
 
 /* "2026-06-01" -> "01/06/2026" (sem passar por Date, evita fuso) */

@@ -1,4 +1,5 @@
 import type { Lancamento, Modo } from "../types";
+import { semAcento } from "./texto";
 
 // ---------- formatação ----------
 export const BRL = (v: number) =>
@@ -25,14 +26,18 @@ export const BANK_COLORS: Record<string, { cartao: string; conta: string }> = {
   itau: { cartao: "#2f6df6", conta: "#9ec3ff" },
   nubank: { cartao: "#7c3aed", conta: "#c4b5fd" },
   picpay: { cartao: "#16a34a", conta: "#86efac" },
+  rico: { cartao: "#0ea5e9", conta: "#7dd3fc" },
+  xp: { cartao: "#111827", conta: "#6b7280" },
   outro: { cartao: "#86868b", conta: "#c2cbdb" },
 };
-const BANK_ORDER: Record<string, number> = { itau: 0, nubank: 1, picpay: 2, outro: 9 };
+const BANK_ORDER: Record<string, number> = { itau: 0, nubank: 1, picpay: 2, rico: 3, xp: 4, outro: 9 };
 export const bankOf = (k: string) => {
-  k = (k || "").toLowerCase();
+  k = semAcento(k || "").toLowerCase();
   if (k.includes("itau")) return "itau";
-  if (k.includes("nubank")) return "nubank";
+  if (k.includes("nubank") || k.includes("nu pagamentos")) return "nubank";
   if (k.includes("picpay")) return "picpay";
+  if (k.includes("rico")) return "rico";
+  if (/(^|[^a-z])xp([^a-z]|$)/.test(k)) return "xp";
   return "outro";
 };
 export const isConta = (k: string) => (k || "").toLowerCase().includes("conta");
