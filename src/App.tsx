@@ -17,6 +17,7 @@ import { Planejamento } from "./components/tabs/Planejamento";
 import { Importar } from "./components/tabs/Importar";
 import { Conectar } from "./components/tabs/Conectar";
 import { OpenBanking } from "./components/tabs/OpenBanking";
+import { Conciliacao } from "./components/tabs/Conciliacao";
 
 /* navegação agrupada: Análise · Planejar · Dados */
 const GRUPOS: { id: Aba; label: string }[][] = [
@@ -33,6 +34,7 @@ const GRUPOS: { id: Aba; label: string }[][] = [
     { id: "lanc", label: "Lançamentos" },
     { id: "conectar", label: "Conectar" },
     { id: "openbanking", label: "Open Banking" },
+    { id: "conciliacao", label: "Conciliação" },
   ],
 ];
 
@@ -168,6 +170,7 @@ export default function App() {
           {aba === "importar" && <Importar reload={reload} />}
           {aba === "conectar" && <Conectar reload={reload} />}
           {aba === "openbanking" && <OpenBanking />}
+          {aba === "conciliacao" && <Conciliacao />}
         </div>
       </main>
 
