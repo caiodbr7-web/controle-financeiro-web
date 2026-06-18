@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { PluggyConnect } from "react-pluggy-connect";
 import { Panel } from "../ui";
 import {
@@ -147,13 +148,14 @@ export function Conectar({ reload }: { reload: () => void }) {
         </Panel>
       )}
 
-      {token && (
+      {token && createPortal(
         <PluggyConnect
           connectToken={token}
           onSuccess={onSuccess}
           onError={() => { setToken(null); setMsg("Conexão cancelada ou com erro."); }}
           onClose={() => setToken(null)}
-        />
+        />,
+        document.body
       )}
     </div>
   );
