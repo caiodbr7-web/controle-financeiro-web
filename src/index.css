@@ -100,12 +100,13 @@ body {
    "_modal" (prefixo aleatório por instância), então miramos por esse sufixo +
    !important p/ vencer o <style> embutido do SDK. */
 #PluggyConnect [id$="_modal"] {
-  width: min(760px, 96vw) !important;
-  max-width: min(760px, 96vw) !important;
-  height: min(820px, 92vh) !important;
+  /* escala com a página, mas em proporção confortável (form do Pluggy é estreito) */
+  width: clamp(320px, 40vw, 480px) !important;
+  max-width: 94vw !important;
+  height: clamp(520px, 80vh, 680px) !important;
   max-height: 92vh !important;
 }
-/* em telas pequenas, ocupa quase tudo (o SDK já abre fullscreen <500px) */
+/* em telas pequenas, ocupa a tela toda (o SDK já abre fullscreen <500px) */
 @media (max-width: 640px) {
   #PluggyConnect [id$="_modal"] {
     width: 100vw !important;
