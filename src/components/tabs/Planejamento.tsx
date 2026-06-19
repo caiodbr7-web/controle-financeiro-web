@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, Fragment, type ReactNode } from "react";
 import { Kpi, Select, Seg, Toolbar, Panel } from "../ui";
+import { useConfirm } from "../Confirm";
+import { useToast } from "../Toast";
 import { sb } from "../../lib/supabase";
 import type { Lancamento } from "../../types";
 import { BRL, CATEGORIAS, dvAddMes, dvLabel, ehGasto } from "../../lib/finance";
@@ -114,6 +116,8 @@ function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
 // `lancamentos` já vem filtrado pela Visão (Pessoal/Corp/Tudo) — o realizado (vínculo e
 // total do cartão) respeita o filtro; os itens do plano não têm natureza, então não filtram.
 export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
+  const confirm = useConfirm();
+  const { toast } = useToast();
   const [planos, setPlanos] = useState<Plano[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
@@ -309,9 +313,12 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
   }
   async function remover(p: Plano) {
-    if (!confirm(`Remover "${p.nome}"?`)) return;
+    if (!(await confirm({ title: `Remover “${p.nome}”?`, message: "O item sai do planejamento. Esta ação não pode ser desfeita.", confirmLabel: "Remover", danger: true }))) return;
     const { error } = await sb.from("planos").delete().eq("id", p.id);
-    if (!error) { if (editId === p.id) resetForm(); carregar(); }
+    if (error) { toast({ message: "Erro ao remover: " + error.message, variant: "error" }); return; }
+    if (editId === p.id) resetForm();
+    carregar();
+    toast({ message: `“${p.nome}” removido.`, variant: "success" });
   }
   async function toggleAtivo(p: Plano) {
     const { error } = await sb.from("planos").update({ ativo: !p.ativo }).eq("id", p.id);

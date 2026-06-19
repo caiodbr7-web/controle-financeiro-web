@@ -1,18 +1,30 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { Lancamento } from "../../types";
 import { Kpi } from "../ui";
+import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
 import { BRL, ehGasto, normEstab, CATEGORIAS } from "../../lib/finance";
+import { useToast } from "../Toast";
 
 interface Props { dados: Lancamento[]; allDados: Lancamento[]; openModal: (t: string, r: Lancamento[]) => void; reload: () => void; }
 
 interface Grupo { key: string; ex: string; ids: number[]; rows: Lancamento[]; total: number; n: number; sugestao: string; }
 
+// snapshot p/ desfazer: o que era nulo + a regra que existia antes
+interface Snap { ids: number[]; key: string; prevRegra?: string }
+
 export function Classificar({ dados, allDados, openModal, reload }: Props) {
+  const { toast } = useToast();
   const [escolhas, setEscolhas] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
   const [regras, setRegras] = useState<Record<string, string>>({}); // padrao(estab) -> categoria aprendida
+
+  // triagem por teclado / seleção
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [pickerKey, setPickerKey] = useState<string | null>(null); // linha com o seletor forçado aberto
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [bulkCat, setBulkCat] = useState("");
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -27,6 +39,10 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
     if (!key || !categoria) return;
     await sb.from("regras").upsert({ padrao: key, categoria }, { onConflict: "user_id,padrao" });
     setRegras((r) => ({ ...r, [key]: categoria }));
+  }
+  async function restaurarRegra(key: string, prev?: string) {
+    if (prev) { await sb.from("regras").upsert({ padrao: key, categoria: prev }, { onConflict: "user_id,padrao" }); setRegras((r) => ({ ...r, [key]: prev })); }
+    else { await sb.from("regras").delete().eq("padrao", key); setRegras((r) => { const n = { ...r }; delete n[key]; return n; }); }
   }
 
   // histórico já classificado: estabelecimento -> categoria mais usada (aprende do passado)
@@ -57,7 +73,6 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
       const sug: Record<string, number> = {};
       g.rows.forEach((d) => { const s = d.categoria_auto || ""; if (s) sug[s] = (sug[s] || 0) + Math.abs(d.valor); });
       const top = Object.keys(sug).sort((a, b) => sug[b] - sug[a])[0] || "";
-      // prioridade: regra salva -> categoria mais usada no histórico p/ esse estabelecimento -> palpite do parser
       const hist = histMap[g.key];
       const sugestao = regras[g.key] || (hist && CATEGORIAS.includes(hist) ? hist : "") || (CATEGORIAS.includes(top) ? top : "");
       return { ...g, sugestao };
@@ -68,13 +83,15 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
 
   useEffect(() => {
     setEscolhas((prev) => { const i: Record<string, string> = {}; grupos.forEach((g) => { i[g.key] = prev[g.key] ?? g.sugestao; }); return i; });
+    setActiveIdx((i) => Math.min(i, Math.max(0, grupos.length - 1)));
+    setSel((s) => { const valid = new Set(grupos.map((g) => g.key)); return new Set([...s].filter((k) => valid.has(k))); });
   }, [grupos]);
 
   const totalPendente = useMemo(() => grupos.reduce((s, g) => s + g.total, 0), [grupos]);
   const linhasPendentes = useMemo(() => grupos.reduce((s, g) => s + g.n, 0), [grupos]);
   const comEscolha = grupos.filter((g) => escolhas[g.key]).length;
 
-  async function atualizarIds(ids: number[], categoria: string) {
+  async function atualizarIds(ids: number[], categoria: string | null) {
     for (let i = 0; i < ids.length; i += 200) {
       const chunk = ids.slice(i, i + 200);
       const { error } = await sb.from("lancamentos").update({ categoria_manual: categoria }).in("id", chunk);
@@ -82,39 +99,66 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
     }
   }
 
-  async function aplicarUm(g: Grupo) {
-    const cat = escolhas[g.key]; if (!cat || busy) return;
-    setBusy(true); setMsg(`Aplicando "${cat}" a ${g.n} lançamento(s)...`);
-    try { await atualizarIds(g.ids, cat); await salvarRegra(g.key, cat); await reload(); setMsg("Aplicado ✓ (virou sugestão p/ os próximos)"); }
-    catch (e: any) { setMsg("Erro: " + (e?.message || e)); }
+  // desfaz uma aplicação: volta os lançamentos a "sem categoria" e restaura as regras
+  const desfazer = useCallback(async (snap: Snap[]) => {
+    setBusy(true);
+    try {
+      for (const s of snap) { await atualizarIds(s.ids, null); await restaurarRegra(s.key, s.prevRegra); }
+      await reload();
+      toast({ message: "Classificação desfeita.", variant: "info" });
+    } catch (e: any) { toast({ message: "Erro ao desfazer: " + (e?.message || e), variant: "error" }); }
+    finally { setBusy(false); }
+  }, [reload, toast]);
+
+  // aplica uma categoria a um conjunto de grupos, com toast de desfazer
+  async function aplicar(alvo: { g: Grupo; cat: string }[], rotulo: string) {
+    if (!alvo.length || busy) return;
+    const snap: Snap[] = alvo.map(({ g }) => ({ ids: g.ids, key: g.key, prevRegra: regras[g.key] }));
+    setBusy(true);
+    try {
+      for (const { g, cat } of alvo) { await atualizarIds(g.ids, cat); await salvarRegra(g.key, cat); }
+      await reload();
+      setSel(new Set());
+      toast({ message: rotulo, variant: "success", action: { label: "Desfazer", onClick: () => desfazer(snap) } });
+    } catch (e: any) { toast({ message: "Erro: " + (e?.message || e), variant: "error" }); }
     finally { setBusy(false); }
   }
 
-  async function marcarRestantesOutros() {
-    const alvo = grupos.filter((g) => !escolhas[g.key]); // só os ainda sem categoria escolhida
-    if (!alvo.length || busy) return;
-    if (!confirm(`Marcar ${alvo.length} estabelecimentos restantes como "Outros" (${alvo.reduce((s, g) => s + g.n, 0)} lançamentos)?`)) return;
-    setBusy(true);
-    try {
-      let feito = 0;
-      for (const g of alvo) { setMsg(`Outros ${++feito}/${alvo.length}...`); await atualizarIds(g.ids, "Outros"); }
-      await reload(); setMsg(`Pronto — ${alvo.length} marcados como Outros ✓`);
-    } catch (e: any) { setMsg("Erro: " + (e?.message || e)); }
-    finally { setBusy(false); }
-  }
+  const aplicarUm = (g: Grupo) => {
+    const cat = escolhas[g.key]; if (!cat) return;
+    aplicar([{ g, cat }], `“${g.ex.slice(0, 24)}” → ${cat}`);
+  };
+  const aplicarTodas = () => {
+    const alvo = grupos.filter((g) => escolhas[g.key]).map((g) => ({ g, cat: escolhas[g.key] }));
+    aplicar(alvo, `${alvo.length} estabelecimentos classificados ✓`);
+  };
+  const marcarRestantesOutros = () => {
+    const alvo = grupos.filter((g) => !escolhas[g.key]).map((g) => ({ g, cat: "Outros" }));
+    aplicar(alvo, `${alvo.length} marcados como Outros`);
+  };
+  const aplicarSelecionados = () => {
+    if (!bulkCat) return;
+    const alvo = grupos.filter((g) => sel.has(g.key)).map((g) => ({ g, cat: bulkCat }));
+    aplicar(alvo, `${alvo.length} selecionados → ${bulkCat}`);
+    setBulkCat("");
+  };
 
-  async function aplicarTodas() {
-    const alvo = grupos.filter((g) => escolhas[g.key]);
-    if (!alvo.length || busy) return;
-    if (!confirm(`Aplicar categoria a ${alvo.length} estabelecimentos (${alvo.reduce((s, g) => s + g.n, 0)} lançamentos)?`)) return;
-    setBusy(true);
-    try {
-      let feito = 0;
-      for (const g of alvo) { setMsg(`Aplicando ${++feito}/${alvo.length}: ${g.ex.slice(0, 28)}...`); await atualizarIds(g.ids, escolhas[g.key]); await salvarRegra(g.key, escolhas[g.key]); }
-      await reload(); setMsg(`Pronto — ${alvo.length} estabelecimentos ✓`);
-    } catch (e: any) { setMsg("Erro: " + (e?.message || e)); }
-    finally { setBusy(false); }
+  // ---------- teclado: ↑/↓ navega · Enter abre seletor · espaço seleciona · A aplica ----------
+  function rolarParaAtivo(i: number) {
+    listRef.current?.querySelector<HTMLElement>(`[data-idx="${i}"]`)?.scrollIntoView({ block: "nearest" });
   }
+  function onKey(e: ReactKeyboardEvent) {
+    if (!grupos.length || pickerKey) return;
+    const g = grupos[activeIdx];
+    if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); setActiveIdx((i) => { const n = Math.min(i + 1, grupos.length - 1); rolarParaAtivo(n); return n; }); }
+    else if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); setActiveIdx((i) => { const n = Math.max(i - 1, 0); rolarParaAtivo(n); return n; }); }
+    else if (e.key === "Enter") { e.preventDefault(); if (g) setPickerKey(g.key); }
+    else if (e.key === " ") { e.preventDefault(); if (g) setSel((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; }); }
+    else if ((e.key === "a" || e.key === "A") && g && escolhas[g.key]) { e.preventDefault(); aplicarUm(g); }
+  }
+  const voltarFoco = () => { setPickerKey(null); listRef.current?.focus(); };
+
+  const todosSelecionados = grupos.length > 0 && sel.size === grupos.length;
 
   return (
     <div>
@@ -129,52 +173,104 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
           <button disabled={busy || grupos.length === comEscolha} onClick={marcarRestantesOutros} className="btn-ghost w-full !py-[7px] !text-[12.5px]">
             Marcar restantes como Outros
           </button>
-          <div className="text-muted text-[11.5px] min-h-[14px]">{msg}</div>
         </div>
       </div>
 
       <div className="text-muted text-[12.5px] mb-3 leading-relaxed">
-        Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto pro menor. Defina a <b>categoria</b> (use <b>Corporativo</b> para gastos de trabalho)
-        e clique <b>Aplicar</b> — vale para todos os lançamentos do grupo. <b>Aplicar todas as sugestões</b> resolve o grosso de uma vez. Já classificados saem da lista.
+        Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto pro menor. Defina a <b>categoria</b> (use <b>Corporativo</b> para trabalho)
+        e clique <b>Aplicar</b> — vale pra todos os lançamentos do grupo, vira sugestão e dá pra <b>desfazer</b>.
+        <span className="hidden sm:inline"> Pelo teclado: <kbd className="kbd">↑</kbd><kbd className="kbd">↓</kbd> navega, <kbd className="kbd">Enter</kbd> escolhe categoria, <kbd className="kbd">espaço</kbd> seleciona, <kbd className="kbd">A</kbd> aplica.</span>
       </div>
 
       {grupos.length === 0 ? (
-        <div className="bg-card border border-line rounded-[18px] p-6 shadow-card text-muted">Tudo classificado nesta visão. 🎉</div>
+        <div className="bg-card border border-line rounded-[18px] p-6 shadow-card flex items-center gap-2 text-green text-[14px]">
+          <span className="w-[22px] h-[22px] rounded-full bg-green/10 flex items-center justify-center text-[12px]">✓</span>
+          Tudo classificado nesta visão. 🎉
+        </div>
       ) : (
         <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
-          <div className="max-h-[600px] overflow-auto scroll-thin">
-            <table className="tbl min-w-[640px]">
-              <thead><tr>
-                <th className="sticky top-0 bg-card z-[1]">Estabelecimento</th>
-                <th className="sticky top-0 bg-card z-[1] num">Qtd</th>
-                <th className="sticky top-0 bg-card z-[1] num">Total</th>
-                <th className="sticky top-0 bg-card z-[1]">Categoria</th>
-                <th className="sticky top-0 bg-card z-[1]"></th>
-              </tr></thead>
-              <tbody>
-                {grupos.map((g) => (
-                  <tr key={g.key}>
-                    <td className="max-w-[280px] truncate" title={g.ex}>
-                      <button className="text-left bg-transparent border-0 p-0 cursor-pointer text-txt hover:text-accent transition-colors" onClick={() => openModal(g.ex, g.rows)}>{g.ex}</button>
-                    </td>
-                    <td className="num">{g.n}</td>
-                    <td className="num text-red">{BRL(g.total)}</td>
-                    <td>
-                      <select className="select-chev min-w-[150px] pl-2 py-[6px] text-[13px] bg-card text-txt border border-line rounded-[8px] cursor-pointer outline-none"
-                        value={escolhas[g.key] ?? ""} onChange={(e) => setEscolhas((s) => ({ ...s, [g.key]: e.target.value }))}>
-                        {CATEGORIAS.map((c) => <option key={c} value={c}>{c || "— escolher —"}</option>)}
-                      </select>
-                    </td>
-                    <td className="!text-center">
-                      <button disabled={busy || !escolhas[g.key]} onClick={() => aplicarUm(g)}
-                        className="btn bg-accent hover:bg-accent2 text-white text-[12px] rounded-[8px] px-3 py-[6px] border-0">
-                        Aplicar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* cabeçalho: selecionar todos + barra de ação em massa */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-[10px] border-b border-line bg-card2/60">
+            <label className="flex items-center gap-2 text-[12.5px] text-muted cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={todosSelecionados}
+                ref={(el) => { if (el) el.indeterminate = sel.size > 0 && !todosSelecionados; }}
+                onChange={() => setSel(todosSelecionados ? new Set() : new Set(grupos.map((g) => g.key)))}
+                className="accent-accent w-[15px] h-[15px]"
+              />
+              {sel.size > 0 ? `${sel.size} selecionado${sel.size > 1 ? "s" : ""}` : "Selecionar tudo"}
+            </label>
+            {sel.size > 0 && (
+              <div className="flex flex-wrap items-center gap-2 ml-auto">
+                <CategoryPicker value={bulkCat} onSelect={setBulkCat} placeholder="Categoria…" />
+                <button disabled={busy || !bulkCat} onClick={aplicarSelecionados} className="btn-primary !py-[7px] !px-3 !text-[12.5px]">
+                  Aplicar aos {sel.size}
+                </button>
+                <button onClick={() => setSel(new Set())} className="btn-ghost !py-[7px] !px-3 !text-[12.5px]">Limpar</button>
+              </div>
+            )}
+          </div>
+
+          <div
+            ref={listRef}
+            tabIndex={0}
+            onKeyDown={onKey}
+            role="listbox"
+            aria-label="Estabelecimentos a classificar"
+            className="max-h-[600px] overflow-auto scroll-thin outline-none divide-y divide-line"
+          >
+            {grupos.map((g, i) => {
+              const ativo = i === activeIdx;
+              const selecionado = sel.has(g.key);
+              const cat = escolhas[g.key] || "";
+              return (
+                <div
+                  key={g.key}
+                  data-idx={i}
+                  role="option"
+                  aria-selected={selecionado}
+                  onMouseDown={() => setActiveIdx(i)}
+                  className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-[11px] transition-colors ${ativo ? "bg-fill/70" : "hover:bg-fill/30"}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selecionado}
+                    onChange={() => setSel((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    aria-label={`Selecionar ${g.ex}`}
+                    className="accent-accent w-[15px] h-[15px] shrink-0"
+                  />
+                  <button
+                    className="min-w-0 flex-1 text-left bg-transparent border-0 p-0 cursor-pointer group"
+                    onClick={() => openModal(g.ex, g.rows)}
+                    title="Ver lançamentos do grupo"
+                  >
+                    <div className="text-[13.5px] font-medium truncate group-hover:text-accent transition-colors">{g.ex}</div>
+                    <div className="text-[11.5px] text-muted">
+                      {g.n} {g.n === 1 ? "lançamento" : "lançamentos"} · <span className="text-red tabular-nums">{BRL(g.total)}</span>
+                      {!cat && <span className="ml-2 inline-flex items-center rounded-full bg-amber/10 text-amber px-[7px] py-[1px] text-[10.5px] font-semibold">sem sugestão</span>}
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-2 shrink-0 ml-auto" onMouseDown={(e) => e.stopPropagation()}>
+                    <CategoryPicker
+                      key={pickerKey === g.key ? `open-${g.key}` : g.key}
+                      value={cat}
+                      autoOpen={pickerKey === g.key}
+                      onClose={voltarFoco}
+                      onSelect={(c) => setEscolhas((s) => ({ ...s, [g.key]: c }))}
+                    />
+                    <button
+                      disabled={busy || !cat}
+                      onClick={() => aplicarUm(g)}
+                      className="btn bg-accent hover:bg-accent2 text-white text-[12px] rounded-[8px] px-3 py-[6px] border-0 disabled:opacity-40"
+                    >
+                      Aplicar
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

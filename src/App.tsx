@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState, useCallback } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { Aba, Lancamento, Visao } from "./types";
 import { useAuth } from "./hooks/useAuth";
 import { useLancamentos } from "./hooks/useLancamentos";
@@ -7,6 +7,8 @@ import { ehGasto } from "./lib/finance";
 import { Login } from "./components/Login";
 import { Modal, type ModalData } from "./components/Modal";
 import { Seg } from "./components/ui";
+import { CommandPalette, type Cmd } from "./components/CommandPalette";
+import { SkInicio, SkTabela } from "./components/Skeleton";
 import { Inicio } from "./components/tabs/Inicio";
 import { VisaoGeral } from "./components/tabs/VisaoGeral";
 import { EvolucaoDiaria } from "./components/tabs/EvolucaoDiaria";
@@ -78,13 +80,17 @@ const TEMA_TITLE: Record<ThemePref, string> = {
   dark: "Tema: escuro",
 };
 
+// abas analíticas que dependem dos lançamentos (mostram skeleton na 1ª carga)
+const ABAS_DADOS = new Set<Aba>(["inicio", "geral", "mensal", "diario", "planejamento", "classificar", "lanc"]);
+
 export default function App() {
   const { logado, erro, entrarGoogle, entrarEmail, sair } = useAuth();
-  const { allDados, status, reload } = useLancamentos(!!logado);
+  const { allDados, status, reload, loading } = useLancamentos(!!logado);
   const { pref, cycle } = useTheme();
   const [visao, setVisao] = useState<Visao>("pessoal");
   const [aba, setAba] = useState<Aba>("inicio");
   const [modal, setModal] = useState<ModalData | null>(null);
+  const [paletaAberta, setPaletaAberta] = useState(false);
 
   // lembra a última sub-aba visitada de cada grupo de importação
   const lastManual = useRef<Aba>("importar");
@@ -93,6 +99,15 @@ export default function App() {
     if (SUB_MANUAL.some((s) => s.id === id)) lastManual.current = id;
     else if (SUB_AUTO.some((s) => s.id === id)) lastAuto.current = id;
     setAba(id);
+  }, []);
+
+  // atalho global: Cmd/Ctrl+K abre a paleta de comandos
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); setPaletaAberta((o) => !o); }
+    };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
   }, []);
 
   const openModal = useCallback((title: string, rows: Lancamento[]) => {
@@ -111,6 +126,26 @@ export default function App() {
     () => allDados.reduce((s, d) => s + (ehGasto(d.classe) && !d.categoria_manual ? 1 : 0), 0),
     [allDados]
   );
+
+  // comandos da paleta (Cmd/Ctrl+K): navegação + ações rápidas
+  const comandos = useMemo<Cmd[]>(() => [
+    { id: "inicio", label: "Início", grupo: "Análise", keywords: "home resumo", run: () => navTo("inicio") },
+    { id: "geral", label: "Visão Geral", grupo: "Análise", keywords: "evolucao mensal receitas despesas", run: () => navTo("geral") },
+    { id: "mensal", label: "Resumo Mensal", grupo: "Análise", keywords: "categorias rosca pizza", run: () => navTo("mensal") },
+    { id: "diario", label: "Evolução Diária", grupo: "Análise", keywords: "acumulado dia", run: () => navTo("diario") },
+    { id: "planejamento", label: "Planejamento", grupo: "Planejar", keywords: "orcamento projecao metas parcelas", run: () => navTo("planejamento") },
+    { id: "classificar", label: "Classificar", grupo: "Importação manual", keywords: "categorizar pendencias", dot: pendClass > 0, hint: pendClass > 0 ? String(pendClass) : undefined, run: () => navTo("classificar") },
+    { id: "importar", label: "Importar arquivo", grupo: "Importação manual", keywords: "csv excel ofx upload extrato fatura", run: () => navTo("importar") },
+    { id: "lanc", label: "Lançamentos", grupo: "Importação manual", keywords: "tabela transacoes exportar", run: () => navTo("lanc") },
+    { id: "conectar", label: "Conectar banco", grupo: "Importação automática", keywords: "pluggy open finance sincronizar", run: () => navTo("conectar") },
+    { id: "openbanking", label: "Open Banking", grupo: "Importação automática", keywords: "pluggy validacao", run: () => navTo("openbanking") },
+    { id: "conciliacao", label: "Conciliação", grupo: "Importação automática", keywords: "duplicatas pdf", run: () => navTo("conciliacao") },
+    { id: "tema", label: "Alternar tema", grupo: "Ações", keywords: "claro escuro dark light", run: cycle },
+    { id: "v-pessoal", label: "Visão: Pessoal", grupo: "Ações", run: () => setVisao("pessoal") },
+    { id: "v-corp", label: "Visão: Corporativo", grupo: "Ações", keywords: "trabalho", run: () => setVisao("corporativo") },
+    { id: "v-tudo", label: "Visão: Tudo", grupo: "Ações", run: () => setVisao("ALL") },
+    { id: "sair", label: "Sair", grupo: "Ações", keywords: "logout deslogar", run: sair },
+  ], [navTo, pendClass, cycle, sair]);
 
   if (logado === null) return <div className="p-8 text-muted">Carregando…</div>;
   if (!logado) return <Login onGoogle={entrarGoogle} onEmail={entrarEmail} erro={erro} />;
@@ -137,6 +172,19 @@ export default function App() {
               Controle Financeiro
             </h1>
             <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={() => setPaletaAberta(true)}
+                title="Buscar e navegar (Ctrl/⌘K)"
+                aria-label="Buscar e navegar"
+                className="hidden sm:inline-flex items-center gap-2 h-[30px] rounded-full border border-line bg-transparent text-muted hover:text-txt hover:border-muted/60 cursor-pointer pl-[10px] pr-[8px] transition-colors shrink-0"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" strokeLinecap="round" /></svg>
+                <span className="text-[12.5px]">Buscar</span>
+                <kbd className="kbd">⌘K</kbd>
+              </button>
+              <button onClick={() => setPaletaAberta(true)} title="Buscar e navegar" aria-label="Buscar e navegar" className={`sm:hidden ${iconBtn}`}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" strokeLinecap="round" /></svg>
+              </button>
               <Seg
                 size="sm"
                 value={visao}
@@ -175,6 +223,7 @@ export default function App() {
                     <button
                       key={isParent ? a.grupo : a.id}
                       onClick={onClick}
+                      aria-current={ativo ? "page" : undefined}
                       className={`relative whitespace-nowrap bg-transparent border-0 px-[10px] pt-[7px] pb-[11px] text-[13.5px] cursor-pointer transition-colors ${
                         ativo ? "text-txt font-semibold" : "text-muted hover:text-txt font-medium"
                       }`}
@@ -194,7 +243,12 @@ export default function App() {
       </header>
 
       <main className="px-4 sm:px-6 lg:px-8 py-5 sm:py-6 max-w-[1380px] mx-auto">
-        {status && <div className="text-muted text-[12.5px] mb-3">{status}</div>}
+        {status && !loading && (
+          <div className="inline-flex items-center gap-2 text-muted text-[12.5px] mb-3 bg-fill rounded-full px-[10px] py-[4px]">
+            <span className="w-[8px] h-[8px] rounded-full border-2 border-muted/40 border-t-muted animate-spin" />
+            {status}
+          </div>
+        )}
 
         {subAtivo && (
           <div className="inline-flex gap-[2px] bg-fill p-[3px] rounded-[10px] flex-wrap mb-[18px]">
@@ -218,6 +272,9 @@ export default function App() {
           </div>
         )}
 
+        {loading && ABAS_DADOS.has(aba) ? (
+          aba === "inicio" ? <SkInicio /> : <SkTabela />
+        ) : (
         <div key={aba} className="fade-in">
           {aba === "inicio" && <Inicio {...tabProps} go={navTo} />}
           {aba === "geral" && <VisaoGeral {...tabProps} />}
@@ -231,9 +288,11 @@ export default function App() {
           {aba === "openbanking" && <OpenBanking />}
           {aba === "conciliacao" && <Conciliacao />}
         </div>
+        )}
       </main>
 
       <Modal data={modal} onClose={() => setModal(null)} />
+      <CommandPalette open={paletaAberta} onClose={() => setPaletaAberta(false)} commands={comandos} />
     </div>
   );
 }

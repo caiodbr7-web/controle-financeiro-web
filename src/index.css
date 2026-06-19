@@ -62,6 +62,7 @@ body {
   .btn { @apply inline-flex items-center justify-center gap-2 cursor-pointer rounded-[10px] font-medium transition-colors disabled:opacity-45 disabled:cursor-default; }
   .btn-primary { @apply inline-flex items-center justify-center gap-2 cursor-pointer rounded-[10px] font-medium transition-colors disabled:opacity-45 disabled:cursor-default bg-accent text-white hover:bg-accent2 px-4 py-2 text-[13px] border-0; }
   .btn-ghost { @apply inline-flex items-center justify-center gap-2 cursor-pointer rounded-[10px] font-medium transition-colors disabled:opacity-45 disabled:cursor-default bg-transparent border border-line text-muted hover:text-txt px-4 py-2 text-[13px]; }
+  .kbd { @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-[5px] mx-[1px] rounded-[5px] border border-line bg-fill text-muted text-[10.5px] font-medium align-middle; }
 }
 
 /* esconde scrollbar (nav de abas) */
@@ -90,8 +91,49 @@ body {
   to { opacity: 1; transform: none; }
 }
 .fade-in { animation: cf-fade-up 0.22s ease both; }
+
+/* ===== foco acessível: anel visível só na navegação por teclado ===== */
+:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* botões/links já têm estados próprios — usamos o anel em vez do outline padrão */
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+[tabindex]:focus:not(:focus-visible) { outline: none; }
+
+/* ===== skeleton de carregamento (shimmer) ===== */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgb(var(--c-fill));
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(var(--c-line) / 0.55), transparent);
+  animation: cf-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes cf-shimmer { 100% { transform: translateX(100%); } }
+
+/* ===== toasts ===== */
+@keyframes cf-toast-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes cf-toast-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+.toast-in { animation: cf-toast-in 0.2s cubic-bezier(.2,.8,.2,1) both; }
+.toast-out { animation: cf-toast-out 0.18s ease both; }
+
 @media (prefers-reduced-motion: reduce) {
-  .fade-in { animation: none; }
+  .fade-in, .toast-in, .toast-out { animation: none; }
+  .skeleton::after { animation: none; }
 }
 
 /* ===== Pluggy Connect: aumentar o pop-up =====

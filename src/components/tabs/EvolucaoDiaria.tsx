@@ -102,7 +102,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
         right={
           <div className="flex items-center gap-2 flex-wrap">
             <Seg size="sm" value={mesesSel} onChange={setMesesSel} options={MESES_OPTS} />
-            <Seg size="sm" value={modo} onChange={setModo} options={MODO_OPTS} />
+            <Seg size="sm" value={modo} onChange={(v) => setModo(v as Modo)} options={MODO_OPTS} />
           </div>
         }
       >
