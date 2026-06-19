@@ -2,26 +2,41 @@ import { useState, useCallback, useEffect } from "react";
 import { sb } from "../lib/supabase";
 import type { Lancamento } from "../types";
 
-// Por enquanto os dashboards mostram SÓ o que veio de arquivo (PDF).
-// Os lançamentos importados via Open Banking (fonte_dados = 'pluggy') ficam
-// no banco mas NÃO entram em nenhuma análise. Para passar a exibi-los no
-// futuro, basta mudar esta flag para true.
-const MOSTRAR_OPEN_BANKING = false;
+// ---------------------------------------------------------------------------
+// Fonte por período — evita DUPLA CONTAGEM entre PDF e Open Banking.
+// As duas fontes cobrem meses sobrepostos (cada transação aparece nas duas);
+// por isso cada mês deve vir de UMA fonte só. Regra (corte EXCLUSIVO por
+// competência "YYYY-MM"):
+//     competência <  CORTE  ->  PDF (histórico curado por fatura/extrato)
+//     competência >= CORTE  ->  Open Banking (Pluggy)
+// Para voltar a só-PDF, use um corte no futuro distante (ex.: "9999-99");
+// para tudo via Open Banking, use "0000-00".
+// As abas Conciliação e Open Banking NÃO usam este hook (têm query própria),
+// então continuam vendo as duas fontes para validação/cruzamento.
+// ---------------------------------------------------------------------------
+const CORTE_OPEN_BANKING = "2026-06"; // Open Banking assume deste mês em diante
 
-/** Carrega todos os lançamentos (paginado; o Supabase limita ~1.000/linha). */
+const compKey = (d: Lancamento) => String(d.competencia || "").slice(0, 7);
+/** Um lançamento é visível nos dashboards se está do lado certo do corte. */
+export function lancVisivel(d: Lancamento): boolean {
+  return d.fonte_dados === "pluggy"
+    ? compKey(d) >= CORTE_OPEN_BANKING // Open Banking: do corte em diante
+    : compKey(d) < CORTE_OPEN_BANKING; // PDF (fonte nula/pdf): antes do corte
+}
+
+/** Carrega todos os lançamentos (paginado) e aplica o corte de fonte por período. */
 export function useLancamentos(ativo: boolean) {
   const [allDados, setAllDados] = useState<Lancamento[]>([]);
   const [status, setStatus] = useState("");
+  const [carregou, setCarregou] = useState(false); // já completou a 1ª carga?
 
   const reload = useCallback(async () => {
-    setStatus("carregando lançamentos...");
+    setStatus("atualizando…");
     const PAGINA = 1000;
     let todos: Lancamento[] = [], de = 0;
     while (true) {
-      let q = sb.from("lancamentos").select("*");
-      // exclui Open Banking do display (mantém linhas com fonte nula/pdf)
-      if (!MOSTRAR_OPEN_BANKING) q = q.or("fonte_dados.is.null,fonte_dados.neq.pluggy");
-      const { data, error } = await q
+      const { data, error } = await sb
+        .from("lancamentos").select("*")
         .order("competencia", { ascending: false }).order("origem").order("id")
         .range(de, de + PAGINA - 1);
       if (error) { setStatus("erro: " + error.message); return; }
@@ -29,11 +44,14 @@ export function useLancamentos(ativo: boolean) {
       if (!data || data.length < PAGINA) break;
       de += PAGINA;
     }
-    setAllDados(todos);
+    // corte de fonte por período (PDF até o corte, Open Banking a partir dele)
+    setAllDados(todos.filter(lancVisivel));
     setStatus("");
+    setCarregou(true);
   }, []);
 
   useEffect(() => { if (ativo) reload(); }, [ativo, reload]);
 
-  return { allDados, status, reload };
+  // loading = primeira carga ainda não concluída (para mostrar skeleton)
+  return { allDados, status, reload, loading: ativo && !carregou };
 }
