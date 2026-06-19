@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Lancamento } from "../../types";
 import { Kpi, Seg, Select } from "../ui";
 import { sb } from "../../lib/supabase";
-import { BRL, bankOf, dvDataReal } from "../../lib/finance";
+import { BRL, fmtMoeda, dicaMoedaOrigem, bankOf, dvDataReal } from "../../lib/finance";
 import { conciliar, type Conf, type Par } from "../../lib/conciliacao";
 
 /* ============================================================================
@@ -12,7 +12,7 @@ import { conciliar, type Conf, type Par } from "../../lib/conciliacao";
    NÃO altera nada no banco: é uma superfície de diagnóstico.
    ============================================================================ */
 
-type Vista = "dup" | "soOF" | "soPDF";
+type Vista = "dup" | "soOF" | "soPDF" | "estr";
 
 const fmtData = (d: Lancamento) => {
   const r = dvDataReal(d);
@@ -101,6 +101,14 @@ export function Conciliacao() {
         </div>
       )}
 
+      {res.ofEstrangeiro.length > 0 && (
+        <div className="text-[12.5px] text-amber bg-amber/10 border border-amber/30 rounded-[12px] px-3.5 py-2.5 mb-4 leading-relaxed">
+          <strong>{res.ofEstrangeiro.length}</strong> lançamento(s) do Open Finance estão em <strong>moeda estrangeira sem conversão</strong> do
+          Pluggy e ficam <strong>fora do cruzamento</strong> (não dá para casar um valor em dólar contra um PDF em real). Veja-os na aba
+          "Moeda estrangeira". Com banco de verdade o Pluggy costuma enviar o valor já convertido em BRL, e eles voltam a conciliar normalmente.
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2 items-center mb-4">
         <Seg<Vista>
           value={vista}
@@ -109,6 +117,7 @@ export function Conciliacao() {
             { v: "dup", label: `Duplicatas prováveis (${res.pares.length})` },
             { v: "soOF", label: `Só Open Finance (${res.soOF.length})` },
             { v: "soPDF", label: `Só PDF na janela (${res.soPDF.length})` },
+            ...(res.ofEstrangeiro.length ? [{ v: "estr" as const, label: `Moeda estrangeira (${res.ofEstrangeiro.length})` }] : []),
           ]}
         />
         <div className="ml-auto flex items-center gap-2">
@@ -146,7 +155,7 @@ export function Conciliacao() {
           {vista === "dup" ? (
             <TabelaPares pares={paresFiltrados} confFiltro={confFiltro} setConfFiltro={setConfFiltro} contagem={contagemConf} />
           ) : (
-            <TabelaSimples rows={vista === "soOF" ? res.soOF : res.soPDF} />
+            <TabelaSimples rows={vista === "soOF" ? res.soOF : vista === "estr" ? res.ofEstrangeiro : res.soPDF} />
           )}
         </div>
       </div>
@@ -228,7 +237,10 @@ function TabelaSimples({ rows }: { rows: Lancamento[] }) {
             <td className="whitespace-nowrap">{d.origem}</td>
             <td className="max-w-[360px] truncate" title={d.descricao}>{d.descricao}</td>
             <td>{d.classe}</td>
-            <td className={`num ${d.valor < 0 ? "text-red" : "text-green"}`}>{BRL(d.valor)}</td>
+            <td className={`num ${d.valor < 0 ? "text-red" : "text-green"}`}>
+              {fmtMoeda(d.valor, d.moeda)}
+              {dicaMoedaOrigem(d) && <span className="text-muted text-[11px] ml-1">({dicaMoedaOrigem(d)})</span>}
+            </td>
           </tr>
         ))}
         {!rows.length && (

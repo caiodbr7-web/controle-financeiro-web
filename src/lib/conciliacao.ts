@@ -11,11 +11,19 @@
 // + banco/descrição) e devolve um nível de CONFIANÇA. Nada é apagado aqui — a
 // resolução é decisão do usuário. Casar só por valor+data gera falso-positivo
 // (valores redondos coincidem), então isso nunca basta sozinho para "alta".
+//
+// MOEDA: o casamento é feito por VALOR EM BRL. PDFs são sempre BRL; lançamentos
+// do Open Finance que ficaram em moeda estrangeira SEM conversão (moeda != BRL)
+// NÃO entram no cruzamento — casar um número em dólar contra um PDF em real daria
+// par errado. Esses ficam num balde próprio (ofEstrangeiro) para o usuário ver.
 // ============================================================================
 import type { Lancamento } from "../types";
 import { dvDataReal, bankOf, normEstab } from "./finance";
 
 export type Conf = "alta" | "media" | "baixa";
+
+/** True se o `valor` da linha está em BRL (sem moeda definida = BRL, retrocompat). */
+const ehBRL = (d: Lancamento) => !d.moeda || d.moeda.toUpperCase() === "BRL";
 
 export interface Par {
   of: Lancamento;
@@ -30,6 +38,7 @@ export interface Resultado {
   pares: Par[];
   soOF: Lancamento[];
   soPDF: Lancamento[];
+  ofEstrangeiro: Lancamento[]; // OF em moeda != BRL sem conversão — fora do casamento
   janela: { ini: number; fim: number } | null; // sobreposição (ms epoch)
 }
 
@@ -46,8 +55,11 @@ export function realMs(d: Lancamento): number | null {
 const ehCartao = (o: string) => String(o || "").startsWith("Cartao");
 
 export function conciliar(rows: Lancamento[], tolDias = 3): Resultado {
-  const of = rows.filter((d) => d.fonte_dados === "pluggy");
-  const pdf = rows.filter((d) => d.fonte_dados !== "pluggy");
+  const ofTodos = rows.filter((d) => d.fonte_dados === "pluggy");
+  // só concilia OF em BRL; o resto (moeda estrangeira sem conversão) sai à parte
+  const of = ofTodos.filter(ehBRL);
+  const ofEstrangeiro = ofTodos.filter((d) => !ehBRL(d));
+  const pdf = rows.filter((d) => d.fonte_dados !== "pluggy" && ehBRL(d));
 
   // janela de sobreposição (interseção dos intervalos de data real das fontes)
   const msOf = of.map(realMs).filter((x): x is number => x != null);
@@ -114,5 +126,5 @@ export function conciliar(rows: Lancamento[], tolDias = 3): Resultado {
         if (!c.usado && c.ms != null && c.ms >= janela.ini && c.ms <= janela.fim) soPDF.push(c.row);
   }
 
-  return { pares, soOF, soPDF, janela };
+  return { pares, soOF, soPDF, ofEstrangeiro, janela };
 }
