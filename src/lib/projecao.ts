@@ -116,6 +116,9 @@ export function horizonte(n: number, start = mesAtual()): { k: string; label: st
  * Projeção consolidada por mês: gastos na conta, total no cartão, gerais e saldo.
  * `cartaoPlano` (opcional) é a linha especial com o orçamento mensal do cartão; quando
  * não há orçamento, o total do cartão cai na soma dos itens marcados (no_cartao).
+ * `contaPlano` (opcional) é a linha especial com o orçamento mensal da conta variável
+ * (o "previsto" definido na visão Mês via "↑ orçar"); quando há orçamento, ele tem
+ * prioridade sobre a soma dos itens não-recorrentes fora do cartão — mesma regra do cartão.
  * Itens marcados NÃO entram em `conta` — eles já estão dentro do total do cartão.
  * `ovr` (opcional) traz ajustes manuais por mês: ovr[competencia][plano_id] sobrepõe o
  * valor calculado daquele item naquele mês (usado pela edição por duplo clique).
@@ -124,10 +127,11 @@ export function projetar(
   planos: Plano[],
   meses: { k: string }[],
   cartaoPlano?: Plano | null,
+  contaPlano?: Plano | null,
   ovr?: Record<string, Record<number, number>>,
 ): ProjMes[] {
   return meses.map(({ k }) => {
-    let recorr = 0, recorrNoCartao = 0, contaVar = 0, flag = 0, receita = 0;
+    let recorr = 0, recorrNoCartao = 0, contaVarItens = 0, flag = 0, receita = 0;
     for (const p of planos) {
       if (!p.ativo) continue;
       const o = ovr?.[k]?.[p.id];
@@ -140,12 +144,16 @@ export function projetar(
         recorr += v;                        // 1) recorrentes (qualquer forma de pagamento)
         if (p.no_cartao) recorrNoCartao += v;
       } else if (!p.no_cartao) {
-        contaVar += v;                      // 2) conta variável (não-recorrente, fora do cartão)
+        contaVarItens += v;                 // itens não-recorrentes fora do cartão
       }
     }
     const orc = cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, k) : 0;
     const cartao = orc > 0 ? orc : flag;    // orçamento definido; sem ele, soma dos itens marcados
     const cartaoVar = Math.max(0, cartao - recorrNoCartao); // 3) cartão fora dos recorrentes marcados
+    // 2) conta variável: orçamento previsto (visão Mês) tem prioridade; sem ele, cai na
+    //    soma dos itens não-recorrentes fora do cartão — espelha a regra do cartão.
+    const orcConta = contaPlano && contaPlano.ativo ? contribNoMes(contaPlano, k) : 0;
+    const contaVar = orcConta > 0 ? orcConta : contaVarItens;
     const gerais = recorr + contaVar + cartaoVar; // baldes disjuntos — nada soma em dobro
     return { k, label: dvLabel(k), recorr, contaVar, cartaoVar, cartao, gerais, receita, saldo: receita - gerais };
   });

@@ -391,7 +391,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
 
   // ---------- projeção ----------
   const meses = useMemo(() => horizonte(n), [n]);
-  const proj = useMemo(() => projetar(planos, meses, cartaoPlano, ovr), [planos, meses, cartaoPlano, ovr]);
+  const proj = useMemo(() => projetar(planos, meses, cartaoPlano, contaPlano, ovr), [planos, meses, cartaoPlano, contaPlano, ovr]);
 
   // carrega os ajustes manuais dos meses da projeção (reaproveita plano_mensal.valor_real)
   const carregarOverrides = useCallback(async (ks: string[]) => {
@@ -846,7 +846,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       <td className="border-t-2 !border-t-line"></td>
                     </tr>
                     {/* 🏦 conta variável (não-recorrente fora do cartão) */}
-                    <tr className="text-[12.5px]" title="gastos previstos na conta (Pix/débito) além dos recorrentes — parcelas, pagamentos e metas fora do cartão">
+                    <tr className="text-[12.5px]" title="orçamento previsto da conta (definido na visão Mês via ↑ orçar); sem orçamento, soma de parcelas/pagamentos/metas fora do cartão">
                       <td>🏦 Gastos na conta <span className="text-muted font-normal">· fora os recorrentes</span></td>
                       {proj.map((m, i) => <td key={m.k} className={`num text-muted ${i === 0 ? "!text-accent" : ""}`}>{m.contaVar ? fmtCell(m.contaVar) : <span className="text-line">·</span>}</td>)}
                       <td></td>
