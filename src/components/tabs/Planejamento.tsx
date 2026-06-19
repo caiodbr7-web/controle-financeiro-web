@@ -126,6 +126,10 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
 
   // projeção
   const [n, setN] = useState(12);
+  // ajustes manuais por mês na projeção (override por duplo clique): comp -> plano_id -> valor
+  const [ovr, setOvr] = useState<Record<string, Record<number, number>>>({});
+  const [editCell, setEditCell] = useState<{ id: number; k: string } | null>(null);
+  const [editVal, setEditVal] = useState("");
   // visão mês
   const [comp, setComp] = useState(MES_SELECT[0].v);
   const [mensal, setMensal] = useState<Record<string, Record<number, Mensal>>>({});
@@ -355,7 +359,45 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
 
   // ---------- projeção ----------
   const meses = useMemo(() => horizonte(n), [n]);
-  const proj = useMemo(() => projetar(planos, meses, cartaoPlano), [planos, meses, cartaoPlano]);
+  const proj = useMemo(() => projetar(planos, meses, cartaoPlano, ovr), [planos, meses, cartaoPlano, ovr]);
+
+  // carrega os ajustes manuais dos meses da projeção (reaproveita plano_mensal.valor_real)
+  const carregarOverrides = useCallback(async (ks: string[]) => {
+    if (!ks.length) return;
+    const { data, error } = await sb.from("plano_mensal").select("plano_id,competencia,valor_real").in("competencia", ks);
+    if (error) return;
+    const m: Record<string, Record<number, number>> = {};
+    (data || []).forEach((r: any) => { if (r.valor_real != null) (m[r.competencia] = m[r.competencia] || {})[r.plano_id] = r.valor_real; });
+    setOvr(m);
+  }, []);
+  useEffect(() => { if (!semTabela && view === "proj") carregarOverrides(meses.map((m) => m.k)); }, [view, meses, semTabela, carregarOverrides]);
+
+  // valor efetivo de um item num mês da projeção (ajuste manual, senão a regra do item)
+  const valProj = (p: Plano, k: string) => { const o = ovr[k]?.[p.id]; return o != null ? o : contribNoMes(p, k); };
+
+  // duplo clique → começa a editar aquela célula
+  function editarCelula(p: Plano, k: string) {
+    if (!p.ativo) return;
+    const v = valProj(p, k);
+    setEditCell({ id: p.id, k });
+    setEditVal(v ? String(v).replace(".", ",") : "");
+  }
+  // grava o ajuste manual; vazio ou igual à regra remove o override
+  async function salvarOverride(p: Plano, k: string) {
+    setEditCell(null);
+    const base = contribNoMes(p, k);
+    const v = parseValorN(editVal);
+    const tinha = ovr[k]?.[p.id] != null;
+    const pago = mensal[k]?.[p.id]?.pago ?? false;
+    if (v == null || Math.abs(v - base) < 0.005) {
+      if (!tinha) return; // nada a fazer
+      await sb.from("plano_mensal").upsert({ plano_id: p.id, competencia: k, valor_real: null, pago }, { onConflict: "plano_id,competencia" });
+      setOvr((o) => { const c = { ...(o[k] || {}) }; delete c[p.id]; return { ...o, [k]: c }; });
+      return;
+    }
+    const { error } = await sb.from("plano_mensal").upsert({ plano_id: p.id, competencia: k, valor_real: v, pago }, { onConflict: "plano_id,competencia" });
+    if (!error) setOvr((o) => ({ ...o, [k]: { ...(o[k] || {}), [p.id]: v } }));
+  }
   const gastoMedio = proj.length ? proj.reduce((s, m) => s + m.gerais, 0) / proj.length : 0;
   const saldoMedio = proj.length ? proj.reduce((s, m) => s + m.saldo, 0) / proj.length : 0;
   const maior = proj.reduce((a, m) => (m.gerais > a.gerais ? m : a), proj[0] || { gerais: 0, label: "—" });
@@ -675,7 +717,28 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                                 <CartaoToggle p={p} />
                               </div>
                             </td>
-                            {meses.map((m) => { const v = p.ativo ? contribNoMes(p, m.k) : 0; return <td key={m.k} className={`num ${ehReceitaTipo(p.tipo) ? "text-green" : ""}`}>{v ? fmtCell(v) : <span className="text-line">·</span>}</td>; })}
+                            {meses.map((m) => {
+                              const editando = editCell?.id === p.id && editCell?.k === m.k;
+                              const ajustado = ovr[m.k]?.[p.id] != null;
+                              const v = p.ativo ? valProj(p, m.k) : 0;
+                              return (
+                                <td key={m.k} onDoubleClick={() => editarCelula(p, m.k)}
+                                  title={p.ativo ? "duplo clique para ajustar só este mês" : undefined}
+                                  className={`num ${ehReceitaTipo(p.tipo) ? "text-green" : ""} ${p.ativo && !editando ? "cursor-pointer" : ""}`}>
+                                  {editando ? (
+                                    <input autoFocus className={`${inp} w-[58px] text-right`} value={editVal}
+                                      onChange={(e) => setEditVal(e.target.value)}
+                                      onBlur={() => salvarOverride(p, m.k)}
+                                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setEditCell(null); }} />
+                                  ) : (
+                                    <span className={ajustado ? "text-accent font-medium underline decoration-dotted underline-offset-2" : ""}
+                                      title={ajustado ? "ajustado manualmente" : undefined}>
+                                      {v ? fmtCell(v) : <span className="text-line">·</span>}
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            })}
                             <td className="whitespace-nowrap text-[12px] text-right">
                               <button onClick={() => editar(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-accent transition-colors">editar</button>
                               <span className="text-line mx-1">·</span>
@@ -717,7 +780,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            Valores em reais (sem centavos); a primeira coluna é o mês atual. O rodapé separa <b>🏦 conta</b>, <b className="text-violet">💳 cartão</b> e <b>Σ gerais</b>. Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
+            Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). O rodapé separa <b>🏦 conta</b>, <b className="text-violet">💳 cartão</b> e <b>Σ gerais</b>. Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           </div>
         </>

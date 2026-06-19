@@ -112,13 +112,21 @@ export function horizonte(n: number, start = mesAtual()): { k: string; label: st
  * `cartaoPlano` (opcional) é a linha especial com o orçamento mensal do cartão; quando
  * não há orçamento, o total do cartão cai na soma dos itens marcados (no_cartao).
  * Itens marcados NÃO entram em `conta` — eles já estão dentro do total do cartão.
+ * `ovr` (opcional) traz ajustes manuais por mês: ovr[competencia][plano_id] sobrepõe o
+ * valor calculado daquele item naquele mês (usado pela edição por duplo clique).
  */
-export function projetar(planos: Plano[], meses: { k: string }[], cartaoPlano?: Plano | null): ProjMes[] {
+export function projetar(
+  planos: Plano[],
+  meses: { k: string }[],
+  cartaoPlano?: Plano | null,
+  ovr?: Record<string, Record<number, number>>,
+): ProjMes[] {
   return meses.map(({ k }) => {
     let conta = 0, receita = 0, flag = 0;
     for (const p of planos) {
       if (!p.ativo) continue;
-      const v = contribNoMes(p, k);
+      const o = ovr?.[k]?.[p.id];
+      const v = o != null ? o : contribNoMes(p, k);
       if (!v) continue;
       if (ehReceitaTipo(p.tipo)) receita += v;
       else if (p.no_cartao) flag += v; // itens marcados vão para o total do cartão
