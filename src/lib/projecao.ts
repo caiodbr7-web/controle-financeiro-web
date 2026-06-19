@@ -93,9 +93,12 @@ export function contribNoMes(p: Plano, mk: string): number {
 
 export interface ProjMes {
   k: string; label: string;
-  conta: number;   // gastos fora do cartão (itens não marcados)
-  cartao: number;  // total no cartão: orçamento definido, senão soma dos itens marcados
-  gerais: number;  // conta + cartão (consolidado, sem contar em dobro)
+  // mesmos 3 baldes que NÃO se sobrepõem da visão "Mês" (nada conta em dobro):
+  recorr: number;   // gastos recorrentes (fixos mensais), qualquer forma de pagamento
+  contaVar: number; // gastos na conta FORA os recorrentes (não-cartão, não-fixos)
+  cartaoVar: number;// gastos no cartão FORA os recorrentes já marcados
+  cartao: number;   // total no cartão: orçamento definido, senão soma dos itens marcados
+  gerais: number;   // recorr + contaVar + cartaoVar (consolidado, sem contar em dobro)
   receita: number; saldo: number;
 }
 
@@ -122,19 +125,26 @@ export function projetar(
   ovr?: Record<string, Record<number, number>>,
 ): ProjMes[] {
   return meses.map(({ k }) => {
-    let conta = 0, receita = 0, flag = 0;
+    let recorr = 0, recorrNoCartao = 0, contaVar = 0, flag = 0, receita = 0;
     for (const p of planos) {
       if (!p.ativo) continue;
       const o = ovr?.[k]?.[p.id];
       const v = o != null ? o : contribNoMes(p, k);
       if (!v) continue;
-      if (ehReceitaTipo(p.tipo)) receita += v;
-      else if (p.no_cartao) flag += v; // itens marcados vão para o total do cartão
-      else conta += v;
+      if (ehReceitaTipo(p.tipo)) { receita += v; continue; }
+      if (p.no_cartao) flag += v;          // todo item marcado entra no total do cartão
+      const recorrente = p.tipo === "fixo"; // recorrente = gasto fixo mensal
+      if (recorrente) {
+        recorr += v;                        // 1) recorrentes (qualquer forma de pagamento)
+        if (p.no_cartao) recorrNoCartao += v;
+      } else if (!p.no_cartao) {
+        contaVar += v;                      // 2) conta variável (não-recorrente, fora do cartão)
+      }
     }
     const orc = cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, k) : 0;
-    const cartao = orc > 0 ? orc : flag; // orçamento definido; sem ele, soma dos itens marcados
-    const gerais = conta + cartao; // itens marcados já estão no cartão — não soma de novo
-    return { k, label: dvLabel(k), conta, cartao, gerais, receita, saldo: receita - gerais };
+    const cartao = orc > 0 ? orc : flag;    // orçamento definido; sem ele, soma dos itens marcados
+    const cartaoVar = Math.max(0, cartao - recorrNoCartao); // 3) cartão fora dos recorrentes marcados
+    const gerais = recorr + contaVar + cartaoVar; // baldes disjuntos — nada soma em dobro
+    return { k, label: dvLabel(k), recorr, contaVar, cartaoVar, cartao, gerais, receita, saldo: receita - gerais };
   });
 }

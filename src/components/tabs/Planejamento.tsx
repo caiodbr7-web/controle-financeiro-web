@@ -754,33 +754,46 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                 </tbody>
                 {(!!planos.length || cartaoPlano) && (
                   <tfoot>
-                    {/* Σ total geral consolidado — total no topo */}
+                    {/* mesma estrutura da visão "Mês": 3 baldes disjuntos → Σ gerais → saldo */}
+                    {/* 🔁 recorrentes (fixos), qualquer forma de pagamento */}
                     <tr className="font-bold">
-                      <td className="border-t-2 !border-t-line">Σ Gastos gerais</td>
-                      {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gerais)}</td>)}
+                      <td className="border-t-2 !border-t-line">🔁 Gastos recorrentes <span className="text-muted font-normal">· fixos mensais</span></td>
+                      {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{m.recorr ? fmtCell(m.recorr) : <span className="text-line">·</span>}</td>)}
                       <td className="border-t-2 !border-t-line"></td>
                     </tr>
-                    {/* 🏦 gastos fora do cartão */}
-                    <tr className="text-[12.5px]">
-                      <td>🏦 Gastos na conta</td>
-                      {proj.map((m, i) => <td key={m.k} className={`num text-muted ${i === 0 ? "!text-accent" : ""}`}>{m.conta ? fmtCell(m.conta) : <span className="text-line">·</span>}</td>)}
+                    {/* 🏦 conta variável (não-recorrente fora do cartão) */}
+                    <tr className="text-[12.5px]" title="gastos previstos na conta (Pix/débito) além dos recorrentes — parcelas, pagamentos e metas fora do cartão">
+                      <td>🏦 Gastos na conta <span className="text-muted font-normal">· fora os recorrentes</span></td>
+                      {proj.map((m, i) => <td key={m.k} className={`num text-muted ${i === 0 ? "!text-accent" : ""}`}>{m.contaVar ? fmtCell(m.contaVar) : <span className="text-line">·</span>}</td>)}
                       <td></td>
                     </tr>
-                    {/* 💳 total no cartão (orçamento, senão soma dos itens marcados) */}
-                    <tr className="text-violet text-[12.5px]" title="total do cartão: orçamento definido, senão soma dos itens marcados 💳">
-                      <td>💳 Cartão de crédito</td>
-                      {proj.map((m) => <td key={m.k} className="num">{m.cartao ? fmtCell(m.cartao) : <span className="text-line">·</span>}</td>)}
+                    {/* 💳 cartão variável (total do cartão fora os recorrentes marcados) */}
+                    <tr className="text-violet text-[12.5px]" title="total do cartão (orçamento, senão soma dos itens marcados 💳) além dos recorrentes já marcados">
+                      <td>💳 Gastos no cartão <span className="text-muted font-normal">· fora os recorrentes</span></td>
+                      {proj.map((m, i) => <td key={m.k} className={`num ${i === 0 ? "!text-accent" : ""}`}>{m.cartaoVar ? fmtCell(m.cartaoVar) : <span className="text-line">·</span>}</td>)}
                       <td></td>
                     </tr>
-                    <tr className="text-green"><td>Receita prevista</td>{proj.map((m) => <td key={m.k} className="num">{m.receita ? fmtCell(m.receita) : <span className="text-line">·</span>}</td>)}<td></td></tr>
-                    <tr className="font-bold"><td>Saldo previsto</td>{proj.map((m) => <td key={m.k} className={`num ${m.saldo < 0 ? "text-red" : "text-green"}`}>{fmtCell(m.saldo)}</td>)}<td></td></tr>
+                    {/* Σ total geral consolidado */}
+                    <tr className="font-bold">
+                      <td>Σ Gastos gerais</td>
+                      {proj.map((m, i) => <td key={m.k} className={`num ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gerais)}</td>)}
+                      <td></td>
+                    </tr>
+                    {/* Receita prevista (alimenta o saldo) */}
+                    <tr className="text-green"><td>💰 Receita prevista</td>{proj.map((m, i) => <td key={m.k} className={`num ${i === 0 ? "!text-accent" : ""}`}>{m.receita ? fmtCell(m.receita) : <span className="text-line">·</span>}</td>)}<td></td></tr>
+                    {/* Saldo do mês = receita − gerais */}
+                    <tr className="font-bold">
+                      <td className="border-t-2 !border-t-line">Saldo do mês</td>
+                      {proj.map((m) => <td key={m.k} className={`num border-t-2 !border-t-line ${m.saldo < 0 ? "text-red" : "text-green"}`}>{fmtCell(m.saldo)}</td>)}
+                      <td className="border-t-2 !border-t-line"></td>
+                    </tr>
                   </tfoot>
                 )}
               </table>
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). O rodapé separa <b>🏦 conta</b>, <b className="text-violet">💳 cartão</b> e <b>Σ gerais</b>. Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
+            Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). O rodapé segue a mesma estrutura da visão <b>Mês</b>: <b>🔁 recorrentes</b> (fixos), <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos três, sem contar em dobro) e o <b>Saldo do mês</b>. Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           </div>
         </>
