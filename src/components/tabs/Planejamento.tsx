@@ -337,8 +337,9 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     if (error) { setErro(faltaColunaCartao(error.message) ? MSG_MIGRACAO_CARTAO : error.message); if (faltaColunaCartao(error.message)) setTemOrcCartao(false); return null; }
     const novo = data as Plano; setCartaoPlano(novo); return novo;
   }
-  async function salvarOrcamentoCartao(valorStr: string) {
-    const v = parseValor(valorStr);
+  // recebe o valor JÁ numérico (não passa pelo parser pt-BR: aqui o ponto é decimal, não milhar)
+  async function salvarOrcamentoCartao(valor: number) {
+    const v = Math.round(valor * 100) / 100;
     if (!v && !cartaoPlano) return; // nada digitado e nada salvo: não cria à toa
     const p = await garantirCartaoPlano(); if (!p) return;
     const { error } = await sb.from("planos").update({ valor: v }).eq("id", p.id);
@@ -505,7 +506,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     setOrcEdit(null);
     // o digitado é o previsto VARIÁVEL; o orçamento TOTAL do cartão = variável + recorrentes já no cartão
     const total = parseValor(orcVal) + somaPrev(recorrNoCartao, comp);
-    await salvarOrcamentoCartao(String(total));
+    await salvarOrcamentoCartao(total);
   }
 
   // total geral consolidado (recorrentes + variável conta + variável cartão)
