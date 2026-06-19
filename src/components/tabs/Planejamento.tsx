@@ -71,6 +71,8 @@ const VAZIO = { tipo: "fixo" as TipoPlano, nome: "", categoria: "", valor: "", m
 // erro de coluna ainda não criada (migração do cartão não rodada)
 const faltaColunaCartao = (msg?: string) => /no_cartao|could not find|schema cache/i.test(msg || "");
 const MSG_MIGRACAO_CARTAO = 'Para usar o cartão de crédito, rode em Supabase → SQL Editor a migração db/migrations/2026-06-16-cartao-credito.sql (uma vez só).';
+const faltaColunaConta = (msg?: string) => /eh_conta_total|could not find|schema cache/i.test(msg || "");
+const MSG_MIGRACAO_CONTA = 'Para orçar a conta variável, rode em Supabase → SQL Editor a migração db/migrations/2026-06-18-orcamento-conta.sql (uma vez só).';
 
 const SQL_HINT = `-- planos: itens; plano_mensal: realizado/pago por mês
 create table if not exists public.planos (
@@ -118,7 +120,12 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const [semTabela, setSemTabela] = useState(false);
   const [temCartaoCol, setTemCartaoCol] = useState(true); // coluna no_cartao existe?
   const [temOrcCartao, setTemOrcCartao] = useState(true); // coluna eh_cartao_total existe?
+  const [temOrcConta, setTemOrcConta] = useState(true); // coluna eh_conta_total existe?
   const [cartaoPlano, setCartaoPlano] = useState<Plano | null>(null); // linha especial do TOTAL do cartão
+  const [contaPlano, setContaPlano] = useState<Plano | null>(null); // linha especial do orçamento da conta variável
+  // edição do orçamento previsto a partir do realizado (botão "↑ orçar")
+  const [orcEdit, setOrcEdit] = useState<null | "conta" | "cartao">(null);
+  const [orcVal, setOrcVal] = useState("");
   const [cartaoOrc, setCartaoOrc] = useState(""); // orçamento mensal do cartão (texto do input)
   const [cartaoReal, setCartaoReal] = useState(""); // total real do cartão no mês selecionado (texto)
   const [copiado, setCopiado] = useState(false);
@@ -152,18 +159,22 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       setLoading(false); return;
     }
     const todos = (data || []) as Plano[];
-    // separa a linha especial do TOTAL do cartão dos itens comuns
+    // separa as linhas especiais (TOTAL do cartão e orçamento da conta) dos itens comuns
     const card = todos.find((p) => (p as any).eh_cartao_total) || null;
+    const conta = todos.find((p) => (p as any).eh_conta_total) || null;
     setCartaoPlano(card);
-    setPlanos(card ? todos.filter((p) => p.id !== card.id) : todos);
-    // detecta se as colunas do cartão já existem (migração rodada)
+    setContaPlano(conta);
+    setPlanos(todos.filter((p) => p.id !== card?.id && p.id !== conta?.id));
+    // detecta se as colunas do cartão/conta já existem (migração rodada)
     if (todos.length) {
       setTemCartaoCol("no_cartao" in (todos[0] as object));
       setTemOrcCartao("eh_cartao_total" in (todos[0] as object));
+      setTemOrcConta("eh_conta_total" in (todos[0] as object));
     } else {
       const p1 = await sb.from("planos").select("no_cartao").limit(1);
       const p2 = await sb.from("planos").select("eh_cartao_total").limit(1);
-      setTemCartaoCol(!p1.error); setTemOrcCartao(!p2.error);
+      const p3 = await sb.from("planos").select("eh_conta_total").limit(1);
+      setTemCartaoCol(!p1.error); setTemOrcCartao(!p2.error); setTemOrcConta(!p3.error);
     }
     setLoading(false);
   }, []);
@@ -333,6 +344,26 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     const { error } = await sb.from("planos").update({ valor: v }).eq("id", p.id);
     if (!error) setCartaoPlano({ ...p, valor: v });
   }
+
+  // ---------- orçamento da conta variável (linha especial, mesmo padrão do cartão) ----------
+  async function garantirContaPlano(): Promise<Plano | null> {
+    if (contaPlano) return contaPlano;
+    const payload = {
+      tipo: "fixo", nome: "Gastos na conta (orçamento)", categoria: null, valor: 0,
+      mes_inicio: CARTAO_INICIO, mes_fim: null, parcelas: null, ativo: true,
+      no_cartao: false, eh_cartao_total: false, eh_conta_total: true,
+    };
+    const { data, error } = await sb.from("planos").insert(payload).select().single();
+    if (error) { setErro(faltaColunaConta(error.message) ? MSG_MIGRACAO_CONTA : error.message); if (faltaColunaConta(error.message)) setTemOrcConta(false); return null; }
+    const novo = data as Plano; setContaPlano(novo); return novo;
+  }
+  async function salvarOrcamentoConta(valorStr: string) {
+    const v = parseValor(valorStr);
+    if (!v && !contaPlano) return;
+    const p = await garantirContaPlano(); if (!p) return;
+    const { error } = await sb.from("planos").update({ valor: v }).eq("id", p.id);
+    if (!error) { setErro(""); setContaPlano({ ...p, valor: v }); }
+  }
   async function salvarRealCartao(valorStr: string) {
     const v = parseValorN(valorStr);
     if (v == null && !cartaoPlano) return;
@@ -428,6 +459,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const gastosCartaoFlag = gastosMes.filter((p) => p.no_cartao);                // marcados como cartão
   const orcCartao = (c: string) => (cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, c) : 0);
   const realCartao = (c: string) => (cartaoPlano ? (mensal[c]?.[cartaoPlano.id]?.valor_real ?? null) : null);
+  const orcConta = (c: string) => (contaPlano && contaPlano.ativo ? contribNoMes(contaPlano, c) : 0);
 
   // 1) recorrentes (fixos), independentemente da forma de pagamento
   const recorrPrev = (c: string) => somaPrev(gastosRecorrentes, c);
@@ -441,7 +473,8 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   };
 
   // 2) conta variável = total real da conta (lançamentos origem Conta) − recorrentes pagos na conta
-  const contaVarPrev = (_c: string): number | null => null; // não há orçamento p/ variável de conta
+  // previsto = orçamento que você define (via "↑ orçar", a partir da média do realizado)
+  const contaVarPrev = (c: string): number | null => { const o = orcConta(c); return o > 0 ? o : null; };
   const contaVarEfet = (c: string): number | null => {
     const a = autosConta[c];
     return a == null ? null : Math.max(0, a - somaEfet(recorrNaConta, c));
@@ -455,6 +488,25 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const mesFechado = (c: string) => c < mesAtual();
   const cartaoParcial = (c: string) => !mesFechado(c) && realCartao(c) == null && autosCartao[c] != null;
   const TIP_PARCIAL = "Mês em aberto: é o gasto parcial do cartão (lançamentos importados até agora), ainda não a fatura fechada. Vira valor real quando o mês terminar — ou digite a fatura na linha 💳 do rodapé.";
+
+  // ---------- "subir" o realizado para o orçamento previsto ----------
+  // sugestão = média dos meses já fechados que aparecem no histórico (ignora meses sem dado)
+  const mediaFechados = (fn: (c: string) => number | null) => {
+    const vs = histMeses.map(fn).filter((v): v is number => v != null);
+    return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : 0;
+  };
+  function iniciarOrc(tipo: "conta" | "cartao") {
+    const sug = tipo === "conta" ? mediaFechados(contaVarEfet) : mediaFechados((c) => cartaoVarEfet(c));
+    setOrcVal(sug ? String(Math.round(sug)).replace(".", ",") : "");
+    setOrcEdit(tipo);
+  }
+  async function salvarOrcConta() { setOrcEdit(null); await salvarOrcamentoConta(orcVal); }
+  async function salvarOrcCartaoVar() {
+    setOrcEdit(null);
+    // o digitado é o previsto VARIÁVEL; o orçamento TOTAL do cartão = variável + recorrentes já no cartão
+    const total = parseValor(orcVal) + somaPrev(recorrNoCartao, comp);
+    await salvarOrcamentoCartao(String(total));
+  }
 
   // total geral consolidado (recorrentes + variável conta + variável cartão)
   const geraisPrev = (c: string) => recorrPrev(c) + (contaVarPrev(c) ?? 0) + (cartaoVarPrev(c) ?? 0);
@@ -630,7 +682,18 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       <tr className="text-[12.5px]" title="o que saiu da conta (Pix/débito) além dos recorrentes — vem dos lançamentos importados (origem Conta)">
                         <td colSpan={2}>🏦 Gastos na conta <span className="text-muted font-normal">· fora os recorrentes</span></td>
                         {histMeses.map((c) => { const v = contaVarEfet(c); return <td key={c} className="num text-muted">{v == null ? "—" : fmtCell(v)}</td>; })}
-                        <td className="num text-muted">{contaVarPrev(comp) == null ? "—" : fmtCell(contaVarPrev(comp) as number)}</td>
+                        <td className="num text-muted !py-1">
+                          {orcEdit === "conta" ? (
+                            <input autoFocus className={`${inp} w-[84px] text-right`} value={orcVal}
+                              onChange={(e) => setOrcVal(e.target.value)} onBlur={salvarOrcConta}
+                              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setOrcEdit(null); }} />
+                          ) : (
+                            <button onClick={() => iniciarOrc("conta")} title="preencher o orçamento previsto com a média dos meses fechados (você ajusta antes de salvar)"
+                              className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-accent">
+                              {contaVarPrev(comp) == null ? <span className="text-accent">↑ orçar</span> : fmtCell(contaVarPrev(comp) as number)}
+                            </button>
+                          )}
+                        </td>
                         <td className="num text-muted">{(() => { const v = contaVarEfet(comp); return v == null ? "—" : fmtCell(v); })()}</td>
                         <td colSpan={2}></td>
                       </tr>
@@ -638,7 +701,18 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       <tr className="text-violet text-[12.5px]" title="o que caiu no cartão além dos recorrentes marcados — vem dos lançamentos importados (origem Cartao)">
                         <td colSpan={2}>💳 Gastos no cartão <span className="text-muted font-normal">· fora os recorrentes</span></td>
                         {histMeses.map((c) => <td key={c} className="num">{fmtCell(cartaoVarEfet(c))}</td>)}
-                        <td className="num">{cartaoVarPrev(comp) == null ? "—" : fmtCell(cartaoVarPrev(comp) as number)}</td>
+                        <td className="num !py-1">
+                          {orcEdit === "cartao" ? (
+                            <input autoFocus className={`${inp} w-[84px] text-right`} value={orcVal}
+                              onChange={(e) => setOrcVal(e.target.value)} onBlur={salvarOrcCartaoVar}
+                              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setOrcEdit(null); }} />
+                          ) : (
+                            <button onClick={() => iniciarOrc("cartao")} title="preencher o orçamento previsto com a média dos meses fechados (você ajusta antes de salvar)"
+                              className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-violet">
+                              {cartaoVarPrev(comp) == null ? <span className="text-violet">↑ orçar</span> : fmtCell(cartaoVarPrev(comp) as number)}
+                            </button>
+                          )}
+                        </td>
                         <td className={`num ${cartaoParcial(comp) ? "!text-muted" : ""}`} title={cartaoParcial(comp) ? TIP_PARCIAL : undefined}>
                           {fmtCell(cartaoVarEfet(comp))}{cartaoParcial(comp) && <span className="font-normal text-[10px] text-muted"> · parcial</span>}
                         </td>
@@ -683,8 +757,9 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada.
+            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦 e 💳, clique em <b className="text-accent">↑ orçar</b> para preencher o orçamento com a <b>média dos meses fechados</b> (você ajusta antes de salvar).
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
+            {!temOrcConta && <> <span className="text-amber">{MSG_MIGRACAO_CONTA}</span></>}
           </div>
         </>
       ) : (

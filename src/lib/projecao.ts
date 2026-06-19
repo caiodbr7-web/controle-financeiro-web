@@ -29,6 +29,8 @@ export interface Plano {
   no_cartao?: boolean;
   // linha especial: representa o TOTAL do cartão (orçamento mensal digitado), não é um item comum
   eh_cartao_total?: boolean;
+  // linha especial: orçamento mensal previsto da conta variável (gastos fora dos recorrentes)
+  eh_conta_total?: boolean;
   // vínculo opcional a lançamentos reais (usado na visão "Mês": previsto × realizado)
   link_categoria?: string | null;
   link_texto?: string | null;

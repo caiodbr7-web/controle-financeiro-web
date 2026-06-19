@@ -31,6 +31,12 @@ export function Conciliacao() {
   const [vista, setVista] = useState<Vista>("dup");
   const [confFiltro, setConfFiltro] = useState<"" | Conf>("");
 
+  // filtros da tabela
+  const [busca, setBusca] = useState("");
+  const [fBanco, setFBanco] = useState("");
+  const [fOrigem, setFOrigem] = useState("");
+  const [fClasse, setFClasse] = useState("");
+
   // consulta própria: TODOS os lançamentos (pdf + pluggy), paginada
   const carregar = useCallback(async () => {
     setStatus("carregando…");
@@ -64,16 +70,45 @@ export function Conciliacao() {
 
   const res = useMemo(() => conciliar(rows, tol), [rows, tol]);
 
-  const paresFiltrados = useMemo(
-    () => (confFiltro ? res.pares.filter((p) => p.conf === confFiltro) : res.pares),
-    [res.pares, confFiltro]
+  // opções dos selects (derivadas de todos os lançamentos carregados)
+  const bancos = useMemo(() => [...new Set(rows.map((d) => d.banco).filter(Boolean))].sort(), [rows]);
+  const origens = useMemo(
+    () => [...new Set(rows.filter((d) => !fBanco || d.banco === fBanco).map((d) => d.origem).filter(Boolean))].sort(),
+    [rows, fBanco]
   );
-  const totalDupReais = useMemo(() => res.pares.reduce((s, p) => s + Math.abs(p.of.valor), 0), [res.pares]);
+  const classes = useMemo(() => [...new Set(rows.map((d) => d.classe).filter(Boolean))].sort() as string[], [rows]);
+
+  // predicado de filtro aplicado a um lançamento
+  const matchLanc = useCallback((d: Lancamento) => {
+    const q = busca.toLowerCase().trim();
+    const tem = (s: unknown) => String(s ?? "").toLowerCase().includes(q);
+    return (
+      (!fBanco || d.banco === fBanco) &&
+      (!fOrigem || d.origem === fOrigem) &&
+      (!fClasse || d.classe === fClasse) &&
+      (!q || tem(d.descricao) || tem(d.origem) || tem(d.banco) || tem(d.categoria_auto) || tem(d.categoria_manual))
+    );
+  }, [busca, fBanco, fOrigem, fClasse]);
+
+  // baldes filtrados (um par casa se QUALQUER lado bater o filtro)
+  const paresBuscaF = useMemo(() => res.pares.filter((p) => matchLanc(p.of) || matchLanc(p.pdf)), [res.pares, matchLanc]);
+  const soOFF = useMemo(() => res.soOF.filter(matchLanc), [res.soOF, matchLanc]);
+  const soPDFF = useMemo(() => res.soPDF.filter(matchLanc), [res.soPDF, matchLanc]);
+  const estrF = useMemo(() => res.ofEstrangeiro.filter(matchLanc), [res.ofEstrangeiro, matchLanc]);
+
+  const paresFiltrados = useMemo(
+    () => (confFiltro ? paresBuscaF.filter((p) => p.conf === confFiltro) : paresBuscaF),
+    [paresBuscaF, confFiltro]
+  );
+  const totalDupReais = useMemo(() => paresBuscaF.reduce((s, p) => s + Math.abs(p.of.valor), 0), [paresBuscaF]);
   const contagemConf = useMemo(() => {
     const c = { alta: 0, media: 0, baixa: 0 } as Record<Conf, number>;
-    for (const p of res.pares) c[p.conf]++;
+    for (const p of paresBuscaF) c[p.conf]++;
     return c;
-  }, [res.pares]);
+  }, [paresBuscaF]);
+
+  const filtroAtivo = !!(busca || fBanco || fOrigem || fClasse);
+  const limparFiltros = () => { setBusca(""); setFBanco(""); setFOrigem(""); setFClasse(""); };
 
   if (!status && !erro && totOF === 0) {
     return (
