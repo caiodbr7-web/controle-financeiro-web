@@ -450,6 +450,12 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const cartaoVarPrev = (c: string): number | null => { const o = orcCartao(c); return o > 0 ? Math.max(0, o - somaPrev(recorrNoCartao, c)) : null; };
   const cartaoVarEfet = (c: string) => Math.max(0, cartaoTotalEfet(c) - somaEfet(recorrNoCartao, c));
 
+  // mês ainda em aberto: só é "real" quando termina. Para o cartão, o gasto importado do
+  // mês corrente é parcial (a fatura ainda fecha) — não chamamos de valor real até virar o mês.
+  const mesFechado = (c: string) => c < mesAtual();
+  const cartaoParcial = (c: string) => !mesFechado(c) && realCartao(c) == null && autosCartao[c] != null;
+  const TIP_PARCIAL = "Mês em aberto: é o gasto parcial do cartão (lançamentos importados até agora), ainda não a fatura fechada. Vira valor real quando o mês terminar — ou digite a fatura na linha 💳 do rodapé.";
+
   // total geral consolidado (recorrentes + variável conta + variável cartão)
   const geraisPrev = (c: string) => recorrPrev(c) + (contaVarPrev(c) ?? 0) + (cartaoVarPrev(c) ?? 0);
   const geraisEfet = (c: string) => recorrEfet(c) + (contaVarEfet(c) ?? 0) + cartaoVarEfet(c);
@@ -582,7 +588,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
             <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={BRL(prevGer)} sub="recorrentes (plano)" />
-            <Kpi title="Gastos realizados" value={BRL(efetGer)} sub="recorrente + conta + cartão" color="text-amber" />
+            <Kpi title="Gastos realizados" value={BRL(efetGer)} sub={cartaoParcial(comp) ? "cartão ainda parcial · mês em aberto" : "recorrente + conta + cartão"} color="text-amber" />
             <Kpi title="Saldo previsto" value={BRL(prevRec - prevGer)} sub="receita − gastos (plano)" color={prevRec - prevGer < 0 ? "text-red" : "text-green"} />
             <Kpi title="Saldo realizado" value={BRL(efetRec - efetGer)} sub="receita − gastos (real)" color={efetRec - efetGer < 0 ? "text-red" : "text-green"} />
           </div>
@@ -633,7 +639,9 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                         <td colSpan={2}>💳 Gastos no cartão <span className="text-muted font-normal">· fora os recorrentes</span></td>
                         {histMeses.map((c) => <td key={c} className="num">{fmtCell(cartaoVarEfet(c))}</td>)}
                         <td className="num">{cartaoVarPrev(comp) == null ? "—" : fmtCell(cartaoVarPrev(comp) as number)}</td>
-                        <td className="num">{fmtCell(cartaoVarEfet(comp))}</td>
+                        <td className={`num ${cartaoParcial(comp) ? "!text-muted" : ""}`} title={cartaoParcial(comp) ? TIP_PARCIAL : undefined}>
+                          {fmtCell(cartaoVarEfet(comp))}{cartaoParcial(comp) && <span className="font-normal text-[10px] text-muted"> · parcial</span>}
+                        </td>
                         <td colSpan={2}></td>
                       </tr>
                       {/* Σ total geral consolidado */}
@@ -641,7 +649,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                         <td colSpan={2}>Σ Gastos gerais</td>
                         {histMeses.map((c) => <td key={c} className="num">{fmtCell(geraisEfet(c))}</td>)}
                         <td className="num">{fmtCell(geraisPrev(comp))}</td>
-                        <td className="num">{fmtCell(geraisEfet(comp))}</td>
+                        <td className="num" title={cartaoParcial(comp) ? TIP_PARCIAL : undefined}>{fmtCell(geraisEfet(comp))}{cartaoParcial(comp) && <span className="font-normal text-[10px] text-muted"> *</span>}</td>
                         <td colSpan={2}></td>
                       </tr>
                       {/* Saldo do mês = receita − gerais */}
@@ -675,7 +683,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Os itens 💳 já estão dentro do cartão, não somam de novo.
+            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada.
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           </div>
         </>
