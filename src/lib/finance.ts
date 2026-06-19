@@ -9,6 +9,27 @@ export const BRL = (v: number) =>
 
 export const brlShort = (v: number) => "R$ " + Number(v || 0).toLocaleString("pt-BR");
 
+// símbolo por moeda ISO; cai para o próprio código quando não mapeado
+const SIMBOLO_MOEDA: Record<string, string> = {
+  BRL: "R$", USD: "US$", EUR: "€", GBP: "£", ARS: "AR$", CLP: "CL$", JPY: "¥",
+};
+const simboloMoeda = (m?: string | null) => {
+  const k = (m || "BRL").toUpperCase();
+  return SIMBOLO_MOEDA[k] ?? `${k} `;
+};
+
+// formata um valor na moeda informada (default BRL). Use no lugar de BRL()
+// sempre que a linha puder estar em moeda estrangeira (lançamentos do Pluggy).
+export const fmtMoeda = (v: number, moeda?: string | null) =>
+  (v < 0 ? "-" : "") +
+  simboloMoeda(moeda) +
+  Math.abs(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// dica do valor original de uma transação internacional (ex.: "US$ 3,00"),
+// ou null quando a linha é nacional / sem moeda de origem.
+export const dicaMoedaOrigem = (d: { valor_origem?: number | null; moeda_origem?: string | null }) =>
+  d.moeda_origem && d.valor_origem != null ? fmtMoeda(d.valor_origem, d.moeda_origem) : null;
+
 export const mesCurto = (c: string) => {
   const m = String(c).match(/\(([^)]+)\)/);
   return (m ? m[1] : String(c)).replace("/", "-");

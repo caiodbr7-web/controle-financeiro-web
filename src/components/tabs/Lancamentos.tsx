@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import type { Lancamento } from "../../types";
 import { Kpi, Select } from "../ui";
 import { sb } from "../../lib/supabase";
-import { BRL, mesCurto, ehGasto, ehReceita, CATEGORIAS } from "../../lib/finance";
+import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, ehGasto, ehReceita, CATEGORIAS } from "../../lib/finance";
 import { ArquivosPanel } from "./Arquivos";
 
 interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[]; reload: () => void; }
@@ -118,7 +118,10 @@ export function Lancamentos({ dados, allDados, months }: Props) {
                     </select>
                     {salvos[d.id] && <span className="ml-2 text-[12px] text-green">{salvos[d.id]}</span>}
                   </td>
-                  <td className={`num ${d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}`}>{BRL(d.valor)}</td>
+                  <td className={`num ${d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}`}>
+                    {fmtMoeda(d.valor, d.moeda)}
+                    {dicaMoedaOrigem(d) && <span className="text-muted text-[11px] ml-1">({dicaMoedaOrigem(d)})</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>

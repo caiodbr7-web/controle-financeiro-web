@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { Lancamento } from "../../types";
 import { Kpi, Select } from "../ui";
 import { sb } from "../../lib/supabase";
-import { BRL, mesCurto, ehGasto, ehReceita } from "../../lib/finance";
+import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, ehGasto, ehReceita } from "../../lib/finance";
 
 /* ============================================================================
    Aba "Open Banking" — superfície de VALIDAÇÃO do Pluggy.
@@ -47,7 +47,15 @@ const COLS: ColDef[] = [
   { key: "classe", label: "Classe", sortable: true },
   { key: "categoria_auto", label: "Categoria (Pluggy)", render: (d) => cell(d.categoria_auto) },
   { key: "categoria_manual", label: "Categoria (manual)", render: (d) => cell(d.categoria_manual) },
-  { key: "valor", label: "Valor", num: true, sortable: true, render: (d) => <span className={d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}>{BRL(d.valor)}</span> },
+  { key: "valor", label: "Valor", num: true, sortable: true, render: (d) => (
+      <span className={d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}>
+        {fmtMoeda(d.valor, d.moeda)}
+        {dicaMoedaOrigem(d) && <span className="text-muted ml-1">({dicaMoedaOrigem(d)})</span>}
+      </span>
+    ) },
+  { key: "moeda", label: "Moeda", render: (d) => cell(d.moeda) },
+  { key: "valor_origem", label: "Valor (origem)", num: true, render: (d) => d.valor_origem != null ? fmtMoeda(d.valor_origem, d.moeda_origem) : "—" },
+  { key: "moeda_origem", label: "Moeda (origem)", render: (d) => cell(d.moeda_origem) },
   { key: "natureza", label: "Natureza", render: (d) => cell(d.natureza) },
   { key: "fonte_dados", label: "Fonte", render: (d) => cell(d.fonte_dados) },
   { key: "pluggy_tx_id", label: "Pluggy tx_id", mono: true, render: (d) => cell(d.pluggy_tx_id) },

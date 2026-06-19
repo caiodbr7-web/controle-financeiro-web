@@ -11,7 +11,10 @@ export interface Lancamento {
   detalhe: string | null;
   classe: string | null; // Gasto / Receita / Estorno/Credito / Transferencia/Pagamento
   categoria_auto: string | null;
-  valor: number; // gasto negativo, receita positivo
+  valor: number; // gasto negativo, receita positivo (na moeda `moeda`, normalmente BRL)
+  moeda?: string | null; // moeda do campo `valor` (ISO; 'BRL' por padrão)
+  valor_origem?: number | null; // valor na moeda estrangeira original (transação internacional)
+  moeda_origem?: string | null; // ISO da moeda estrangeira original (ex.: 'USD')
   natureza: string | null; // Pessoal / Corporativo
   categoria_manual: string | null;
   criado_em?: string;
