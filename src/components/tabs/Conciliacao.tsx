@@ -144,15 +144,15 @@ export function Conciliacao() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 items-center mb-4">
+      <div className="flex flex-wrap gap-2 items-center mb-3">
         <Seg<Vista>
           value={vista}
           onChange={setVista}
           options={[
-            { v: "dup", label: `Duplicatas prováveis (${res.pares.length})` },
-            { v: "soOF", label: `Só Open Finance (${res.soOF.length})` },
-            { v: "soPDF", label: `Só PDF na janela (${res.soPDF.length})` },
-            ...(res.ofEstrangeiro.length ? [{ v: "estr" as const, label: `Moeda estrangeira (${res.ofEstrangeiro.length})` }] : []),
+            { v: "dup", label: `Duplicatas prováveis (${paresBuscaF.length})` },
+            { v: "soOF", label: `Só Open Finance (${soOFF.length})` },
+            { v: "soPDF", label: `Só PDF na janela (${soPDFF.length})` },
+            ...(res.ofEstrangeiro.length ? [{ v: "estr" as const, label: `Moeda estrangeira (${estrF.length})` }] : []),
           ]}
         />
         <div className="ml-auto flex items-center gap-2">
@@ -169,12 +169,41 @@ export function Conciliacao() {
         </div>
       </div>
 
+      {/* filtros da tabela (valem para as quatro vistas) */}
+      <div className="flex flex-wrap gap-2 items-center mb-4">
+        <input
+          className="input min-w-[220px] flex-1"
+          placeholder="Buscar (descrição, origem, banco, categoria)…"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+        />
+        <Select value={fBanco} onChange={(v) => { setFBanco(v); setFOrigem(""); }}>
+          <option value="">Todos os bancos</option>
+          {bancos.map((b) => <option key={b}>{b}</option>)}
+        </Select>
+        <Select value={fOrigem} onChange={setFOrigem}>
+          <option value="">Todas as origens</option>
+          {origens.map((o) => <option key={o}>{o}</option>)}
+        </Select>
+        <Select value={fClasse} onChange={setFClasse}>
+          <option value="">Todas as classes</option>
+          {classes.map((c) => <option key={c}>{c}</option>)}
+        </Select>
+        <button
+          className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors disabled:opacity-40"
+          onClick={limparFiltros}
+          disabled={!filtroAtivo}
+        >
+          Limpar
+        </button>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-[14px] mb-[18px]">
         <Kpi title="Lançamentos PDF" value={totPDF.toLocaleString("pt-BR")} />
         <Kpi title="Lançamentos Open Finance" value={totOF.toLocaleString("pt-BR")} />
-        <Kpi title="Duplicatas prováveis" value={res.pares.length.toLocaleString("pt-BR")} sub={BRL(totalDupReais)} color={res.pares.length ? "text-amber" : ""} />
+        <Kpi title={filtroAtivo ? "Duplicatas (filtro)" : "Duplicatas prováveis"} value={paresBuscaF.length.toLocaleString("pt-BR")} sub={BRL(totalDupReais)} color={paresBuscaF.length ? "text-amber" : ""} />
         <Kpi title="Confiança Alta" value={contagemConf.alta.toLocaleString("pt-BR")} sub="valor+data+banco+descrição" color={contagemConf.alta ? "text-red" : ""} />
-        <Kpi title="Só Open Finance" value={res.soOF.length.toLocaleString("pt-BR")} sub="OF trouxe, PDF não" />
+        <Kpi title="Só Open Finance" value={soOFF.length.toLocaleString("pt-BR")} sub="OF trouxe, PDF não" />
         <Kpi
           title="Janela de sobreposição"
           value={res.janela ? `${fmtJanela(res.janela.ini)} – ${fmtJanela(res.janela.fim)}` : "—"}
@@ -190,7 +219,7 @@ export function Conciliacao() {
           {vista === "dup" ? (
             <TabelaPares pares={paresFiltrados} confFiltro={confFiltro} setConfFiltro={setConfFiltro} contagem={contagemConf} />
           ) : (
-            <TabelaSimples rows={vista === "soOF" ? res.soOF : vista === "estr" ? res.ofEstrangeiro : res.soPDF} />
+            <TabelaSimples rows={vista === "soOF" ? soOFF : vista === "estr" ? estrF : soPDFF} />
           )}
         </div>
       </div>
