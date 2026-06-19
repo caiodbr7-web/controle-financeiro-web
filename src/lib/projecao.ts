@@ -117,8 +117,8 @@ export function horizonte(n: number, start = mesAtual()): { k: string; label: st
  * `cartaoPlano` (opcional) é a linha especial com o orçamento mensal do cartão; quando
  * não há orçamento, o total do cartão cai na soma dos itens marcados (no_cartao).
  * `contaPlano` (opcional) é a linha especial com o orçamento mensal da conta variável
- * (o "previsto" definido na visão Mês via "↑ orçar"); quando há orçamento, ele tem
- * prioridade sobre a soma dos itens não-recorrentes fora do cartão — mesma regra do cartão.
+ * (o "previsto" definido na visão Mês via "↑ orçar"); ele SOMA com os itens avulsos
+ * não-recorrentes fora do cartão (metas/parcelas/pagamentos) para formar a conta variável.
  * Itens marcados NÃO entram em `conta` — eles já estão dentro do total do cartão.
  * `ovr` (opcional) traz ajustes manuais por mês: ovr[competencia][plano_id] sobrepõe o
  * valor calculado daquele item naquele mês (usado pela edição por duplo clique).
@@ -150,10 +150,11 @@ export function projetar(
     const orc = cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, k) : 0;
     const cartao = orc > 0 ? orc : flag;    // orçamento definido; sem ele, soma dos itens marcados
     const cartaoVar = Math.max(0, cartao - recorrNoCartao); // 3) cartão fora dos recorrentes marcados
-    // 2) conta variável: orçamento previsto (visão Mês) tem prioridade; sem ele, cai na
-    //    soma dos itens não-recorrentes fora do cartão — espelha a regra do cartão.
+    // 2) conta variável = orçamento previsto (visão Mês) + itens avulsos na conta
+    //    (metas/parcelas/pagamentos fora do cartão). Os dois SOMAM: o orçamento é
+    //    o gasto corriqueiro estimado; os itens são despesas planejadas específicas.
     const orcConta = contaPlano && contaPlano.ativo ? contribNoMes(contaPlano, k) : 0;
-    const contaVar = orcConta > 0 ? orcConta : contaVarItens;
+    const contaVar = orcConta + contaVarItens;
     const gerais = recorr + contaVar + cartaoVar; // baldes disjuntos — nada soma em dobro
     return { k, label: dvLabel(k), recorr, contaVar, cartaoVar, cartao, gerais, receita, saldo: receita - gerais };
   });

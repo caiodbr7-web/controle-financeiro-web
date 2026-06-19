@@ -458,6 +458,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const recorrNaConta = gastosRecorrentes.filter((p) => !p.no_cartao);          // recorrentes pagos na conta
   const recorrNoCartao = gastosRecorrentes.filter((p) => p.no_cartao);          // recorrentes pagos no cartão
   const gastosCartaoFlag = gastosMes.filter((p) => p.no_cartao);                // marcados como cartão
+  const gastosContaItens = gastosMes.filter((p) => p.tipo !== "fixo" && !p.no_cartao); // avulsos pela conta (metas/parcelas/pagamentos)
   const orcCartao = (c: string) => (cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, c) : 0);
   const realCartao = (c: string) => (cartaoPlano ? (mensal[c]?.[cartaoPlano.id]?.valor_real ?? null) : null);
   const orcConta = (c: string) => (contaPlano && contaPlano.ativo ? contribNoMes(contaPlano, c) : 0);
@@ -474,8 +475,11 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   };
 
   // 2) conta variável = total real da conta (lançamentos origem Conta) − recorrentes pagos na conta
-  // previsto = orçamento que você define (via "↑ orçar", a partir da média do realizado)
-  const contaVarPrev = (c: string): number | null => { const o = orcConta(c); return o > 0 ? o : null; };
+  // previsto = orçamento que você define (via "↑ orçar") + itens avulsos pela conta (metas/parcelas/pagamentos)
+  const contaVarPrev = (c: string): number | null => {
+    const tot = orcConta(c) + somaPrev(gastosContaItens, c);
+    return tot > 0 ? tot : null;
+  };
   const contaVarEfet = (c: string): number | null => {
     const a = autosConta[c];
     return a == null ? null : Math.max(0, a - somaEfet(recorrNaConta, c));
