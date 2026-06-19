@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, useCallback } from "react";
+import { Fragment, useMemo, useRef, useState, useCallback } from "react";
 import type { Aba, Lancamento, Visao } from "./types";
 import { useAuth } from "./hooks/useAuth";
 import { useLancamentos } from "./hooks/useLancamentos";
@@ -19,8 +19,24 @@ import { Conectar } from "./components/tabs/Conectar";
 import { OpenBanking } from "./components/tabs/OpenBanking";
 import { Conciliacao } from "./components/tabs/Conciliacao";
 
-/* navegação agrupada: Análise · Planejar · Dados */
-const GRUPOS: { id: Aba; label: string }[][] = [
+type SubAba = { id: Aba; label: string };
+
+/* sub-abas internas das abas de importação */
+const SUB_MANUAL: SubAba[] = [
+  { id: "importar", label: "Importar" },
+  { id: "classificar", label: "Classificar" },
+  { id: "lanc", label: "Lançamentos" },
+];
+const SUB_AUTO: SubAba[] = [
+  { id: "conectar", label: "Conectar" },
+  { id: "openbanking", label: "Open Banking" },
+  { id: "conciliacao", label: "Conciliação" },
+];
+
+/* navegação agrupada: Análise · Planejar · Importação.
+   As abas com `subs` agrupam sub-abas internas (renderizadas no conteúdo). */
+type TopAba = SubAba | { grupo: "manual" | "auto"; label: string; subs: SubAba[] };
+const GRUPOS: TopAba[][] = [
   [
     { id: "inicio", label: "Início" },
     { id: "geral", label: "Visão Geral" },
@@ -29,12 +45,8 @@ const GRUPOS: { id: Aba; label: string }[][] = [
   ],
   [{ id: "planejamento", label: "Planejamento" }],
   [
-    { id: "importar", label: "Importar" },
-    { id: "classificar", label: "Classificar" },
-    { id: "lanc", label: "Lançamentos" },
-    { id: "conectar", label: "Conectar" },
-    { id: "openbanking", label: "Open Banking" },
-    { id: "conciliacao", label: "Conciliação" },
+    { grupo: "manual", label: "Importação Manual", subs: SUB_MANUAL },
+    { grupo: "auto", label: "Importação Automática", subs: SUB_AUTO },
   ],
 ];
 
@@ -74,6 +86,15 @@ export default function App() {
   const [aba, setAba] = useState<Aba>("inicio");
   const [modal, setModal] = useState<ModalData | null>(null);
 
+  // lembra a última sub-aba visitada de cada grupo de importação
+  const lastManual = useRef<Aba>("importar");
+  const lastAuto = useRef<Aba>("conectar");
+  const navTo = useCallback((id: Aba) => {
+    if (SUB_MANUAL.some((s) => s.id === id)) lastManual.current = id;
+    else if (SUB_AUTO.some((s) => s.id === id)) lastAuto.current = id;
+    setAba(id);
+  }, []);
+
   const openModal = useCallback((title: string, rows: Lancamento[]) => {
     if (rows.length) setModal({ title, rows });
   }, []);
@@ -96,6 +117,13 @@ export default function App() {
 
   const tabProps = { dados, allDados, months, openModal };
   const iconBtn = "w-[30px] h-[30px] rounded-full border border-line bg-transparent text-muted hover:text-txt cursor-pointer flex items-center justify-center transition-colors shrink-0";
+
+  // grupo de sub-abas ativo (mostra a barra interna no conteúdo)
+  const subAtivo = SUB_MANUAL.some((s) => s.id === aba)
+    ? SUB_MANUAL
+    : SUB_AUTO.some((s) => s.id === aba)
+      ? SUB_AUTO
+      : null;
 
   return (
     <div>
@@ -135,21 +163,30 @@ export default function App() {
             {GRUPOS.map((grupo, gi) => (
               <Fragment key={gi}>
                 {gi > 0 && <span className="w-px h-[13px] bg-line mx-[7px] shrink-0" aria-hidden />}
-                {grupo.map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => setAba(a.id)}
-                    className={`relative whitespace-nowrap bg-transparent border-0 px-[10px] pt-[7px] pb-[11px] text-[13.5px] cursor-pointer transition-colors ${
-                      aba === a.id ? "text-txt font-semibold" : "text-muted hover:text-txt font-medium"
-                    }`}
-                  >
-                    {a.label}
-                    {a.id === "classificar" && pendClass > 0 && (
-                      <span className="absolute top-[7px] right-[2px] w-[5px] h-[5px] rounded-full bg-amber" title={`${pendClass} lançamentos a classificar`} />
-                    )}
-                    {aba === a.id && <span className="absolute left-[10px] right-[10px] bottom-0 h-[2px] rounded-full bg-txt" />}
-                  </button>
-                ))}
+                {grupo.map((a) => {
+                  const isParent = "subs" in a;
+                  const ativo = isParent ? a.subs.some((s) => s.id === aba) : aba === a.id;
+                  const onClick = isParent
+                    ? () => navTo(a.grupo === "manual" ? lastManual.current : lastAuto.current)
+                    : () => navTo(a.id);
+                  // pontinho de pendência: aba Classificar ou seu grupo pai (Importação Manual)
+                  const dot = isParent ? a.grupo === "manual" && pendClass > 0 : a.id === "classificar" && pendClass > 0;
+                  return (
+                    <button
+                      key={isParent ? a.grupo : a.id}
+                      onClick={onClick}
+                      className={`relative whitespace-nowrap bg-transparent border-0 px-[10px] pt-[7px] pb-[11px] text-[13.5px] cursor-pointer transition-colors ${
+                        ativo ? "text-txt font-semibold" : "text-muted hover:text-txt font-medium"
+                      }`}
+                    >
+                      {a.label}
+                      {dot && (
+                        <span className="absolute top-[7px] right-[2px] w-[5px] h-[5px] rounded-full bg-amber" title={`${pendClass} lançamentos a classificar`} />
+                      )}
+                      {ativo && <span className="absolute left-[10px] right-[10px] bottom-0 h-[2px] rounded-full bg-txt" />}
+                    </button>
+                  );
+                })}
               </Fragment>
             ))}
           </nav>
@@ -159,8 +196,30 @@ export default function App() {
       <main className="px-4 sm:px-6 lg:px-8 py-5 sm:py-6 max-w-[1380px] mx-auto">
         {status && <div className="text-muted text-[12.5px] mb-3">{status}</div>}
 
+        {subAtivo && (
+          <div className="inline-flex gap-[2px] bg-fill p-[3px] rounded-[10px] flex-wrap mb-[18px]">
+            {subAtivo.map((s) => {
+              const on = aba === s.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => navTo(s.id)}
+                  className={`relative whitespace-nowrap border-0 px-[13px] py-[7px] text-[13px] cursor-pointer rounded-[8px] font-medium transition-all ${
+                    on ? "bg-card text-txt shadow-[0_1px_3px_rgba(0,0,0,.16)]" : "bg-transparent text-muted hover:text-txt"
+                  }`}
+                >
+                  {s.label}
+                  {s.id === "classificar" && pendClass > 0 && (
+                    <span className="absolute top-[5px] right-[3px] w-[5px] h-[5px] rounded-full bg-amber" title={`${pendClass} lançamentos a classificar`} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div key={aba} className="fade-in">
-          {aba === "inicio" && <Inicio {...tabProps} go={setAba} />}
+          {aba === "inicio" && <Inicio {...tabProps} go={navTo} />}
           {aba === "geral" && <VisaoGeral {...tabProps} />}
           {aba === "mensal" && <ResumoMensal {...tabProps} />}
           {aba === "diario" && <EvolucaoDiaria {...tabProps} />}
