@@ -3,7 +3,7 @@ import type { Lancamento } from "../../types";
 import { Kpi, Seg, Select } from "../ui";
 import { sb } from "../../lib/supabase";
 import { BRL, fmtMoeda, dicaMoedaOrigem, bankOf, dvDataReal } from "../../lib/finance";
-import { conciliar, type Conf, type Par } from "../../lib/conciliacao";
+import { conciliar, type Conf, type Par, type Via } from "../../lib/conciliacao";
 
 /* ============================================================================
    Aba "Conciliação" — PDF × Open Finance.
@@ -22,6 +22,14 @@ const fmtJanela = (ms: number) => new Date(ms).toLocaleDateString("pt-BR", { mon
 
 const CONF_LABEL: Record<Conf, string> = { alta: "Alta", media: "Média", baixa: "Baixa" };
 const CONF_CLS: Record<Conf, string> = { alta: "text-red", media: "text-amber", baixa: "text-muted" };
+
+// como o par casou (relaxamento aplicado) — só mostramos quando NÃO é "exato"
+const VIA_INFO: Record<Via, { label: string; title: string } | null> = {
+  exato: null,
+  valor: { label: "≈ valor", title: "Casou por valor aproximado (tolerância) — arredondamento, estorno parcial ou gorjeta." },
+  moeda: { label: "moeda", title: "OF em moeda estrangeira — casou por descrição + data + câmbio plausível, não pelo valor em BRL." },
+  tipo: { label: "tipo difere", title: "Casou cartão↔conta (tipos diferentes) — confirme; por isso não é confiança alta." },
+};
 
 export function Conciliacao() {
   const [rows, setRows] = useState<Lancamento[]>([]);
@@ -139,8 +147,8 @@ export function Conciliacao() {
       {res.ofEstrangeiro.length > 0 && (
         <div className="text-[12.5px] text-amber bg-amber/10 border border-amber/30 rounded-[12px] px-3.5 py-2.5 mb-4 leading-relaxed">
           <strong>{res.ofEstrangeiro.length}</strong> lançamento(s) do Open Finance estão em <strong>moeda estrangeira sem conversão</strong> do
-          Pluggy e ficam <strong>fora do cruzamento</strong> (não dá para casar um valor em dólar contra um PDF em real). Veja-os na aba
-          "Moeda estrangeira". Com banco de verdade o Pluggy costuma enviar o valor já convertido em BRL, e eles voltam a conciliar normalmente.
+          Pluggy e <strong>não casaram</strong> nem por descrição + data + câmbio plausível (o valor em moeda não confere contra o PDF em real).
+          Veja-os na aba "Moeda estrangeira". Com banco de verdade o Pluggy costuma enviar o valor já convertido em BRL, e eles voltam a conciliar normalmente.
         </div>
       )}
 
@@ -226,7 +234,9 @@ export function Conciliacao() {
 
       <p className="text-[12px] text-muted mt-2 leading-relaxed">
         Diagnóstico apenas — nada é alterado no banco. <strong>Duplicata provável</strong> = mesma transação nas duas fontes
-        (casada por valor + data ± tolerância + tipo; <strong>Alta</strong> exige também banco e descrição iguais).
+        (casada por valor + data ± tolerância + tipo; <strong>Alta</strong> exige valor exato + banco + descrição + mesmo tipo).
+        A etiqueta ao lado da confiança indica quando a regra foi relaxada: <strong>≈ valor</strong> (valor aproximado),
+        <strong> moeda</strong> (estrangeira, casada por descrição/data/câmbio) ou <strong>tipo difere</strong> (cartão↔conta) — esses nunca são "Alta".
         <strong> Só PDF na janela</strong> considera só o período coberto pelas duas fontes; antes da janela o "só PDF" é esperado.
       </p>
     </div>
@@ -259,7 +269,15 @@ function TabelaPares({
       <tbody>
         {pares.map((p) => (
           <tr key={p.of.id}>
-            <td><span className={`font-semibold ${CONF_CLS[p.conf]}`}>{CONF_LABEL[p.conf]}</span></td>
+            <td>
+              <span className={`font-semibold ${CONF_CLS[p.conf]}`}>{CONF_LABEL[p.conf]}</span>
+              {VIA_INFO[p.via] && (
+                <span title={VIA_INFO[p.via]!.title}
+                  className="ml-1.5 inline-block text-[10.5px] font-medium text-muted bg-fill border border-line rounded-[6px] px-1.5 py-[1px] align-middle">
+                  {VIA_INFO[p.via]!.label}
+                </span>
+              )}
+            </td>
             <td className="num font-medium">{BRL(Math.abs(p.of.valor))}</td>
             <td>
               <div className="font-medium truncate max-w-[320px]" title={p.of.descricao}>{p.of.descricao}</div>

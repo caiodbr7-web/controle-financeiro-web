@@ -12,15 +12,28 @@
 // resolução é decisão do usuário. Casar só por valor+data gera falso-positivo
 // (valores redondos coincidem), então isso nunca basta sozinho para "alta".
 //
-// MOEDA: o casamento é feito por VALOR EM BRL. PDFs são sempre BRL; lançamentos
-// do Open Finance que ficaram em moeda estrangeira SEM conversão (moeda != BRL)
-// NÃO entram no cruzamento — casar um número em dólar contra um PDF em real daria
-// par errado. Esses ficam num balde próprio (ofEstrangeiro) para o usuário ver.
+// MITIGAÇÕES (atenuam divergências comuns sem inflar a confiança alta):
+//   (6) VALOR APROXIMADO  — além do valor exato, casa com uma pequena tolerância
+//       de reais (arredondamento de parcela, estorno parcial, gorjeta). Match
+//       aproximado SÓ vale se houver banco ou descrição confirmando, e nunca
+//       chega a "alta".
+//   (7) MOEDA ESTRANGEIRA — OF em moeda != BRL não dá para casar por valor em
+//       real, mas tentamos por DESCRIÇÃO + DATA + CÂMBIO PLAUSÍVEL (a taxa
+//       implícita BRL/moeda tem que cair numa faixa sã). O que casar vira par;
+//       o que sobrar fica em `ofEstrangeiro`.
+//   (8) CARTÃO × CONTA    — antes "cartão só casa com cartão" descartava o par.
+//       Agora casa mesmo com tipo diferente, porém vira só um SINAL de confiança
+//       (tipo diferente não pode ser "alta").
+//
+// Cada par carrega `via`, dizendo COMO casou (exato / valor~ / moeda / tipo),
+// para o diagnóstico deixar claro quando a regra foi relaxada.
 // ============================================================================
 import type { Lancamento } from "../types";
 import { dvDataReal, bankOf, normEstab } from "./finance";
 
 export type Conf = "alta" | "media" | "baixa";
+/** Como o par casou — "exato" é o caminho estrito; os demais são relaxamentos. */
+export type Via = "exato" | "valor" | "moeda" | "tipo";
 
 /** True se o `valor` da linha está em BRL (sem moeda definida = BRL, retrocompat). */
 const ehBRL = (d: Lancamento) => !d.moeda || d.moeda.toUpperCase() === "BRL";
@@ -32,18 +45,30 @@ export interface Par {
   conf: Conf;
   mesmoBanco: boolean;
   descParecida: boolean;
+  tipoIgual: boolean;    // cartão↔cartão / conta↔conta (false = casou tipos diferentes)
+  via: Via;              // como casou (relaxamento aplicado)
 }
 
 export interface Resultado {
   pares: Par[];
   soOF: Lancamento[];
   soPDF: Lancamento[];
-  ofEstrangeiro: Lancamento[]; // OF em moeda != BRL sem conversão — fora do casamento
+  ofEstrangeiro: Lancamento[]; // OF em moeda != BRL que NEM ASSIM casou — fora do cruzamento
   janela: { ini: number; fim: number } | null; // sobreposição (ms epoch)
 }
 
 const DIA = 86_400_000;
-const cent = (v: number) => Math.round(Math.abs(v) * 100);
+const abs = (v: number) => Math.abs(v);
+const cent = (v: number) => Math.round(abs(v) * 100);
+
+// (6) tolerância de valor (R$) para casar quando não bate exato: 2% do valor,
+// limitada a [R$1, R$50]. Pequena de propósito — e sempre exige corroboração.
+const tolValor = (v: number) => Math.min(50, Math.max(1, abs(v) * 0.02));
+
+// (7) faixa de câmbio plausível (BRL por unidade estrangeira). Cobre USD≈5,
+// EUR≈6, GBP≈7 e afins; descarta coincidências absurdas.
+const RATE_MIN = 2.5;
+const RATE_MAX = 8;
 
 /** Data real do movimento (compra) em ms epoch; null se data_mov inválida. */
 export function realMs(d: Lancamento): number | null {
@@ -54,15 +79,24 @@ export function realMs(d: Lancamento): number | null {
 
 const ehCartao = (o: string) => String(o || "").startsWith("Cartao");
 
+/** primeiro índice de `arr` (ordenado asc) com valor >= alvo. */
+function lowerBound(arr: number[], alvo: number): number {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < alvo) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+interface Cand { row: Lancamento; ms: number | null; v: number; usado: boolean }
+
 export function conciliar(rows: Lancamento[], tolDias = 3): Resultado {
   const ofTodos = rows.filter((d) => d.fonte_dados === "pluggy");
-  // só concilia OF em BRL; o resto (moeda estrangeira sem conversão) sai à parte
-  const of = ofTodos.filter(ehBRL);
-  const ofEstrangeiro = ofTodos.filter((d) => !ehBRL(d));
+  const ofBRL = ofTodos.filter(ehBRL);
+  const ofMoeda = ofTodos.filter((d) => !ehBRL(d)); // estrangeiros: tentaremos casar em (7)
   const pdf = rows.filter((d) => d.fonte_dados !== "pluggy" && ehBRL(d));
 
-  // janela de sobreposição (interseção dos intervalos de data real das fontes)
-  const msOf = of.map(realMs).filter((x): x is number => x != null);
+  // janela de sobreposição (interseção dos intervalos de data real das fontes).
+  // usa todo o OF (BRL + estrangeiro), já que ambos têm data válida.
+  const msOf = ofTodos.map(realMs).filter((x): x is number => x != null);
   const msPdf = pdf.map(realMs).filter((x): x is number => x != null);
   let janela: { ini: number; fim: number } | null = null;
   if (msOf.length && msPdf.length) {
@@ -71,59 +105,99 @@ export function conciliar(rows: Lancamento[], tolDias = 3): Resultado {
     if (ini <= fim) janela = { ini, fim };
   }
 
-  // indexa PDFs por valor (centavos) para achar candidatos rápido
-  const idx = new Map<number, { row: Lancamento; ms: number | null; usado: boolean }[]>();
-  for (const d of pdf) {
-    const k = cent(d.valor);
-    (idx.get(k) ?? idx.set(k, []).get(k)!).push({ row: d, ms: realMs(d), usado: false });
-  }
+  // PDFs ordenados por valor → busca por faixa de valor (binária) para (6)
+  const cands: Cand[] = pdf
+    .map((d) => ({ row: d, ms: realMs(d), v: abs(d.valor), usado: false }))
+    .sort((a, b) => a.v - b.v);
+  const valores = cands.map((c) => c.v);
 
   const pares: Par[] = [];
   const soOF: Lancamento[] = [];
 
-  // OF ordenado por data → casamento determinístico
-  const ofOrd = [...of].sort((a, b) => (realMs(a) ?? 0) - (realMs(b) ?? 0));
-  for (const p of ofOrd) {
+  // ---- fase 1: OF em BRL (valor exato ou aproximado) ----------------------
+  const ofBRLord = [...ofBRL].sort((a, b) => (realMs(a) ?? 0) - (realMs(b) ?? 0));
+  for (const p of ofBRLord) {
     const pm = realMs(p);
-    const cands = idx.get(cent(p.valor)) ?? [];
-    let melhor: { c: (typeof cands)[number]; dias: number; banco: boolean; desc: boolean; score: number } | null = null;
+    const pv = abs(p.valor);
+    if (pm == null) { soOF.push(p); continue; }
+    const tv = tolValor(pv);
+    const lo = lowerBound(valores, pv - tv);
 
-    for (const c of cands) {
-      if (c.usado || pm == null || c.ms == null) continue;
+    let melhor: { c: Cand; dias: number; banco: boolean; desc: boolean; tipo: boolean; exato: boolean; score: number } | null = null;
+    for (let i = lo; i < cands.length && cands[i].v <= pv + tv; i++) {
+      const c = cands[i];
+      if (c.usado || c.ms == null) continue;
       const dias = Math.abs(pm - c.ms) / DIA;
       if (dias > tolDias) continue;
-      if (ehCartao(p.origem) !== ehCartao(c.row.origem)) continue; // cartão só casa com cartão
-
       const banco = bankOf(p.banco) === bankOf(c.row.banco) && bankOf(p.banco) !== "outro";
       const np = normEstab(p.descricao);
       const desc = np.length > 2 && np === normEstab(c.row.descricao);
-      const score = (tolDias - dias) + (banco ? 5 : 0) + (desc ? 5 : 0);
-      if (!melhor || score > melhor.score) melhor = { c, dias, banco, desc, score };
+      const tipo = ehCartao(p.origem) === ehCartao(c.row.origem);
+      const exato = cent(p.valor) === cent(c.row.valor);
+      // valor aproximado (6) só é candidato se banco OU descrição confirmam
+      if (!exato && !(banco || desc)) continue;
+      // quanto mais perto do valor, melhor (penaliza a diferença em reais)
+      const proxValor = exato ? 4 : Math.max(0, 4 - Math.abs(pv - c.v));
+      const score = (tolDias - dias) + (banco ? 5 : 0) + (desc ? 5 : 0) + (tipo ? 2 : 0) + proxValor;
+      if (!melhor || score > melhor.score) melhor = { c, dias, banco, desc, tipo, exato, score };
     }
 
     if (melhor) {
       melhor.c.usado = true;
+      const { banco, desc, tipo, exato } = melhor;
       const conf: Conf =
-        melhor.banco && melhor.desc ? "alta" : melhor.banco || melhor.desc ? "media" : "baixa";
-      pares.push({
-        of: p,
-        pdf: melhor.c.row,
-        dias: Math.round(melhor.dias),
-        conf,
-        mesmoBanco: melhor.banco,
-        descParecida: melhor.desc,
-      });
+        exato && banco && desc && tipo ? "alta"
+        : (exato && (banco || desc)) || (desc && banco) ? "media"
+        : "baixa";
+      const via: Via = !tipo ? "tipo" : !exato ? "valor" : "exato";
+      pares.push({ of: p, pdf: melhor.c.row, dias: Math.round(melhor.dias), conf, mesmoBanco: banco, descParecida: desc, tipoIgual: tipo, via });
     } else {
       soOF.push(p);
+    }
+  }
+
+  // ---- fase 2: OF em moeda estrangeira (7) --------------------------------
+  // não dá para casar por valor em BRL; usa descrição + data + câmbio plausível.
+  const ofEstrangeiro: Lancamento[] = [];
+  const ofMoedaOrd = [...ofMoeda].sort((a, b) => (realMs(a) ?? 0) - (realMs(b) ?? 0));
+  for (const p of ofMoedaOrd) {
+    const pm = realMs(p);
+    const pf = abs(p.valor); // valor na moeda estrangeira
+    if (pm == null || pf <= 0) { ofEstrangeiro.push(p); continue; }
+
+    let melhor: { c: Cand; dias: number; banco: boolean; desc: boolean; tipo: boolean; score: number } | null = null;
+    for (const c of cands) {
+      if (c.usado || c.ms == null) continue;
+      const dias = Math.abs(pm - c.ms) / DIA;
+      if (dias > tolDias) continue;
+      const rate = c.v / pf; // BRL por unidade estrangeira
+      if (rate < RATE_MIN || rate > RATE_MAX) continue; // câmbio implausível → não é o par
+      const banco = bankOf(p.banco) === bankOf(c.row.banco) && bankOf(p.banco) !== "outro";
+      const np = normEstab(p.descricao);
+      const desc = np.length > 2 && np === normEstab(c.row.descricao);
+      const tipo = ehCartao(p.origem) === ehCartao(c.row.origem);
+      // estrangeiro exige corroboração forte (banco ou descrição) — valor não confere
+      if (!(banco || desc)) continue;
+      const score = (tolDias - dias) + (banco ? 5 : 0) + (desc ? 6 : 0) + (tipo ? 2 : 0);
+      if (!melhor || score > melhor.score) melhor = { c, dias, banco, desc, tipo, score };
+    }
+
+    if (melhor) {
+      melhor.c.usado = true;
+      const { banco, desc, tipo } = melhor;
+      // moeda estrangeira nunca é "alta" (valor em BRL não foi conferido)
+      const conf: Conf = banco && desc ? "media" : "baixa";
+      pares.push({ of: p, pdf: melhor.c.row, dias: Math.round(melhor.dias), conf, mesmoBanco: banco, descParecida: desc, tipoIgual: tipo, via: "moeda" });
+    } else {
+      ofEstrangeiro.push(p);
     }
   }
 
   // só PDF: não-casados, mas dentro da janela de sobreposição
   const soPDF: Lancamento[] = [];
   if (janela) {
-    for (const arr of idx.values())
-      for (const c of arr)
-        if (!c.usado && c.ms != null && c.ms >= janela.ini && c.ms <= janela.fim) soPDF.push(c.row);
+    for (const c of cands)
+      if (!c.usado && c.ms != null && c.ms >= janela.ini && c.ms <= janela.fim) soPDF.push(c.row);
   }
 
   return { pares, soOF, soPDF, ofEstrangeiro, janela };
