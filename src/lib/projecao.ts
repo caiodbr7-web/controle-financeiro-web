@@ -97,7 +97,9 @@ export interface ProjMes {
   k: string; label: string;
   // mesmos 3 baldes que NÃO se sobrepõem da visão "Mês" (nada conta em dobro):
   recorr: number;   // gastos recorrentes (fixos mensais), qualquer forma de pagamento
-  contaVar: number; // gastos na conta FORA os recorrentes (não-cartão, não-fixos)
+  contaVar: number; // gastos na conta FORA os recorrentes (= contaOrc + contaOutros)
+  contaOrc: number; // └─ parte "gerais": orçamento previsto da conta
+  contaOutros: number; // └─ parte "outros": avulsos na conta (parcelas/metas/pagamentos)
   cartaoVar: number;// gastos no cartão FORA os recorrentes já marcados
   cartao: number;   // total no cartão: orçamento definido, senão soma dos itens marcados
   gerais: number;   // recorr + contaVar + cartaoVar (consolidado, sem contar em dobro)
@@ -156,6 +158,6 @@ export function projetar(
     const orcConta = contaPlano && contaPlano.ativo ? contribNoMes(contaPlano, k) : 0;
     const contaVar = orcConta + contaVarItens;
     const gerais = recorr + contaVar + cartaoVar; // baldes disjuntos — nada soma em dobro
-    return { k, label: dvLabel(k), recorr, contaVar, cartaoVar, cartao, gerais, receita, saldo: receita - gerais };
+    return { k, label: dvLabel(k), recorr, contaVar, contaOrc: orcConta, contaOutros: contaVarItens, cartaoVar, cartao, gerais, receita, saldo: receita - gerais };
   });
 }

@@ -459,6 +459,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const recorrNoCartao = gastosRecorrentes.filter((p) => p.no_cartao);          // recorrentes pagos no cartão
   const gastosCartaoFlag = gastosMes.filter((p) => p.no_cartao);                // marcados como cartão
   const gastosContaItens = gastosMes.filter((p) => p.tipo !== "fixo" && !p.no_cartao); // avulsos pela conta (metas/parcelas/pagamentos)
+  const gastosOutrosLista = gastosMes.filter((p) => p.tipo !== "fixo");          // itens não-recorrentes (listados após o total dos recorrentes)
   const orcCartao = (c: string) => (cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, c) : 0);
   const realCartao = (c: string) => (cartaoPlano ? (mensal[c]?.[cartaoPlano.id]?.valor_real ?? null) : null);
   const orcConta = (c: string) => (contaPlano && contaPlano.ativo ? contribNoMes(contaPlano, c) : 0);
@@ -484,6 +485,14 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     const a = autosConta[c];
     return a == null ? null : Math.max(0, a - somaEfet(recorrNaConta, c));
   };
+  // 2 dividido em duas linhas: gerais (orçamento) + outros (avulsos: metas/parcelas/pagamentos)
+  const contaOutrosPrev = (c: string) => somaPrev(gastosContaItens, c);
+  const contaOutrosEfet = (c: string) => somaEfet(gastosContaItens, c);
+  const contaGeralPrev = (c: string): number | null => { const o = orcConta(c); return o > 0 ? o : null; };
+  const contaGeralEfet = (c: string): number | null => {
+    const a = autosConta[c];
+    return a == null ? null : Math.max(0, a - somaEfet(recorrNaConta, c) - contaOutrosEfet(c));
+  };
   // 3) cartão variável = total do cartão − recorrentes já marcados como cartão
   const cartaoVarPrev = (c: string): number | null => { const o = orcCartao(c); return o > 0 ? Math.max(0, o - somaPrev(recorrNoCartao, c)) : null; };
   const cartaoVarEfet = (c: string) => Math.max(0, cartaoTotalEfet(c) - somaEfet(recorrNoCartao, c));
@@ -501,7 +510,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : 0;
   };
   function iniciarOrc(tipo: "conta" | "cartao") {
-    const sug = tipo === "conta" ? mediaFechados(contaVarEfet) : mediaFechados((c) => cartaoVarEfet(c));
+    const sug = tipo === "conta" ? mediaFechados(contaGeralEfet) : mediaFechados((c) => cartaoVarEfet(c));
     setOrcVal(sug ? String(Math.round(sug)).replace(".", ",") : "");
     setOrcEdit(tipo);
   }
@@ -669,24 +678,27 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* GASTOS — itens recorrentes (fixos) listados */}
+                  {/* GASTOS — recorrentes (fixos) listados primeiro, com o total logo abaixo */}
                   {!!gastosMes.length && <tr className="bg-card2"><td colSpan={9} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">Gastos</td></tr>}
-                  {gastosMes.map(LinhaMes)}
+                  {gastosRecorrentes.map(LinhaMes)}
+                  {!loading && !!gastosRecorrentes.length && (
+                    <tr className="font-bold">
+                      <td className="border-t-2 !border-t-line" colSpan={2}>🔁 Gastos recorrentes <span className="text-muted font-normal">· fixos mensais</span></td>
+                      {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line">{fmtCell(recorrEfet(c))}</td>)}
+                      <td className="num border-t-2 !border-t-line">{fmtCell(recorrPrev(comp))}</td>
+                      <td className="num border-t-2 !border-t-line">{fmtCell(recorrEfet(comp))}</td>
+                      <td className="border-t-2 !border-t-line" colSpan={2}></td>
+                    </tr>
+                  )}
+                  {/* itens não-recorrentes (parcelas, metas, pagamentos) */}
+                  {gastosOutrosLista.map(LinhaMes)}
 
                   {!loading && !!itensMes.length && (
                     <Fragment key="resumo-gastos">
-                      {/* 🔁 soma dos recorrentes (logo após os itens) */}
-                      <tr className="font-bold">
-                        <td className="border-t-2 !border-t-line" colSpan={2}>🔁 Gastos recorrentes <span className="text-muted font-normal">· fixos mensais</span></td>
-                        {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line">{fmtCell(recorrEfet(c))}</td>)}
-                        <td className="num border-t-2 !border-t-line">{fmtCell(recorrPrev(comp))}</td>
-                        <td className="num border-t-2 !border-t-line">{fmtCell(recorrEfet(comp))}</td>
-                        <td className="border-t-2 !border-t-line" colSpan={2}></td>
-                      </tr>
-                      {/* 🏦 conta variável (Pix/débito), fora os recorrentes */}
-                      <tr className="text-[12.5px]" title="o que saiu da conta (Pix/débito) além dos recorrentes — vem dos lançamentos importados (origem Conta)">
-                        <td colSpan={2}>🏦 Gastos na conta <span className="text-muted font-normal">· fora os recorrentes</span></td>
-                        {histMeses.map((c) => { const v = contaVarEfet(c); return <td key={c} className="num text-muted">{v == null ? "—" : fmtCell(v)}</td>; })}
+                      {/* 🏦 conta — gerais (orçado) */}
+                      <tr className="text-[12.5px]" title="gasto corriqueiro da conta (Pix/débito) que você orça; realizado = o que saiu da conta além dos recorrentes e dos itens avulsos">
+                        <td colSpan={2}>🏦 Gastos na conta <span className="text-muted font-normal">· gerais (orçado)</span></td>
+                        {histMeses.map((c) => { const v = contaGeralEfet(c); return <td key={c} className="num text-muted">{v == null ? "—" : fmtCell(v)}</td>; })}
                         <td className="num text-muted !py-1">
                           {orcEdit === "conta" ? (
                             <input autoFocus className={`${inp} w-[84px] text-right`} value={orcVal}
@@ -695,11 +707,19 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                           ) : (
                             <button onClick={() => iniciarOrc("conta")} title="preencher o orçamento previsto com a média dos meses fechados (você ajusta antes de salvar)"
                               className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-accent">
-                              {contaVarPrev(comp) == null ? <span className="text-accent">↑ orçar</span> : fmtCell(contaVarPrev(comp) as number)}
+                              {contaGeralPrev(comp) == null ? <span className="text-accent">↑ orçar</span> : fmtCell(contaGeralPrev(comp) as number)}
                             </button>
                           )}
                         </td>
-                        <td className="num text-muted">{(() => { const v = contaVarEfet(comp); return v == null ? "—" : fmtCell(v); })()}</td>
+                        <td className="num text-muted">{(() => { const v = contaGeralEfet(comp); return v == null ? "—" : fmtCell(v); })()}</td>
+                        <td colSpan={2}></td>
+                      </tr>
+                      {/* 📦 conta — outros gastos (parcelas, metas, pagamentos) */}
+                      <tr className="text-[12.5px]" title="parcelamentos, metas e pagamentos pagos pela conta (fora do cartão) — somados dos itens acima">
+                        <td colSpan={2}>📦 Outros gastos <span className="text-muted font-normal">· parcelamento, meta…</span></td>
+                        {histMeses.map((c) => { const v = contaOutrosEfet(c); return <td key={c} className="num text-muted">{v ? fmtCell(v) : "—"}</td>; })}
+                        <td className="num text-muted">{contaOutrosPrev(comp) ? fmtCell(contaOutrosPrev(comp)) : "—"}</td>
+                        <td className="num text-muted">{contaOutrosEfet(comp) ? fmtCell(contaOutrosEfet(comp)) : "—"}</td>
                         <td colSpan={2}></td>
                       </tr>
                       {/* 💳 cartão variável, fora os recorrentes marcados */}
@@ -834,6 +854,14 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                             </td>
                           </tr>
                         ))}
+                        {/* total dos recorrentes logo abaixo da lista de fixos */}
+                        {t.v === "fixo" && (
+                          <tr className="font-bold">
+                            <td className="border-t-2 !border-t-line">🔁 Gastos recorrentes <span className="text-muted font-normal">· fixos mensais</span></td>
+                            {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{m.recorr ? fmtCell(m.recorr) : <span className="text-line">·</span>}</td>)}
+                            <td className="border-t-2 !border-t-line"></td>
+                          </tr>
+                        )}
                       </Fragment>
                     );
                   })}
@@ -842,17 +870,18 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                 </tbody>
                 {(!!planos.length || cartaoPlano) && (
                   <tfoot>
-                    {/* mesma estrutura da visão "Mês": 3 baldes disjuntos → Σ gerais → saldo */}
-                    {/* 🔁 recorrentes (fixos), qualquer forma de pagamento */}
-                    <tr className="font-bold">
-                      <td className="border-t-2 !border-t-line">🔁 Gastos recorrentes <span className="text-muted font-normal">· fixos mensais</span></td>
-                      {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{m.recorr ? fmtCell(m.recorr) : <span className="text-line">·</span>}</td>)}
+                    {/* mesma estrutura da visão "Mês": baldes disjuntos → Σ gerais → saldo.
+                        (o total dos recorrentes fica no tbody, logo abaixo dos fixos) */}
+                    {/* 🏦 conta — gerais (orçado) */}
+                    <tr className="text-[12.5px]" title="orçamento previsto da conta (definido na visão Mês via ↑ orçar) — o gasto corriqueiro de Pix/débito">
+                      <td className="border-t-2 !border-t-line">🏦 Gastos na conta <span className="text-muted font-normal">· gerais (orçado)</span></td>
+                      {proj.map((m, i) => <td key={m.k} className={`num text-muted border-t-2 !border-t-line ${i === 0 ? "!text-accent" : ""}`}>{m.contaOrc ? fmtCell(m.contaOrc) : <span className="text-line">·</span>}</td>)}
                       <td className="border-t-2 !border-t-line"></td>
                     </tr>
-                    {/* 🏦 conta variável (não-recorrente fora do cartão) */}
-                    <tr className="text-[12.5px]" title="orçamento previsto da conta (definido na visão Mês via ↑ orçar); sem orçamento, soma de parcelas/pagamentos/metas fora do cartão">
-                      <td>🏦 Gastos na conta <span className="text-muted font-normal">· fora os recorrentes</span></td>
-                      {proj.map((m, i) => <td key={m.k} className={`num text-muted ${i === 0 ? "!text-accent" : ""}`}>{m.contaVar ? fmtCell(m.contaVar) : <span className="text-line">·</span>}</td>)}
+                    {/* 📦 conta — outros gastos (parcelas, metas, pagamentos) */}
+                    <tr className="text-[12.5px]" title="parcelamentos, metas e pagamentos pagos pela conta (fora do cartão)">
+                      <td>📦 Outros gastos <span className="text-muted font-normal">· parcelamento, meta…</span></td>
+                      {proj.map((m, i) => <td key={m.k} className={`num text-muted ${i === 0 ? "!text-accent" : ""}`}>{m.contaOutros ? fmtCell(m.contaOutros) : <span className="text-line">·</span>}</td>)}
                       <td></td>
                     </tr>
                     {/* 💳 cartão variável (total do cartão fora os recorrentes marcados) */}
