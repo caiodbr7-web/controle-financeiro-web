@@ -4,7 +4,7 @@ import { useConfirm } from "../Confirm";
 import { useToast } from "../Toast";
 import { sb } from "../../lib/supabase";
 import type { Lancamento } from "../../types";
-import { BRL, CATEGORIAS, dvAddMes, dvLabel, ehGasto } from "../../lib/finance";
+import { BRL, CATEGORIAS, dvAddMes, dvLabel, ehGasto, ehReceita } from "../../lib/finance";
 import {
   type Plano, type TipoPlano, TIPOS, mesAtual, horizonte, projetar,
   contribNoMes, fimEfetivo, ehReceitaTipo, mesesEntre,
@@ -260,6 +260,21 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       let sum = 0, cnt = 0;
       lancamentos.forEach((d) => {
         if (String(d.competencia).slice(0, 7) === c && ehGasto(d.classe) && String(d.origem || "").startsWith("Conta")) { sum += Math.abs(d.valor); cnt++; }
+      });
+      out[c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
+    });
+    return out;
+  }, [lancamentos, comp, histMeses]);
+
+  // ---------- total REAL de RECEITAS (lançamentos classe "Receita") por mês ----------
+  // O que de fato entrou no mês (salário, freela, rendimentos) — base do Saldo do mês real.
+  const autosReceita = useMemo(() => {
+    const todos = [...histMeses, comp];
+    const out: Record<string, number | null> = {};
+    todos.forEach((c) => {
+      let sum = 0, cnt = 0;
+      lancamentos.forEach((d) => {
+        if (String(d.competencia).slice(0, 7) === c && ehReceita(d.classe)) { sum += Math.abs(d.valor); cnt++; }
       });
       out[c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
     });
@@ -539,7 +554,13 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const geraisPrev = (c: string) => recorrPrev(c) + (contaVarPrev(c) ?? 0) + (cartaoVarPrev(c) ?? 0);
   const geraisEfet = (c: string) => recorrEfet(c) + (contaVarEfet(c) ?? 0) + cartaoVarEfet(c);
 
-  const prevRec = somaPrev(receitasMes, comp), efetRec = somaEfet(receitasMes, comp);
+  // receita REAL do mês: o que entrou de fato (lançamentos classe Receita); na falta de
+  // lançamento de receita no mês, cai no previsto dos itens de receita do plano. Base do Saldo "real".
+  const receitaReal = (c: string): number => {
+    const a = autosReceita[c];
+    return a != null ? a : somaEfet(receitasMes, c);
+  };
+  const prevRec = somaPrev(receitasMes, comp), efetRec = receitaReal(comp);
   const prevGer = geraisPrev(comp), efetGer = geraisEfet(comp);
   const preenchidos = gastosMes.filter((p) => dados(p, comp).manual != null).length;
   const conflitos = itensMes.filter((p) => dados(p, comp).conflito).length;
@@ -764,10 +785,18 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                         <td className="num" title={cartaoParcial(comp) ? TIP_PARCIAL : undefined}>{fmtCell(geraisEfet(comp))}{cartaoParcial(comp) && <span className="font-normal text-[10px] text-muted"> *</span>}</td>
                         <td colSpan={2}></td>
                       </tr>
+                      {/* 💰 receitas reais lançadas no mês — base do Saldo (real lançado; sem lançamento, cai no previsto do plano) */}
+                      <tr className="text-green text-[12.5px]" title="o que de fato entrou no mês (salário, freela, rendimentos) dos seus lançamentos — base do Saldo do mês. Sem lançamento de receita no mês, usa o previsto dos itens de receita do plano.">
+                        <td colSpan={2}>💰 Receitas <span className="text-muted font-normal">· lançadas no mês</span></td>
+                        {histMeses.map((c) => { const v = receitaReal(c); return <td key={c} className="num">{v ? fmtCell(v) : "—"}</td>; })}
+                        <td className="num">{prevRec ? fmtCell(prevRec) : "—"}</td>
+                        <td className="num">{efetRec ? fmtCell(efetRec) : "—"}</td>
+                        <td colSpan={2}></td>
+                      </tr>
                       {/* Saldo do mês = receita − gerais */}
                       <tr className="font-bold">
                         <td className="border-t-2 !border-t-line" colSpan={2}>Saldo do mês</td>
-                        {histMeses.map((c) => { const s = somaEfet(receitasMes, c) - geraisEfet(c); return <td key={c} className={`num border-t-2 !border-t-line ${s < 0 ? "text-red" : "text-green"}`}>{fmtCell(s)}</td>; })}
+                        {histMeses.map((c) => { const s = receitaReal(c) - geraisEfet(c); return <td key={c} className={`num border-t-2 !border-t-line ${s < 0 ? "text-red" : "text-green"}`}>{fmtCell(s)}</td>; })}
                         <td className={`num border-t-2 !border-t-line ${prevRec - prevGer < 0 ? "text-red" : "text-green"}`}>{fmtCell(prevRec - prevGer)}</td>
                         <td className={`num border-t-2 !border-t-line ${efetRec - efetGer < 0 ? "text-red" : "text-green"}`}>{fmtCell(efetRec - efetGer)}</td>
                         <td className="border-t-2 !border-t-line" colSpan={2}></td>
@@ -780,7 +809,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   {receitasMes.map(LinhaMes)}
                   {!!receitasMes.length && (
                     <tr className="font-bold text-green">
-                      <td colSpan={2}>Σ Receitas</td>
+                      <td colSpan={2}>Σ Receitas previstas <span className="text-muted font-normal">· plano</span></td>
                       {histMeses.map((c) => <td key={c} className="num">{fmtCell(somaEfet(receitasMes, c))}</td>)}
                       <td className="num">{fmtCell(somaPrev(receitasMes, comp))}</td>
                       <td className="num">{fmtCell(somaEfet(receitasMes, comp))}</td>
@@ -795,7 +824,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦 e 💳, clique em <b className="text-accent">↑ orçar</b> para preencher o orçamento com a <b>média dos meses fechados</b> (você ajusta antes de salvar).
+            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. A linha <b className="text-green">💰 Receitas</b> é o que de fato entrou no mês (seus lançamentos de receita) e serve de base para o <b>Saldo do mês</b> — sem lançamento de receita no mês, ela usa o previsto dos seus itens de receita do plano. Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦 e 💳, clique em <b className="text-accent">↑ orçar</b> para preencher o orçamento com a <b>média dos meses fechados</b> (você ajusta antes de salvar).
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
             {!temOrcConta && <> <span className="text-amber">{MSG_MIGRACAO_CONTA}</span></>}
           </div>
