@@ -41,7 +41,13 @@ const parseValor = (s: string): number => {
 };
 const parseValorN = (s: string): number | null => {
   if (s == null || s.trim() === "") return null;
-  const n = parseFloat(s.replace(/\./g, "").replace(",", "."));
+  let t = s.trim();
+  if (t.includes(",")) {
+    t = t.replace(/\./g, "").replace(",", ".");        // padrão BR: ponto é milhar, vírgula é decimal
+  } else if (!/^-?\d+\.\d{1,2}$/.test(t)) {
+    t = t.replace(/\./g, "");                          // só pontos e não é "117.02" → ponto é milhar (1.500, 4.368)
+  }                                                    // senão (ex.: 117.02) mantém o ponto como decimal
+  const n = parseFloat(t);
   return isNaN(n) ? null : n;
 };
 // célula compacta da projeção: reais inteiros
@@ -192,7 +198,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     (data || []).forEach((m: any) => { (byComp[m.competencia] = byComp[m.competencia] || {})[m.plano_id] = { valor_real: m.valor_real, pago: m.pago }; });
     setMensal(byComp);
     const r: Record<number, string> = {};
-    Object.entries(byComp[atual] || {}).forEach(([id, m]) => { if (m.valor_real != null) r[+id] = String(m.valor_real); });
+    Object.entries(byComp[atual] || {}).forEach(([id, m]) => { if (m.valor_real != null) r[+id] = String(m.valor_real).replace(".", ","); });
     setReais(r);
   }, []);
   useEffect(() => { if (!semTabela) carregarMensal(comp, histMeses); }, [comp, histMeses, semTabela, carregarMensal]);
@@ -274,7 +280,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     if (!error) setMensal((v) => ({ ...v, [c]: { ...(v[c] || {}), [planoId]: { valor_real, pago } } }));
   }
   async function salvarReal(p: Plano, valorStr: string) { const v = parseValorN(valorStr); await upsert(p.id, comp, v, v != null || (mensal[comp]?.[p.id]?.pago ?? false)); }
-  async function usarLancado(p: Plano, v: number) { await upsert(p.id, comp, v, true); setReais((r) => ({ ...r, [p.id]: String(v) })); }
+  async function usarLancado(p: Plano, v: number) { await upsert(p.id, comp, v, true); setReais((r) => ({ ...r, [p.id]: String(v).replace(".", ",") })); }
   async function togglePago(p: Plano) { const cur = mensal[comp]?.[p.id]; await upsert(p.id, comp, cur?.valor_real ?? null, !(cur?.pago ?? false)); }
 
   // ---------- CRUD de itens ----------
