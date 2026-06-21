@@ -124,6 +124,7 @@ Deno.serve(async (req) => {
       const invs = await fetchInvestments(apiKey, it.item_id);
       por_item[it.connector_name ?? it.item_id] = invs.length;
       for (const inv of invs) {
+        if (inv.id == null) continue; // sem id não há chave para upsert
         linhas.push({
           investment_id: inv.id,
           user_id: userId,
@@ -147,16 +148,23 @@ Deno.serve(async (req) => {
       }
     }
 
+    // dedup por investment_id: a Pluggy pode repetir um ativo (entre páginas ou
+    // conexões) e o upsert do Postgres recusa a mesma chave duas vezes no mesmo
+    // lote ("ON CONFLICT DO UPDATE command cannot affect row a second time").
+    const porId = new Map<string, any>();
+    for (const l of linhas) porId.set(l.investment_id, l);
+    const unicos = [...porId.values()];
+
     let inseridos = 0;
-    if (linhas.length) {
+    if (unicos.length) {
       const { error: upErr, count } = await sb
         .from("pluggy_investments")
-        .upsert(linhas, { onConflict: "investment_id", count: "exact" });
+        .upsert(unicos, { onConflict: "investment_id", count: "exact" });
       if (upErr) return json({ error: upErr.message }, 500);
-      inseridos = count ?? linhas.length;
+      inseridos = count ?? unicos.length;
     }
 
-    return json({ ok: true, itens: itens.length, investimentos: linhas.length, inseridos, por_item });
+    return json({ ok: true, itens: itens.length, investimentos: unicos.length, inseridos, por_item });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }
