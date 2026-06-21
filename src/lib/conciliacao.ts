@@ -29,7 +29,7 @@
 // para o diagnóstico deixar claro quando a regra foi relaxada.
 // ============================================================================
 import type { Lancamento } from "../types";
-import { dvDataReal, bankOf, normEstab } from "./finance";
+import { dvDataReal, bankOf, normEstab, mesReal, ehGasto, ehReceita } from "./finance";
 
 export type Conf = "alta" | "media" | "baixa";
 /** Como o par casou — "exato" é o caminho estrito; os demais são relaxamentos. */
@@ -55,6 +55,43 @@ export interface Resultado {
   soPDF: Lancamento[];
   ofEstrangeiro: Lancamento[]; // OF em moeda != BRL que NEM ASSIM casou — fora do cruzamento
   janela: { ini: number; fim: number } | null; // sobreposição (ms epoch)
+}
+
+// ----------------------------------------------------------------------------
+// Totais por mês × fonte (gastos e receitas) — base do "placar" PDF × Pluggy.
+// Agrupa pela DATA REAL do movimento (mesReal), e não pela competência: assim
+// uma compra de maio entra em maio nas duas fontes, mesmo que a fatura do PDF
+// caia numa competência diferente. Só soma valores em BRL (o `valor` de linhas
+// em moeda estrangeira não é comparável em real); essas ficam contadas à parte.
+// ----------------------------------------------------------------------------
+export interface TotaisFonte {
+  gas: number;   // soma de gastos (R$, positivo)
+  rec: number;   // soma de receitas (R$, positivo)
+  nGas: number;  // qtd de lançamentos de gasto
+  nRec: number;  // qtd de lançamentos de receita
+  estrangeiro: number; // qtd de linhas em moeda != BRL ignoradas na soma
+}
+export interface TotaisMes { mes: string; pdf: TotaisFonte; of: TotaisFonte; }
+
+const novoTotal = (): TotaisFonte => ({ gas: 0, rec: 0, nGas: 0, nRec: 0, estrangeiro: 0 });
+
+function acumula(t: TotaisFonte, d: Lancamento) {
+  if (!ehBRL(d)) { t.estrangeiro++; return; }
+  if (ehGasto(d.classe)) { t.gas += Math.abs(d.valor); t.nGas++; }
+  else if (ehReceita(d.classe)) { t.rec += Math.abs(d.valor); t.nRec++; }
+}
+
+/** Totais de gastos/receitas por mês (YYYY-MM), separados em PDF × Open Finance. */
+export function totaisPorMes(rows: Lancamento[]): TotaisMes[] {
+  const mapa = new Map<string, TotaisMes>();
+  for (const d of rows) {
+    const m = mesReal(d);
+    if (!m) continue;
+    let t = mapa.get(m);
+    if (!t) { t = { mes: m, pdf: novoTotal(), of: novoTotal() }; mapa.set(m, t); }
+    acumula(d.fonte_dados === "pluggy" ? t.of : t.pdf, d);
+  }
+  return [...mapa.values()].sort((a, b) => b.mes.localeCompare(a.mes));
 }
 
 const DIA = 86_400_000;

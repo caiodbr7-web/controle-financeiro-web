@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Lancamento } from "../../types";
 import { Kpi, Seg, Select } from "../ui";
 import { sb } from "../../lib/supabase";
-import { BRL, fmtMoeda, dicaMoedaOrigem, bankOf, dvDataReal } from "../../lib/finance";
-import { conciliar, type Conf, type Par, type Via } from "../../lib/conciliacao";
+import { BRL, fmtMoeda, dicaMoedaOrigem, bankOf, dvDataReal, dvLabel } from "../../lib/finance";
+import { conciliar, totaisPorMes, type Conf, type Par, type Via, type TotaisMes } from "../../lib/conciliacao";
 
 /* ============================================================================
    Aba "Conciliação" — PDF × Open Finance.
@@ -78,6 +78,17 @@ export function Conciliacao() {
 
   const res = useMemo(() => conciliar(rows, tol), [rows, tol]);
 
+  // placar de totais (gastos × receitas) por mês, separando PDF de Open Finance
+  const totais = useMemo(() => totaisPorMes(rows), [rows]);
+  const meses = useMemo(() => totais.map((t) => t.mes), [totais]);
+  const [mesSel, setMesSel] = useState("");
+  useEffect(() => {
+    if (!meses.length) return;
+    // mantém o mês escolhido; senão prioriza maio/26, senão o mês mais recente
+    setMesSel((cur) => (cur && meses.includes(cur) ? cur : meses.includes("2026-05") ? "2026-05" : meses[0]));
+  }, [meses]);
+  const totalMes = useMemo(() => totais.find((t) => t.mes === mesSel) ?? null, [totais, mesSel]);
+
   // opções dos selects (derivadas de todos os lançamentos carregados)
   const bancos = useMemo(() => [...new Set(rows.map((d) => d.banco).filter(Boolean))].sort(), [rows]);
   const origens = useMemo(
@@ -150,6 +161,15 @@ export function Conciliacao() {
           Pluggy e <strong>não casaram</strong> nem por descrição + data + câmbio plausível (o valor em moeda não confere contra o PDF em real).
           Veja-os na aba "Moeda estrangeira". Com banco de verdade o Pluggy costuma enviar o valor já convertido em BRL, e eles voltam a conciliar normalmente.
         </div>
+      )}
+
+      {totalMes && (
+        <PlacarMes
+          t={totalMes}
+          meses={meses}
+          mesSel={mesSel}
+          onMes={setMesSel}
+        />
       )}
 
       <div className="flex flex-wrap gap-2 items-center mb-3">
@@ -238,6 +258,78 @@ export function Conciliacao() {
         A etiqueta ao lado da confiança indica quando a regra foi relaxada: <strong>≈ valor</strong> (valor aproximado),
         <strong> moeda</strong> (estrangeira, casada por descrição/data/câmbio) ou <strong>tipo difere</strong> (cartão↔conta) — esses nunca são "Alta".
         <strong> Só PDF na janela</strong> considera só o período coberto pelas duas fontes; antes da janela o "só PDF" é esperado.
+      </p>
+    </div>
+  );
+}
+
+// Placar de totais do mês: gastos e receitas, PDF/arquivos × Open Finance,
+// com a diferença entre as duas fontes (quanto uma trouxe a mais que a outra).
+function PlacarMes({
+  t, meses, mesSel, onMes,
+}: {
+  t: TotaisMes; meses: string[]; mesSel: string; onMes: (m: string) => void;
+}) {
+  const linhas: { rotulo: string; pdf: number; of: number; nPdf: number; nOf: number }[] = [
+    { rotulo: "Gastos", pdf: t.pdf.gas, of: t.of.gas, nPdf: t.pdf.nGas, nOf: t.of.nGas },
+    { rotulo: "Receitas", pdf: t.pdf.rec, of: t.of.rec, nPdf: t.pdf.nRec, nOf: t.of.nRec },
+  ];
+  const estrangeiro = t.pdf.estrangeiro + t.of.estrangeiro;
+
+  return (
+    <div className="bg-card border border-line rounded-[18px] shadow-card p-4 sm:p-5 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <h2 className="text-[14px] font-semibold tracking-tight">Totais do mês — PDF/arquivos × Open Finance</h2>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[12.5px] text-muted">Mês</span>
+          <Select value={mesSel} onChange={onMes}>
+            {meses.map((m) => <option key={m} value={m}>{dvLabel(m)}</option>)}
+          </Select>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto scroll-thin">
+        <table className="tbl min-w-[560px] text-[13px]">
+          <thead>
+            <tr>
+              <th />
+              <th className="text-right">PDF / arquivos</th>
+              <th className="text-right">Open Finance</th>
+              <th className="text-right">Diferença</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => {
+              const dif = l.pdf - l.of;
+              const cls = Math.abs(dif) < 0.005 ? "text-green" : "text-amber";
+              return (
+                <tr key={l.rotulo}>
+                  <td className="font-medium">{l.rotulo}</td>
+                  <td className="num">
+                    {BRL(l.pdf)}
+                    <span className="text-muted text-[11px] ml-1">({l.nPdf})</span>
+                  </td>
+                  <td className="num">
+                    {BRL(l.of)}
+                    <span className="text-muted text-[11px] ml-1">({l.nOf})</span>
+                  </td>
+                  <td className={`num font-semibold ${cls}`}>
+                    {(dif >= 0 ? "+" : "−") + BRL(Math.abs(dif))}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="text-[11.5px] text-muted mt-2 leading-relaxed">
+        Agrupado pela <strong>data real</strong> do movimento (não pela competência da fatura), só valores em <strong>BRL</strong>.
+        <strong> Diferença</strong> = PDF − Open Finance: positiva quer dizer que o PDF trouxe mais que o Open Finance no mês
+        (o banco ainda não sincronizou, período fora da cobertura do Open Finance, ou possível duplicata só de um lado).
+        {estrangeiro > 0 && (
+          <> {estrangeiro} lançamento(s) em moeda estrangeira ficaram fora desta soma.</>
+        )}
       </p>
     </div>
   );
