@@ -59,7 +59,17 @@ export interface Investimento {
   vencimento: string | null;     // "YYYY-MM-DD" (dueDate)
   taxa: string | null;           // rate + rateType (ex.: "110 CDI")
   status: string | null;
+  tipo_manual: string | null;    // classificação SUA do ativo (sobrepõe `tipo`)
   atualizado_em?: string | null;
+}
+
+// Retrato diário do patrimônio investido (tabela public.pluggy_investments_hist).
+export interface InvestimentoHist {
+  dia: string;                   // "YYYY-MM-DD"
+  valor_total: number | null;    // soma dos saldos (valor atual)
+  valor_aplicado: number | null; // soma dos aportes
+  lucro: number | null;          // soma do lucro
+  posicoes: number | null;
 }
 
 export type Visao = "ALL" | "pessoal" | "corporativo";

@@ -1,5 +1,5 @@
 import { sb, SUPABASE_URL, SUPABASE_ANON } from "./supabase";
-import type { Investimento } from "../types";
+import type { Investimento, InvestimentoHist } from "../types";
 
 const FN_BASE = `${SUPABASE_URL}/functions/v1`;
 
@@ -93,9 +93,28 @@ export async function listInvestments(): Promise<Investimento[]> {
   const { data, error } = await sb
     .from("pluggy_investments")
     .select(
-      "investment_id,item_id,banco,tipo,subtipo,nome,emissor,saldo,valor_aplicado,lucro,quantidade,moeda,vencimento,taxa,status,atualizado_em",
+      "investment_id,item_id,banco,tipo,subtipo,nome,emissor,saldo,valor_aplicado,lucro,quantidade,moeda,vencimento,taxa,status,tipo_manual,atualizado_em",
     )
     .order("saldo", { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []) as Investimento[];
+}
+
+/** Histórico diário do patrimônio investido (tabela pluggy_investments_hist). */
+export async function listInvestmentHistory(): Promise<InvestimentoHist[]> {
+  const { data, error } = await sb
+    .from("pluggy_investments_hist")
+    .select("dia,valor_total,valor_aplicado,lucro,posicoes")
+    .order("dia", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as InvestimentoHist[];
+}
+
+/** Define (ou limpa, com null) a classificação manual de um ativo. */
+export async function setTipoManual(investmentId: string, tipoManual: string | null): Promise<void> {
+  const { error } = await sb
+    .from("pluggy_investments")
+    .update({ tipo_manual: tipoManual })
+    .eq("investment_id", investmentId);
+  if (error) throw new Error(error.message);
 }

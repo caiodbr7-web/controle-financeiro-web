@@ -164,6 +164,31 @@ Deno.serve(async (req) => {
       inseridos = count ?? unicos.length;
     }
 
+    // retrato DIÁRIO do patrimônio -> alimenta o gráfico de evolução histórica.
+    // Lê a carteira completa do usuário (não só o que veio neste sync) e grava
+    // um ponto por dia (upsert em (user_id, dia): re-sincronizar atualiza o dia).
+    try {
+      const { data: todas } = await sb
+        .from("pluggy_investments")
+        .select("saldo, valor_aplicado, lucro")
+        .eq("user_id", userId);
+      if (todas && todas.length) {
+        const tot = todas.reduce(
+          (a, p: any) => ({
+            valor_total: a.valor_total + (p.saldo ?? 0),
+            valor_aplicado: a.valor_aplicado + (p.valor_aplicado ?? 0),
+            lucro: a.lucro + (p.lucro ?? 0),
+          }),
+          { valor_total: 0, valor_aplicado: 0, lucro: 0 },
+        );
+        const dia = agora.slice(0, 10); // "YYYY-MM-DD" (UTC)
+        await sb.from("pluggy_investments_hist").upsert(
+          { user_id: userId, dia, ...tot, posicoes: todas.length, atualizado_em: agora },
+          { onConflict: "user_id,dia" },
+        );
+      }
+    } catch { /* histórico é best-effort; não derruba a sincronização */ }
+
     return json({ ok: true, itens: itens.length, investimentos: unicos.length, inseridos, por_item });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
