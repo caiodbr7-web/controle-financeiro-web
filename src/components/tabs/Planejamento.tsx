@@ -81,6 +81,8 @@ const faltaColunaCartao = (msg?: string) => /no_cartao|could not find|schema cac
 const MSG_MIGRACAO_CARTAO = 'Para usar o cartão de crédito, rode em Supabase → SQL Editor a migração db/migrations/2026-06-16-cartao-credito.sql (uma vez só).';
 const faltaColunaConta = (msg?: string) => /eh_conta_total|could not find|schema cache/i.test(msg || "");
 const MSG_MIGRACAO_CONTA = 'Para orçar a conta variável, rode em Supabase → SQL Editor a migração db/migrations/2026-06-18-orcamento-conta.sql (uma vez só).';
+const faltaColunaReceita = (msg?: string) => /eh_receita_total|could not find|schema cache/i.test(msg || "");
+const MSG_MIGRACAO_RECEITA = 'Para planejar a receita prevista, rode em Supabase → SQL Editor a migração db/migrations/2026-06-20-receita-prevista.sql (uma vez só).';
 
 const SQL_HINT = `-- planos: itens; plano_mensal: realizado/pago por mês
 create table if not exists public.planos (
@@ -131,10 +133,12 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const [temCartaoCol, setTemCartaoCol] = useState(true); // coluna no_cartao existe?
   const [temOrcCartao, setTemOrcCartao] = useState(true); // coluna eh_cartao_total existe?
   const [temOrcConta, setTemOrcConta] = useState(true); // coluna eh_conta_total existe?
+  const [temOrcReceita, setTemOrcReceita] = useState(true); // coluna eh_receita_total existe?
   const [cartaoPlano, setCartaoPlano] = useState<Plano | null>(null); // linha especial do TOTAL do cartão
   const [contaPlano, setContaPlano] = useState<Plano | null>(null); // linha especial do orçamento da conta variável
-  // edição do orçamento previsto a partir do realizado (botão "↑ orçar")
-  const [orcEdit, setOrcEdit] = useState<null | "conta" | "cartao">(null);
+  const [receitaPlano, setReceitaPlano] = useState<Plano | null>(null); // linha especial da receita prevista (orçamento de receita)
+  // edição do orçamento previsto a partir do realizado (botão "↑ orçar" / "↑ prever")
+  const [orcEdit, setOrcEdit] = useState<null | "conta" | "cartao" | "receita">(null);
   const [orcVal, setOrcVal] = useState("");
   const [cartaoOrc, setCartaoOrc] = useState(""); // orçamento mensal do cartão (texto do input)
   const [cartaoReal, setCartaoReal] = useState(""); // total real do cartão no mês selecionado (texto)
@@ -169,22 +173,26 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       setLoading(false); return;
     }
     const todos = (data || []) as Plano[];
-    // separa as linhas especiais (TOTAL do cartão e orçamento da conta) dos itens comuns
+    // separa as linhas especiais (TOTAL do cartão, orçamento da conta e receita prevista) dos itens comuns
     const card = todos.find((p) => (p as any).eh_cartao_total) || null;
     const conta = todos.find((p) => (p as any).eh_conta_total) || null;
+    const rec = todos.find((p) => (p as any).eh_receita_total) || null;
     setCartaoPlano(card);
     setContaPlano(conta);
-    setPlanos(todos.filter((p) => p.id !== card?.id && p.id !== conta?.id));
-    // detecta se as colunas do cartão/conta já existem (migração rodada)
+    setReceitaPlano(rec);
+    setPlanos(todos.filter((p) => p.id !== card?.id && p.id !== conta?.id && p.id !== rec?.id));
+    // detecta se as colunas do cartão/conta/receita já existem (migração rodada)
     if (todos.length) {
       setTemCartaoCol("no_cartao" in (todos[0] as object));
       setTemOrcCartao("eh_cartao_total" in (todos[0] as object));
       setTemOrcConta("eh_conta_total" in (todos[0] as object));
+      setTemOrcReceita("eh_receita_total" in (todos[0] as object));
     } else {
       const p1 = await sb.from("planos").select("no_cartao").limit(1);
       const p2 = await sb.from("planos").select("eh_cartao_total").limit(1);
       const p3 = await sb.from("planos").select("eh_conta_total").limit(1);
-      setTemCartaoCol(!p1.error); setTemOrcCartao(!p2.error); setTemOrcConta(!p3.error);
+      const p4 = await sb.from("planos").select("eh_receita_total").limit(1);
+      setTemCartaoCol(!p1.error); setTemOrcCartao(!p2.error); setTemOrcConta(!p3.error); setTemOrcReceita(!p4.error);
     }
     setLoading(false);
   }, []);
@@ -393,6 +401,35 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     const { error } = await sb.from("planos").update({ valor: v }).eq("id", p.id);
     if (!error) { setErro(""); setContaPlano({ ...p, valor: v }); }
   }
+
+  // ---------- receita prevista (linha especial, mesmo padrão do orçamento da conta) ----------
+  async function garantirReceitaPlano(): Promise<Plano | null> {
+    if (receitaPlano) return receitaPlano;
+    const payload = {
+      tipo: "receita", nome: "Receita prevista", categoria: null, valor: 0,
+      mes_inicio: CARTAO_INICIO, mes_fim: null, parcelas: null, ativo: true,
+      no_cartao: false, eh_cartao_total: false, eh_conta_total: false, eh_receita_total: true,
+    };
+    const { data, error } = await sb.from("planos").insert(payload).select().single();
+    if (error) { setErro(faltaColunaReceita(error.message) ? MSG_MIGRACAO_RECEITA : error.message); if (faltaColunaReceita(error.message)) setTemOrcReceita(false); return null; }
+    const novo = data as Plano; setReceitaPlano(novo); return novo;
+  }
+  async function salvarOrcamentoReceita(valorStr: string) {
+    const v = parseValor(valorStr);
+    if (!v && !receitaPlano) return;
+    const p = await garantirReceitaPlano(); if (!p) return;
+    const { error } = await sb.from("planos").update({ valor: v }).eq("id", p.id);
+    if (!error) { setErro(""); setReceitaPlano({ ...p, valor: v }); }
+  }
+  // duplo clique numa célula da Projeção: ajusta a receita prevista SÓ daquele mês (override)
+  async function editarReceitaCelula(k: string) {
+    let p = receitaPlano;
+    if (!p) { p = await garantirReceitaPlano(); if (!p) return; }
+    const o = ovr[k]?.[p.id];
+    const v = o != null ? o : contribNoMes(p, k);
+    setEditCell({ id: p.id, k });
+    setEditVal(v ? String(v).replace(".", ",") : "");
+  }
   async function salvarRealCartao(valorStr: string) {
     const v = parseValorN(valorStr);
     if (v == null && !cartaoPlano) return;
@@ -419,7 +456,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
 
   // ---------- projeção ----------
   const meses = useMemo(() => horizonte(n), [n]);
-  const proj = useMemo(() => projetar(planos, meses, cartaoPlano, contaPlano, ovr), [planos, meses, cartaoPlano, contaPlano, ovr]);
+  const proj = useMemo(() => projetar(planos, meses, cartaoPlano, contaPlano, receitaPlano, ovr), [planos, meses, cartaoPlano, contaPlano, receitaPlano, ovr]);
 
   // carrega os ajustes manuais dos meses da projeção (reaproveita plano_mensal.valor_real)
   const carregarOverrides = useCallback(async (ks: string[]) => {
@@ -453,10 +490,15 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       if (!tinha) return; // nada a fazer
       await sb.from("plano_mensal").upsert({ plano_id: p.id, competencia: k, valor_real: null, pago }, { onConflict: "plano_id,competencia" });
       setOvr((o) => { const c = { ...(o[k] || {}) }; delete c[p.id]; return { ...o, [k]: c }; });
+      // mantém o cache da visão Mês em sincronia (lê o mesmo plano_mensal por outro store)
+      setMensal((m) => ({ ...m, [k]: { ...(m[k] || {}), [p.id]: { valor_real: null, pago } } }));
       return;
     }
     const { error } = await sb.from("plano_mensal").upsert({ plano_id: p.id, competencia: k, valor_real: v, pago }, { onConflict: "plano_id,competencia" });
-    if (!error) setOvr((o) => ({ ...o, [k]: { ...(o[k] || {}), [p.id]: v } }));
+    if (!error) {
+      setOvr((o) => ({ ...o, [k]: { ...(o[k] || {}), [p.id]: v } }));
+      setMensal((m) => ({ ...m, [k]: { ...(m[k] || {}), [p.id]: { valor_real: v, pago } } }));
+    }
   }
   const gastoMedio = proj.length ? proj.reduce((s, m) => s + m.gerais, 0) / proj.length : 0;
   const saldoMedio = proj.length ? proj.reduce((s, m) => s + m.saldo, 0) / proj.length : 0;
@@ -491,6 +533,16 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const orcCartao = (c: string) => (cartaoPlano && cartaoPlano.ativo ? contribNoMes(cartaoPlano, c) : 0);
   const realCartao = (c: string) => (cartaoPlano ? (mensal[c]?.[cartaoPlano.id]?.valor_real ?? null) : null);
   const orcConta = (c: string) => (contaPlano && contaPlano.ativo ? contribNoMes(contaPlano, c) : 0);
+  // receita PREVISTA (linha especial): valor-base do mês, com ajuste por mês (override no plano_mensal).
+  // É a MESMA fonte de dados da Projeção (lá o override vem de `ovr`; aqui, de `mensal`) — por isso
+  // editar num lado reflete no outro.
+  const orcReceita = (c: string) => (receitaPlano && receitaPlano.ativo ? contribNoMes(receitaPlano, c) : 0);
+  const receitaPrevMes = (c: string): number => {
+    const o = receitaPlano ? (mensal[c]?.[receitaPlano.id]?.valor_real ?? null) : null;
+    return o != null ? o : orcReceita(c);
+  };
+  // total previsto de receita = receita prevista (linha editável) + itens de receita do plano (se houver)
+  const receitaPrevTotal = (c: string) => receitaPrevMes(c) + somaPrev(receitasMes, c);
 
   // 1) recorrentes (fixos), independentemente da forma de pagamento
   const recorrPrev = (c: string) => somaPrev(gastosRecorrentes, c);
@@ -537,12 +589,15 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     const vs = histMeses.map(fn).filter((v): v is number => v != null);
     return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : 0;
   };
-  function iniciarOrc(tipo: "conta" | "cartao") {
-    const sug = tipo === "conta" ? mediaFechados(contaGeralEfet) : mediaFechados((c) => cartaoVarEfet(c));
+  function iniciarOrc(tipo: "conta" | "cartao" | "receita") {
+    const sug = tipo === "conta" ? mediaFechados(contaGeralEfet)
+      : tipo === "cartao" ? mediaFechados((c) => cartaoVarEfet(c))
+      : mediaFechados((c) => autosReceita[c]); // receita: média do que entrou de fato (lançado)
     setOrcVal(sug ? String(Math.round(sug)).replace(".", ",") : "");
     setOrcEdit(tipo);
   }
   async function salvarOrcConta() { setOrcEdit(null); await salvarOrcamentoConta(orcVal); }
+  async function salvarOrcReceita() { setOrcEdit(null); await salvarOrcamentoReceita(orcVal); }
   async function salvarOrcCartaoVar() {
     setOrcEdit(null);
     // o digitado é o previsto VARIÁVEL; o orçamento TOTAL do cartão = variável + recorrentes já no cartão
@@ -554,13 +609,15 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const geraisPrev = (c: string) => recorrPrev(c) + (contaVarPrev(c) ?? 0) + (cartaoVarPrev(c) ?? 0);
   const geraisEfet = (c: string) => recorrEfet(c) + (contaVarEfet(c) ?? 0) + cartaoVarEfet(c);
 
-  // receita REAL do mês: o que entrou de fato (lançamentos classe Receita); na falta de
-  // lançamento de receita no mês, cai no previsto dos itens de receita do plano. Base do Saldo "real".
+  // receita REAL do mês: o que entrou de fato (lançamentos classe Receita). Sem lançamento,
+  // mês FECHADO cai só nos itens de receita do plano (não na receita prevista — coluna é "real");
+  // mês corrente/futuro (aberto) usa o previsto cheio como estimativa. Base do Saldo "real".
   const receitaReal = (c: string): number => {
     const a = autosReceita[c];
-    return a != null ? a : somaEfet(receitasMes, c);
+    if (a != null) return a;
+    return c < mesAtual() ? somaEfet(receitasMes, c) : receitaPrevTotal(c);
   };
-  const prevRec = somaPrev(receitasMes, comp), efetRec = receitaReal(comp);
+  const prevRec = receitaPrevTotal(comp), efetRec = receitaReal(comp);
   const prevGer = geraisPrev(comp), efetGer = geraisEfet(comp);
   const preenchidos = gastosMes.filter((p) => dados(p, comp).manual != null).length;
   const conflitos = itensMes.filter((p) => dados(p, comp).conflito).length;
@@ -727,7 +784,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   {/* itens não-recorrentes (parcelas, metas, pagamentos) */}
                   {gastosOutrosLista.map(LinhaMes)}
 
-                  {!loading && !!itensMes.length && (
+                  {!loading && (!!itensMes.length || !!receitaPlano || !!contaPlano || !!cartaoPlano) && (
                     <Fragment key="resumo-gastos">
                       {/* 🏦 conta — gerais (orçado) */}
                       <tr className="text-[12.5px]" title="gasto corriqueiro da conta (Pix/débito) que você orça; realizado = o que saiu da conta além dos recorrentes e dos itens avulsos">
@@ -785,11 +842,28 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                         <td className="num" title={cartaoParcial(comp) ? TIP_PARCIAL : undefined}>{fmtCell(geraisEfet(comp))}{cartaoParcial(comp) && <span className="font-normal text-[10px] text-muted"> *</span>}</td>
                         <td colSpan={2}></td>
                       </tr>
-                      {/* 💰 receitas reais lançadas no mês — base do Saldo (real lançado; sem lançamento, cai no previsto do plano) */}
-                      <tr className="text-green text-[12.5px]" title="o que de fato entrou no mês (salário, freela, rendimentos) dos seus lançamentos — base do Saldo do mês. Sem lançamento de receita no mês, usa o previsto dos itens de receita do plano.">
-                        <td colSpan={2}>💰 Receitas <span className="text-muted font-normal">· lançadas no mês</span></td>
+                      {/* 💰 Receitas — Hist/Real = lançado (real); Previsto = receita prevista editável (mesma da Projeção, conectado) */}
+                      <tr className="text-green text-[12.5px]" title="Hist. e Real = o que de fato entrou no mês (seus lançamentos). Previsto = a receita que você planeja por mês: clique para definir o valor-base; ajuste só um mês na aba Projeção (duplo clique). É a mesma receita prevista da Projeção — editar aqui muda lá e vice-versa.">
+                        <td colSpan={2}>💰 Receitas <span className="text-muted font-normal">· real lançado · previsto editável</span></td>
                         {histMeses.map((c) => { const v = receitaReal(c); return <td key={c} className="num">{v ? fmtCell(v) : "—"}</td>; })}
-                        <td className="num">{prevRec ? fmtCell(prevRec) : "—"}</td>
+                        <td className="num !py-1">
+                          {orcEdit === "receita" ? (
+                            <input autoFocus className={`${inp} w-[84px] text-right`} value={orcVal}
+                              onChange={(e) => setOrcVal(e.target.value)} onBlur={salvarOrcReceita}
+                              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setOrcEdit(null); }} />
+                          ) : (
+                            <button onClick={() => iniciarOrc("receita")} title="definir a receita prevista por mês (preenche com a média do que entrou; você ajusta antes de salvar). Para mudar só um mês, use a aba Projeção."
+                              className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-green">
+                              {(() => {
+                                const v = receitaPrevMes(comp);
+                                const ajust = !!receitaPlano && (mensal[comp]?.[receitaPlano.id]?.valor_real ?? null) != null;
+                                return v
+                                  ? <span className={ajust ? "underline decoration-dotted underline-offset-2" : ""} title={ajust ? "ajustado neste mês na aba Projeção" : undefined}>{fmtCell(v)}</span>
+                                  : <span className="text-green underline decoration-dotted">↑ prever</span>;
+                              })()}
+                            </button>
+                          )}
+                        </td>
                         <td className="num">{efetRec ? fmtCell(efetRec) : "—"}</td>
                         <td colSpan={2}></td>
                       </tr>
@@ -824,9 +898,10 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. A linha <b className="text-green">💰 Receitas</b> é o que de fato entrou no mês (seus lançamentos de receita) e serve de base para o <b>Saldo do mês</b> — sem lançamento de receita no mês, ela usa o previsto dos seus itens de receita do plano. Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦 e 💳, clique em <b className="text-accent">↑ orçar</b> para preencher o orçamento com a <b>média dos meses fechados</b> (você ajusta antes de salvar).
+            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (duplo clique). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦 e 💳, clique em <b className="text-accent">↑ orçar</b> para preencher o orçamento com a <b>média dos meses fechados</b> (você ajusta antes de salvar).
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
             {!temOrcConta && <> <span className="text-amber">{MSG_MIGRACAO_CONTA}</span></>}
+            {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
           </div>
         </>
       ) : (
@@ -910,7 +985,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   {!loading && !planos.length && <tr><td colSpan={colCount} className="!p-4 text-muted">Nenhum item ainda. Adicione abaixo.</td></tr>}
                   {loading && <tr><td colSpan={colCount} className="!p-4 text-muted">Carregando…</td></tr>}
                 </tbody>
-                {(!!planos.length || cartaoPlano) && (
+                {(!!planos.length || cartaoPlano || contaPlano || receitaPlano) && (
                   <tfoot>
                     {/* mesma estrutura da visão "Mês": baldes disjuntos → Σ gerais → saldo.
                         (o total dos recorrentes fica no tbody, logo abaixo dos fixos) */}
@@ -938,8 +1013,34 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       {proj.map((m, i) => <td key={m.k} className={`num ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gerais)}</td>)}
                       <td></td>
                     </tr>
-                    {/* Receita prevista (alimenta o saldo) */}
-                    <tr className="text-green"><td>💰 Receita prevista</td>{proj.map((m, i) => <td key={m.k} className={`num ${i === 0 ? "!text-accent" : ""}`}>{m.receita ? fmtCell(m.receita) : <span className="text-line">·</span>}</td>)}<td></td></tr>
+                    {/* 💰 Receita prevista — editável por mês (duplo clique ajusta só aquele mês); valor-base vem da visão Mês (↑ prever) */}
+                    <tr className="text-green">
+                      <td>💰 Receita prevista <span className="text-muted font-normal">· duplo clique p/ ajustar o mês</span></td>
+                      {proj.map((m, i) => {
+                        const p = receitaPlano;
+                        const editando = !!p && editCell?.id === p.id && editCell?.k === m.k;
+                        const ajustado = !!p && ovr[m.k]?.[p.id] != null;
+                        const v = m.receita || 0; // total previsto (orçamento + itens) = o que o Saldo usa; o duplo clique ajusta o orçamento
+                        return (
+                          <td key={m.k} onDoubleClick={() => editarReceitaCelula(m.k)}
+                            title="duplo clique para ajustar a receita prevista só deste mês"
+                            className={`num ${i === 0 ? "!text-accent" : ""} ${editando ? "" : "cursor-pointer"}`}>
+                            {editando ? (
+                              <input autoFocus className={`${inp} w-[58px] text-right`} value={editVal}
+                                onChange={(e) => setEditVal(e.target.value)}
+                                onBlur={() => { if (p) salvarOverride(p, m.k); }}
+                                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setEditCell(null); }} />
+                            ) : (
+                              <span className={ajustado ? "text-accent font-medium underline decoration-dotted underline-offset-2" : ""}
+                                title={ajustado ? "ajustado manualmente" : undefined}>
+                                {v ? fmtCell(v) : <span className="text-line">·</span>}
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td></td>
+                    </tr>
                     {/* Saldo do mês = receita − gerais */}
                     <tr className="font-bold">
                       <td className="border-t-2 !border-t-line">Saldo do mês</td>
@@ -952,8 +1053,9 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). O rodapé segue a mesma estrutura da visão <b>Mês</b>: <b>🔁 recorrentes</b> (fixos), <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos três, sem contar em dobro) e o <b>Saldo do mês</b>. Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
+            Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). O rodapé segue a mesma estrutura da visão <b>Mês</b>: <b>🔁 recorrentes</b> (fixos), <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos três, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>duplo clique</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
+            {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
           </div>
         </>
       )}

@@ -130,6 +130,7 @@ export function projetar(
   meses: { k: string }[],
   cartaoPlano?: Plano | null,
   contaPlano?: Plano | null,
+  receitaPlano?: Plano | null,
   ovr?: Record<string, Record<number, number>>,
 ): ProjMes[] {
   return meses.map(({ k }) => {
@@ -158,6 +159,10 @@ export function projetar(
     const orcConta = contaPlano && contaPlano.ativo ? contribNoMes(contaPlano, k) : 0;
     const contaVar = orcConta + contaVarItens;
     const gerais = recorr + contaVar + cartaoVar; // baldes disjuntos — nada soma em dobro
-    return { k, label: dvLabel(k), recorr, contaVar, contaOrc: orcConta, contaOutros: contaVarItens, cartaoVar, cartao, gerais, receita, saldo: receita - gerais };
+    // receita prevista (linha especial): valor-base do mês, com ajuste por mês (override no plano_mensal)
+    const recOvr = receitaPlano && receitaPlano.ativo ? ovr?.[k]?.[receitaPlano.id] : undefined;
+    const receitaBudget = recOvr != null ? recOvr : (receitaPlano && receitaPlano.ativo ? contribNoMes(receitaPlano, k) : 0);
+    const receitaTotal = receita + receitaBudget;
+    return { k, label: dvLabel(k), recorr, contaVar, contaOrc: orcConta, contaOutros: contaVarItens, cartaoVar, cartao, gerais, receita: receitaTotal, saldo: receitaTotal - gerais };
   });
 }
