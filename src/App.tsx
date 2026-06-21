@@ -6,7 +6,6 @@ import { useTheme, type ThemePref } from "./lib/theme";
 import { ehGasto } from "./lib/finance";
 import { Login } from "./components/Login";
 import { Modal, type ModalData } from "./components/Modal";
-import { Seg } from "./components/ui";
 import { CommandPalette, type Cmd } from "./components/CommandPalette";
 import { SkInicio, SkTabela } from "./components/Skeleton";
 import { Inicio } from "./components/tabs/Inicio";
@@ -81,6 +80,14 @@ const TEMA_TITLE: Record<ThemePref, string> = {
   dark: "Tema: escuro",
 };
 
+// ordem do botão de visão (clique alterna Pessoal → Corp. → Tudo)
+const VISAO_ORDER: Visao[] = ["pessoal", "corporativo", "ALL"];
+const VISAO_LABEL: Record<Visao, string> = {
+  pessoal: "Pessoal",
+  corporativo: "Corp.",
+  ALL: "Tudo",
+};
+
 // abas analíticas que dependem dos lançamentos (mostram skeleton na 1ª carga)
 const ABAS_DADOS = new Set<Aba>(["inicio", "geral", "mensal", "diario", "planejamento", "classificar", "lanc"]);
 
@@ -116,6 +123,12 @@ export default function App() {
   const openModal = useCallback((title: string, rows: Lancamento[]) => {
     if (rows.length) setModal({ title, rows });
   }, []);
+
+  // botão único de visão: alterna Pessoal → Corp. → Tudo a cada clique
+  const cycleVisao = () => {
+    const i = VISAO_ORDER.indexOf(visao);
+    setVisao(VISAO_ORDER[(i + 1) % VISAO_ORDER.length]);
+  };
 
   const dados = useMemo(
     () => visao === "ALL" ? allDados
@@ -156,7 +169,7 @@ export default function App() {
   if (!logado) return <Login onGoogle={entrarGoogle} erro={erro} />;
 
   const tabProps = { dados, allDados, months, openModal };
-  const iconBtn = "w-[30px] h-[30px] rounded-full border border-line bg-transparent text-muted hover:text-txt cursor-pointer flex items-center justify-center transition-colors shrink-0";
+  const iconBtn = "w-[28px] h-[28px] rounded-full border border-line bg-transparent text-muted hover:text-txt cursor-pointer flex items-center justify-center transition-colors shrink-0";
 
   // grupo de sub-abas ativo (mostra a barra interna no conteúdo)
   const subAtivo = SUB_IMPORT.some((s) => s.id === aba)
@@ -174,8 +187,8 @@ export default function App() {
     <div>
       <header className="sticky top-0 z-20 bg-bg/80 backdrop-blur-[14px] border-b border-line">
         <div className="max-w-[1380px] mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-[10px] pt-[10px]">
-            <div className="w-[26px] h-[26px] rounded-[8px] bg-gradient-to-br from-[#820ad1] to-[#a855f7] text-white text-[13px] font-bold flex items-center justify-center select-none shrink-0">
+          <div className="flex items-center gap-[10px] pt-[7px]">
+            <div className="w-[24px] h-[24px] rounded-[7px] bg-gradient-to-br from-[#820ad1] to-[#a855f7] text-white text-[12px] font-bold flex items-center justify-center select-none shrink-0">
               C
             </div>
             <h1 className="text-[15px] font-semibold tracking-tight whitespace-nowrap hidden min-[420px]:block">
@@ -186,7 +199,7 @@ export default function App() {
                 onClick={() => setPaletaAberta(true)}
                 title="Buscar e navegar (Ctrl/⌘K)"
                 aria-label="Buscar e navegar"
-                className="hidden sm:inline-flex items-center gap-2 h-[30px] rounded-full border border-line bg-transparent text-muted hover:text-txt hover:border-muted/60 cursor-pointer pl-[10px] pr-[8px] transition-colors shrink-0"
+                className="hidden sm:inline-flex items-center gap-2 h-[28px] rounded-full border border-line bg-transparent text-muted hover:text-txt hover:border-muted/60 cursor-pointer pl-[10px] pr-[8px] transition-colors shrink-0"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" strokeLinecap="round" /></svg>
                 <span className="text-[12.5px]">Buscar</span>
@@ -195,16 +208,15 @@ export default function App() {
               <button onClick={() => setPaletaAberta(true)} title="Buscar e navegar" aria-label="Buscar e navegar" className={`sm:hidden ${iconBtn}`}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" strokeLinecap="round" /></svg>
               </button>
-              <Seg
-                size="sm"
-                value={visao}
-                onChange={(v) => setVisao(v as Visao)}
-                options={[
-                  { v: "pessoal", label: "Pessoal" },
-                  { v: "corporativo", label: "Corp." },
-                  { v: "ALL", label: "Tudo" },
-                ]}
-              />
+              <button
+                onClick={cycleVisao}
+                title={`Visão: ${VISAO_LABEL[visao]} — clique para alternar`}
+                aria-label={`Visão: ${VISAO_LABEL[visao]} (clique para alternar)`}
+                className="inline-flex items-center gap-[6px] h-[28px] rounded-full border border-line bg-transparent text-muted hover:text-txt hover:border-muted/60 cursor-pointer pl-[10px] pr-[12px] text-[12.5px] font-medium transition-colors shrink-0"
+              >
+                <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${visao === "pessoal" ? "bg-accent" : visao === "corporativo" ? "bg-amber" : "bg-muted"}`} />
+                {VISAO_LABEL[visao]}
+              </button>
               <button onClick={cycle} title={TEMA_TITLE[pref]} aria-label={TEMA_TITLE[pref]} className={iconBtn}>
                 <ThemeIcon pref={pref} />
               </button>
@@ -217,7 +229,7 @@ export default function App() {
             </div>
           </div>
 
-          <nav className="flex items-center overflow-x-auto no-scrollbar mt-[2px]">
+          <nav className="flex items-center overflow-x-auto no-scrollbar mt-[1px]">
             {GRUPOS.map((grupo, gi) => (
               <Fragment key={gi}>
                 {gi > 0 && <span className="w-px h-[13px] bg-line mx-[7px] shrink-0" aria-hidden />}
@@ -234,7 +246,7 @@ export default function App() {
                       key={isParent ? a.grupo : a.id}
                       onClick={onClick}
                       aria-current={ativo ? "page" : undefined}
-                      className={`relative whitespace-nowrap bg-transparent border-0 px-[10px] pt-[7px] pb-[11px] text-[13.5px] cursor-pointer transition-colors ${
+                      className={`relative whitespace-nowrap bg-transparent border-0 px-[10px] pt-[5px] pb-[8px] text-[13px] cursor-pointer transition-colors ${
                         ativo ? "text-txt font-semibold" : "text-muted hover:text-txt font-medium"
                       }`}
                     >

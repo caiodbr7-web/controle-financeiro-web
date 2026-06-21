@@ -292,7 +292,7 @@ function SaldoEvolucao({
   return (
     <div>
       {erro && <div className="text-[13px] text-red bg-fill rounded-[10px] px-3 py-2 mb-3">Erro ao atualizar: {erro}</div>}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-[14px] mb-[18px]">
         <Kpi
           title="Saldo total hoje"
           value={BRL(kpis.totalAtual)}
@@ -307,18 +307,6 @@ function SaldoEvolucao({
               : <span className="text-red">▼ {BRL(Math.abs(kpis.delta))}</span>
           }
           sub={`${kpis.pct >= 0 ? "+" : ""}${kpis.pct.toFixed(1)}% · desde ${kpis.inicio ? fmtDiaBR(kpis.inicio) : "—"}`}
-        />
-        <Kpi
-          title="Maior saldo"
-          value={kpis.maior ? BRL(kpis.maior.saldoAtual) : "—"}
-          sub={kpis.maior ? kpis.maior.label : ""}
-          color="text-accent"
-        />
-        <Kpi
-          title="Contas bancárias"
-          value={contas.length}
-          sub="via Open Finance"
-          color="text-violet"
         />
       </div>
 
