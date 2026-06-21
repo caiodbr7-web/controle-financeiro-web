@@ -12,7 +12,7 @@ const XP = /(^|[^a-z])xp([^a-z]|$)/;
 /** Reconhece o banco a partir de um texto livre (conector + contas). null se desconhecido. */
 export function bancoCanonico(blob: string): string | null {
   const n = semAcento(blob).toLowerCase();
-  if (n.includes("nubank") || n.includes("nu pagamentos")) return "Nubank";
+  if (n.includes("nubank") || n.includes("nu pagamentos") || n.includes("nu financeira")) return "Nubank";
   if (n.includes("itau")) return "Itau";
   if (n.includes("picpay")) return "PicPay";
   if (n.includes("rico")) return "Rico";
