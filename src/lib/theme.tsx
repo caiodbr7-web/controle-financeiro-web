@@ -77,7 +77,7 @@ export function useChart() {
 /* ---------- tooltip padrão dos gráficos ---------- */
 
 export function ChartTip({
-  active, payload, label, pct = false, pctOf, labelPrefix = "",
+  active, payload, label, pct = false, pctOf, labelPrefix = "", keepZeros = false,
 }: {
   active?: boolean;
   payload?: any[];
@@ -85,9 +85,10 @@ export function ChartTip({
   pct?: boolean;       // valores já são percentuais
   pctOf?: number;      // mostra "R$ X (y%)" relativo a este total
   labelPrefix?: string;
+  keepZeros?: boolean; // mantém séries com valor 0 (útil p/ saldo, onde 0 é informativo)
 }) {
   if (!active || !payload || !payload.length) return null;
-  const rows = payload.filter((p) => p && p.value != null && Number(p.value) !== 0);
+  const rows = payload.filter((p) => p && p.value != null && (keepZeros || Number(p.value) !== 0));
   if (!rows.length) return null;
   return (
     <div className="rounded-[12px] border border-line bg-card/95 backdrop-blur-[8px] px-3 py-2 shadow-pop text-[12px] min-w-[150px]">

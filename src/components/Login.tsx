@@ -1,12 +1,6 @@
-import { useState } from "react";
-
 export function Login({
-  onGoogle, onEmail, erro,
-}: { onGoogle: () => void; onEmail: (email: string, senha: string) => void; erro: string }) {
-  const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
-  const [showEmail, setShowEmail] = useState(false);
-
+  onGoogle, erro,
+}: { onGoogle: () => void; erro: string }) {
   return (
     <div className="px-4">
       <div className="max-w-[380px] mx-auto mt-[14vh] bg-card border border-line rounded-[22px] p-[30px_26px] shadow-card fade-in">
@@ -26,18 +20,6 @@ export function Login({
           Entrar com Google
         </button>
         <div className="text-red text-[13px] min-h-[18px] mt-[10px]">{erro}</div>
-        <div className="mt-[14px]">
-          <button onClick={() => setShowEmail((s) => !s)} className="text-muted text-[13px] cursor-pointer bg-transparent border-0 p-0 hover:text-txt transition-colors">
-            {showEmail ? "▾" : "▸"} Entrar com e-mail e senha
-          </button>
-          {showEmail && (
-            <div className="mt-3">
-              <input className="input w-full mb-[10px] !text-base !p-[12px_14px]" type="email" placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              <input className="input w-full mb-[10px] !text-base !p-[12px_14px]" type="password" placeholder="senha" value={senha} onChange={(e) => setSenha(e.target.value)} />
-              <button onClick={() => onEmail(email.trim(), senha)} className="btn-ghost w-full !py-3 !text-base">Entrar</button>
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { sb } from "../lib/supabase";
 
-/** Sessão + login (Google / e-mail) + logout. */
+/** Sessão + login (Google) + logout. */
 export function useAuth() {
   const [logado, setLogado] = useState<boolean | null>(null);
   const [erro, setErro] = useState("");
@@ -21,13 +21,7 @@ export function useAuth() {
     if (error) setErro("Falha no login Google: " + error.message);
   }, []);
 
-  const entrarEmail = useCallback(async (email: string, senha: string) => {
-    setErro("");
-    const { error } = await sb.auth.signInWithPassword({ email, password: senha });
-    if (error) setErro("Falha no login: " + error.message);
-  }, []);
-
   const sair = useCallback(async () => { await sb.auth.signOut(); }, []);
 
-  return { logado, erro, entrarGoogle, entrarEmail, sair };
+  return { logado, erro, entrarGoogle, sair };
 }

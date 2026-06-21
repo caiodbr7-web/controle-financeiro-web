@@ -16,40 +16,41 @@ import { ResumoMensal } from "./components/tabs/ResumoMensal";
 import { Lancamentos } from "./components/tabs/Lancamentos";
 import { Classificar } from "./components/tabs/Classificar";
 import { Planejamento } from "./components/tabs/Planejamento";
-import { Importar } from "./components/tabs/Importar";
-import { Conectar } from "./components/tabs/Conectar";
+import { Adicionar, type MetodoAdd } from "./components/tabs/Adicionar";
 import { OpenBanking } from "./components/tabs/OpenBanking";
 import { Conciliacao } from "./components/tabs/Conciliacao";
+import { Saldo } from "./components/tabs/Saldo";
 
 type SubAba = { id: Aba; label: string };
 
-/* sub-abas internas das abas de importação */
-const SUB_MANUAL: SubAba[] = [
-  { id: "importar", label: "Importar" },
+/* sub-abas da aba Importação, organizadas por etapa do fluxo:
+   trazer dados → categorizar → conferir → cruzar/validar Open Finance */
+const SUB_IMPORT: SubAba[] = [
+  { id: "adicionar", label: "Adicionar" },
   { id: "classificar", label: "Classificar" },
   { id: "lanc", label: "Lançamentos" },
-];
-const SUB_AUTO: SubAba[] = [
-  { id: "conectar", label: "Conectar" },
-  { id: "openbanking", label: "Open Banking" },
   { id: "conciliacao", label: "Conciliação" },
+  { id: "openbanking", label: "Open Banking" },
+];
+/* sub-abas da aba Saldo (saldos das contas via Open Finance) */
+const SUB_SALDO: SubAba[] = [
+  { id: "saldo_evolucao", label: "Evolução" },
+  { id: "saldo_dados", label: "Dados" },
 ];
 
 /* navegação agrupada: Análise · Planejar · Importação.
    As abas com `subs` agrupam sub-abas internas (renderizadas no conteúdo). */
-type TopAba = SubAba | { grupo: "manual" | "auto"; label: string; subs: SubAba[] };
+type TopAba = SubAba | { grupo: "saldo" | "importacao"; label: string; subs: SubAba[] };
 const GRUPOS: TopAba[][] = [
   [
     { id: "inicio", label: "Início" },
     { id: "geral", label: "Visão Geral" },
     { id: "mensal", label: "Mensal" },
     { id: "diario", label: "Diário" },
+    { grupo: "saldo", label: "Saldo", subs: SUB_SALDO },
   ],
   [{ id: "planejamento", label: "Planejamento" }],
-  [
-    { grupo: "manual", label: "Importação Manual", subs: SUB_MANUAL },
-    { grupo: "auto", label: "Importação Automática", subs: SUB_AUTO },
-  ],
+  [{ grupo: "importacao", label: "Importação", subs: SUB_IMPORT }],
 ];
 
 function ThemeIcon({ pref }: { pref: ThemePref }) {
@@ -84,20 +85,22 @@ const TEMA_TITLE: Record<ThemePref, string> = {
 const ABAS_DADOS = new Set<Aba>(["inicio", "geral", "mensal", "diario", "planejamento", "classificar", "lanc"]);
 
 export default function App() {
-  const { logado, erro, entrarGoogle, entrarEmail, sair } = useAuth();
+  const { logado, erro, entrarGoogle, sair } = useAuth();
   const { allDados, status, reload, loading } = useLancamentos(!!logado);
   const { pref, cycle } = useTheme();
   const [visao, setVisao] = useState<Visao>("pessoal");
   const [aba, setAba] = useState<Aba>("inicio");
   const [modal, setModal] = useState<ModalData | null>(null);
   const [paletaAberta, setPaletaAberta] = useState(false);
+  // método ativo da aba Adicionar (arquivo manual × banco via Open Finance)
+  const [addMetodo, setAddMetodo] = useState<MetodoAdd>("arquivo");
 
-  // lembra a última sub-aba visitada de cada grupo de importação
-  const lastManual = useRef<Aba>("importar");
-  const lastAuto = useRef<Aba>("conectar");
+  // lembra a última sub-aba visitada de cada grupo com sub-abas
+  const lastImport = useRef<Aba>("adicionar");
+  const lastSaldo = useRef<Aba>("saldo_evolucao");
   const navTo = useCallback((id: Aba) => {
-    if (SUB_MANUAL.some((s) => s.id === id)) lastManual.current = id;
-    else if (SUB_AUTO.some((s) => s.id === id)) lastAuto.current = id;
+    if (SUB_IMPORT.some((s) => s.id === id)) lastImport.current = id;
+    else if (SUB_SALDO.some((s) => s.id === id)) lastSaldo.current = id;
     setAba(id);
   }, []);
 
@@ -133,13 +136,15 @@ export default function App() {
     { id: "geral", label: "Visão Geral", grupo: "Análise", keywords: "evolucao mensal receitas despesas", run: () => navTo("geral") },
     { id: "mensal", label: "Resumo Mensal", grupo: "Análise", keywords: "categorias rosca pizza", run: () => navTo("mensal") },
     { id: "diario", label: "Evolução Diária", grupo: "Análise", keywords: "acumulado dia", run: () => navTo("diario") },
+    { id: "saldo_evolucao", label: "Saldo · Evolução", grupo: "Análise", keywords: "saldo contas banco grafico open finance patrimonio", run: () => navTo("saldo_evolucao") },
+    { id: "saldo_dados", label: "Saldo · Dados", grupo: "Análise", keywords: "saldo tabela contas diario csv", run: () => navTo("saldo_dados") },
     { id: "planejamento", label: "Planejamento", grupo: "Planejar", keywords: "orcamento projecao metas parcelas", run: () => navTo("planejamento") },
-    { id: "classificar", label: "Classificar", grupo: "Importação manual", keywords: "categorizar pendencias", dot: pendClass > 0, hint: pendClass > 0 ? String(pendClass) : undefined, run: () => navTo("classificar") },
-    { id: "importar", label: "Importar arquivo", grupo: "Importação manual", keywords: "csv excel ofx upload extrato fatura", run: () => navTo("importar") },
-    { id: "lanc", label: "Lançamentos", grupo: "Importação manual", keywords: "tabela transacoes exportar", run: () => navTo("lanc") },
-    { id: "conectar", label: "Conectar banco", grupo: "Importação automática", keywords: "pluggy open finance sincronizar", run: () => navTo("conectar") },
-    { id: "openbanking", label: "Open Banking", grupo: "Importação automática", keywords: "pluggy validacao", run: () => navTo("openbanking") },
-    { id: "conciliacao", label: "Conciliação", grupo: "Importação automática", keywords: "duplicatas pdf", run: () => navTo("conciliacao") },
+    { id: "importar", label: "Importar arquivo", grupo: "Importação", keywords: "csv excel ofx upload extrato fatura adicionar", run: () => { setAddMetodo("arquivo"); navTo("adicionar"); } },
+    { id: "conectar", label: "Conectar banco", grupo: "Importação", keywords: "pluggy open finance sincronizar adicionar", run: () => { setAddMetodo("banco"); navTo("adicionar"); } },
+    { id: "classificar", label: "Classificar", grupo: "Importação", keywords: "categorizar pendencias", dot: pendClass > 0, hint: pendClass > 0 ? String(pendClass) : undefined, run: () => navTo("classificar") },
+    { id: "lanc", label: "Lançamentos", grupo: "Importação", keywords: "tabela transacoes exportar", run: () => navTo("lanc") },
+    { id: "conciliacao", label: "Conciliação", grupo: "Importação", keywords: "duplicatas pdf open finance", run: () => navTo("conciliacao") },
+    { id: "openbanking", label: "Open Banking", grupo: "Importação", keywords: "pluggy validacao", run: () => navTo("openbanking") },
     { id: "tema", label: "Alternar tema", grupo: "Ações", keywords: "claro escuro dark light", run: cycle },
     { id: "v-pessoal", label: "Visão: Pessoal", grupo: "Ações", run: () => setVisao("pessoal") },
     { id: "v-corp", label: "Visão: Corporativo", grupo: "Ações", keywords: "trabalho", run: () => setVisao("corporativo") },
@@ -148,17 +153,22 @@ export default function App() {
   ], [navTo, pendClass, cycle, sair]);
 
   if (logado === null) return <div className="p-8 text-muted">Carregando…</div>;
-  if (!logado) return <Login onGoogle={entrarGoogle} onEmail={entrarEmail} erro={erro} />;
+  if (!logado) return <Login onGoogle={entrarGoogle} erro={erro} />;
 
   const tabProps = { dados, allDados, months, openModal };
   const iconBtn = "w-[30px] h-[30px] rounded-full border border-line bg-transparent text-muted hover:text-txt cursor-pointer flex items-center justify-center transition-colors shrink-0";
 
   // grupo de sub-abas ativo (mostra a barra interna no conteúdo)
-  const subAtivo = SUB_MANUAL.some((s) => s.id === aba)
-    ? SUB_MANUAL
-    : SUB_AUTO.some((s) => s.id === aba)
-      ? SUB_AUTO
+  const subAtivo = SUB_IMPORT.some((s) => s.id === aba)
+    ? SUB_IMPORT
+    : SUB_SALDO.some((s) => s.id === aba)
+      ? SUB_SALDO
       : null;
+
+  // as duas sub-abas de Saldo compartilham o mesmo componente: chave estável
+  // entre elas evita refazer o fetch ao alternar (só refaz ao trocar de aba-topo)
+  const ehSaldo = aba === "saldo_evolucao" || aba === "saldo_dados";
+  const viewKey = ehSaldo ? "saldo" : aba;
 
   return (
     <div>
@@ -215,10 +225,10 @@ export default function App() {
                   const isParent = "subs" in a;
                   const ativo = isParent ? a.subs.some((s) => s.id === aba) : aba === a.id;
                   const onClick = isParent
-                    ? () => navTo(a.grupo === "manual" ? lastManual.current : lastAuto.current)
+                    ? () => navTo(a.grupo === "saldo" ? lastSaldo.current : lastImport.current)
                     : () => navTo(a.id);
-                  // pontinho de pendência: aba Classificar ou seu grupo pai (Importação Manual)
-                  const dot = isParent ? a.grupo === "manual" && pendClass > 0 : a.id === "classificar" && pendClass > 0;
+                  // pontinho de pendência: aba Classificar ou seu grupo pai (Importação)
+                  const dot = isParent ? a.grupo === "importacao" && pendClass > 0 : a.id === "classificar" && pendClass > 0;
                   return (
                     <button
                       key={isParent ? a.grupo : a.id}
@@ -275,7 +285,7 @@ export default function App() {
         {loading && ABAS_DADOS.has(aba) ? (
           aba === "inicio" ? <SkInicio /> : <SkTabela />
         ) : (
-        <div key={aba} className="fade-in">
+        <div key={viewKey} className="fade-in">
           {aba === "inicio" && <Inicio {...tabProps} go={navTo} />}
           {aba === "geral" && <VisaoGeral {...tabProps} />}
           {aba === "mensal" && <ResumoMensal {...tabProps} />}
@@ -283,10 +293,10 @@ export default function App() {
           {aba === "planejamento" && <Planejamento lancamentos={dados} />}
           {aba === "classificar" && <Classificar dados={dados} allDados={allDados} openModal={openModal} reload={reload} />}
           {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}
-          {aba === "importar" && <Importar reload={reload} />}
-          {aba === "conectar" && <Conectar reload={reload} />}
+          {aba === "adicionar" && <Adicionar reload={reload} metodo={addMetodo} onMetodo={setAddMetodo} />}
           {aba === "openbanking" && <OpenBanking />}
           {aba === "conciliacao" && <Conciliacao />}
+          {ehSaldo && <Saldo aba={aba} />}
         </div>
         )}
       </main>

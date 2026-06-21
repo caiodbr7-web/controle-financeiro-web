@@ -62,7 +62,7 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
             onChange={(e) => { setQ(e.target.value); setHi(0); }}
             onKeyDown={onKey}
             placeholder="Ir para… ou buscar uma ação"
-            className="flex-1 bg-transparent border-0 outline-none py-[14px] text-[15px] text-txt placeholder:text-muted/70"
+            className="flex-1 bg-transparent border-0 outline-none focus:outline-none focus-visible:outline-none py-[14px] text-[15px] text-txt placeholder:text-muted/70"
           />
           <kbd className="kbd hidden sm:inline-flex">Esc</kbd>
         </div>
