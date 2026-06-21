@@ -9,6 +9,7 @@ import { Kpi, Panel, Select, BarRow } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import { listInvestments, listInvestmentHistory, syncInvestments, setTipoManual } from "../../lib/pluggy";
 import { BRL, brlShort, fmtMoeda } from "../../lib/finance";
+import { bancoCanonico } from "../../lib/bancos";
 
 /* ============================================================================
    Aba "Investimentos" — patrimônio investido via Open Finance (Pluggy).
@@ -39,6 +40,21 @@ const labelTipo = (t?: string | null) => (t ? TIPO_LABEL[t] ?? t : "Outros");
 
 // tipo "efetivo": a classificação manual vence a da Pluggy
 const tipoEf = (i: Investimento) => i.tipo_manual ?? i.tipo ?? "";
+
+// instituição "limpa": "NU FINANCEIRA S.A. - ..." -> "Nubank"; "BANCO AGIBANK S.A" -> "Banco Agibank".
+function limpaInstituicao(s: string): string {
+  if (/pluggy/i.test(s)) return s;               // conexão genérica: deixa como está
+  const canon = bancoCanonico(s);
+  if (canon) return canon;
+  let t = s.split(/\s+-\s+|,/)[0];               // corta o que vem após " - " ou ","
+  t = t.replace(/\bS[./]?A\.?\b.*$/i, "").replace(/\bLTDA\.?\b.*$/i, "").trim();
+  return t ? t.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : s;
+}
+// instituição efetiva do ativo: o emissor (banco real) ou, sem ele, a conexão
+const instDe = (i: Investimento) => {
+  const base = i.emissor || i.banco || "";
+  return base ? limpaInstituicao(base) : "—";
+};
 
 // opções do seletor de classificação manual (value = chave canônica)
 const CLASSE_OPTS = [
@@ -148,13 +164,16 @@ export function Investimentos() {
   }, [carregar]);
 
   const tipos = useMemo(() => [...new Set(rows.map(tipoEf).filter(Boolean))].sort(), [rows]);
-  const bancos = useMemo(() => [...new Set(rows.map((i) => i.banco).filter(Boolean))].sort() as string[], [rows]);
+  const instituicoes = useMemo(
+    () => [...new Set(rows.map(instDe).filter((x) => x && x !== "—"))].sort(),
+    [rows]
+  );
 
   const filtrados = useMemo(() => {
     const q = busca.toLowerCase().trim();
     const r = rows.filter((i) =>
       (!fTipo || tipoEf(i) === fTipo) &&
-      (!fBanco || i.banco === fBanco) &&
+      (!fBanco || instDe(i) === fBanco) &&
       (!q ||
         String(i.nome || "").toLowerCase().includes(q) ||
         String(i.emissor || "").toLowerCase().includes(q) ||
@@ -174,9 +193,9 @@ export function Investimentos() {
       aplicado += i.valor_aplicado ?? 0;
       lucro += i.lucro ?? 0;
     }
-    const instituicoes = new Set(filtrados.map((i) => i.banco).filter(Boolean)).size;
+    const nInst = new Set(filtrados.map(instDe).filter((x) => x !== "—")).size;
     const pct = aplicado !== 0 ? (lucro / Math.abs(aplicado)) * 100 : 0;
-    return { atual, aplicado, lucro, pct, instituicoes };
+    return { atual, aplicado, lucro, pct, instituicoes: nInst };
   }, [filtrados]);
 
   // composição por tipo efetivo (sobre os filtrados), com cor estável
@@ -229,8 +248,8 @@ export function Investimentos() {
         </select>
       ),
     },
-    { key: "banco", label: "Instituição", sortable: true },
-    { key: "emissor", label: "Emissor", render: (i) => cell(i.emissor) },
+    { key: "banco", label: "Instituição", sortable: true, render: (i) => instDe(i) },
+    { key: "emissor", label: "Emissor (Pluggy)", render: (i) => cell(i.emissor) },
     { key: "valor_aplicado", label: "Aplicado", num: true, sortable: true, render: (i) => (i.valor_aplicado != null ? fmtMoeda(i.valor_aplicado, moedaDe(i)) : "—") },
     { key: "saldo", label: "Valor atual", num: true, sortable: true, render: (i) => (i.saldo != null ? fmtMoeda(i.saldo, moedaDe(i)) : "—") },
     { key: "lucro", label: "Lucro", num: true, sortable: true, render: (i) => (i.lucro != null ? <span className={i.lucro < 0 ? "text-red" : "text-green"}>{fmtMoeda(i.lucro, moedaDe(i))}</span> : "—") },
@@ -301,7 +320,7 @@ export function Investimentos() {
         </Select>
         <Select value={fBanco} onChange={setFBanco}>
           <option value="">Todas as instituições</option>
-          {bancos.map((b) => <option key={b}>{b}</option>)}
+          {instituicoes.map((b) => <option key={b}>{b}</option>)}
         </Select>
         <button className="btn-ghost" onClick={limpar}>Limpar</button>
         <button className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors" onClick={carregar}>
