@@ -40,6 +40,28 @@ export interface Saldo {
   ancora_ts: string | null; // quando o saldo atual foi capturado
 }
 
+// Posição de investimento (tabela public.pluggy_investments) via Open Finance/Pluggy.
+// Cada linha é um ativo/posição: o `saldo` é o valor ATUAL (balance da Pluggy) e
+// `valor_aplicado` é o montante aportado (amount). É o "patrimônio investido".
+export interface Investimento {
+  investment_id: string;
+  item_id: string | null;
+  banco: string | null;          // connector_name (instituição)
+  tipo: string | null;           // FIXED_INCOME, MUTUAL_FUND, EQUITY, ETF, PENSION, ...
+  subtipo: string | null;
+  nome: string | null;
+  emissor: string | null;        // issuer
+  saldo: number | null;          // balance — valor ATUAL da posição
+  valor_aplicado: number | null; // amount — montante aplicado
+  lucro: number | null;          // amountProfit — lucro acumulado
+  quantidade: number | null;     // quantity (cotas/papéis)
+  moeda: string | null;          // currencyCode (BRL por padrão)
+  vencimento: string | null;     // "YYYY-MM-DD" (dueDate)
+  taxa: string | null;           // rate + rateType (ex.: "110 CDI")
+  status: string | null;
+  atualizado_em?: string | null;
+}
+
 export type Visao = "ALL" | "pessoal" | "corporativo";
 export type Modo = "cartao" | "ambos" | "conta";
-export type Aba = "inicio" | "geral" | "mensal" | "diario" | "planejamento" | "classificar" | "lanc" | "adicionar" | "openbanking" | "conciliacao" | "saldo_evolucao" | "saldo_dados";
+export type Aba = "inicio" | "geral" | "mensal" | "diario" | "planejamento" | "classificar" | "lanc" | "adicionar" | "openbanking" | "conciliacao" | "saldo_evolucao" | "saldo_dados" | "investimentos";

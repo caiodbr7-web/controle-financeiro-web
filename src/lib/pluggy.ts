@@ -1,4 +1,5 @@
 import { sb, SUPABASE_URL, SUPABASE_ANON } from "./supabase";
+import type { Investimento } from "../types";
 
 const FN_BASE = `${SUPABASE_URL}/functions/v1`;
 
@@ -64,4 +65,37 @@ export async function listItems(): Promise<PluggyItemRow[]> {
     .order("atualizado_em", { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []) as PluggyItemRow[];
+}
+
+export interface InvestSyncResult {
+  ok: boolean;
+  itens: number;
+  investimentos: number;
+  inseridos: number;
+  por_item: Record<string, number>;
+}
+
+/** Dispara a sincronizacao das posicoes de investimento (endpoint /investments).
+ *  Sem itemId, sincroniza todas as conexoes do usuario. */
+export async function syncInvestments(itemId?: string): Promise<InvestSyncResult> {
+  const r = await fetch(`${FN_BASE}/pluggy-investments`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(itemId ? { itemId } : {}),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data?.error || "Falha ao sincronizar investimentos");
+  return data as InvestSyncResult;
+}
+
+/** Lista as posicoes de investimento ja sincronizadas (tabela pluggy_investments). */
+export async function listInvestments(): Promise<Investimento[]> {
+  const { data, error } = await sb
+    .from("pluggy_investments")
+    .select(
+      "investment_id,item_id,banco,tipo,subtipo,nome,emissor,saldo,valor_aplicado,lucro,quantidade,moeda,vencimento,taxa,status,atualizado_em",
+    )
+    .order("saldo", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Investimento[];
 }
