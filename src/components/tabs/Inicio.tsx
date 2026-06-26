@@ -5,7 +5,7 @@ import { Panel, BarRow, Select, Seg } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
-  BRL, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal,
+  BRL, BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal,
   dvDiasNoMes, dvLabel, MES_ABREV, mesCurto, normEstab,
 } from "../../lib/finance";
 import { type Plano, projetar, contribNoMes, ehReceitaTipo } from "../../lib/projecao";
@@ -316,24 +316,24 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
           <div className="divide-y divide-line">
             <BigVal
               label={`Gasto atual · ${dvLabel(calc.selKey)}`}
-              value={BRL(calc.gastoAtual)}
+              value={BRL0(calc.gastoAtual)}
               sub={calc.isAtual ? `até hoje · dia ${calc.refDay}/${calc.nd}` : "fatura + extrato do mês"}
               dot={roxo}
             />
             <BigVal
               label="Esperado para este momento"
-              value={calc.benchAtRef != null ? BRL(calc.benchAtRef) : "—"}
-              sub={calc.temBench ? `média ${janela}m no mesmo ponto · fim ~${BRL(calc.benchFim)}` : "sem meses completos p/ comparar"}
+              value={calc.benchAtRef != null ? BRL0(calc.benchAtRef) : "—"}
+              sub={calc.temBench ? `média ${janela}m no mesmo ponto · fim ~${BRL0(calc.benchFim)}` : "sem meses completos p/ comparar"}
               dot={cc.media}
             />
             <BigVal
               label="Ainda previsto no mês"
-              value={aindaPrev != null ? BRL(aindaPrev) : "—"}
+              value={aindaPrev != null ? BRL0(aindaPrev) : "—"}
               sub={aindaSub}
             />
             <BigVal
               label="Budget total do mês"
-              value={budget != null ? BRL(budget) : "—"}
+              value={budget != null ? BRL0(budget) : "—"}
               sub={budget != null ? "planejamento do mês" : "definir no Planejamento"}
               onClick={() => go("planejamento")}
             />
