@@ -32,6 +32,7 @@ import {
   getAllTransactions,
   mapContaRaw,
   mapTransacaoRaw,
+  resolverBancoDoItem,
 } from "../_shared/pluggy.ts";
 
 function dozeMesesAtras(): string {
@@ -162,8 +163,11 @@ Deno.serve(async (req) => {
     }
     const itemStatus: string | null = item?.status ?? null;
 
-    const connectorName: string = item?.connector?.name ?? "Banco";
     const accounts = await getAccounts(apiKey, itemId);
+    // Nome do banco: a Pluggy nem sempre devolve item.connector.name (cartões,
+    // certos estados do item). Em vez de cair no genérico "Banco" — que vira
+    // "Cartao Banco" na origem — resolvemos pelos nomes/marketingName das contas.
+    const connectorName: string = resolverBancoDoItem(item?.connector?.name ?? null, accounts);
 
     // 2) coleta + mapeia para o CRU (sem normalizar nada)
     const contasRaw = accounts.map((acc) =>
