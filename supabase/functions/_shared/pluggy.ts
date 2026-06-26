@@ -116,6 +116,18 @@ export function resolverBanco(connector: string | null, contas: string[]): strin
   return contas.find(Boolean) || connector || "Banco";
 }
 
+const normNome = (s: string): string =>
+  semAcento(s).toLowerCase().replace(/\s+/g, " ").trim();
+
+// Overrides POR CONTA: cartões do agregador "MeuPluggy" cujo nome do produto não
+// cita o banco (ex.: "platinum"), informados pelo dono das contas. Match exato no
+// nome normalizado — NÃO entram no bancoCanonico (universal) porque seriam falsos
+// positivos (qualquer "platinum" de outro banco cairia aqui).
+const OVERRIDE_CONTA: Record<string, string> = {
+  "platinum": "Nubank",
+  "person multiplo black pontos": "Itau",
+};
+
 /**
  * Resolve o banco de UMA conta (não do item). É por-conta de propósito: conectores
  * agregadores da Pluggy (ex.: "MeuPluggy", connector_id 200) trazem, numa única
@@ -130,6 +142,10 @@ export function resolverBancoDaConta(
   const nomes = [account.marketingName, account.name].filter(
     (x): x is string => !!x,
   );
+  for (const n of nomes) {
+    const ov = OVERRIDE_CONTA[normNome(n)];
+    if (ov) return ov; // produto sem nome de banco -> override explícito
+  }
   return resolverBanco(connectorName, nomes);
 }
 
