@@ -71,6 +71,40 @@ export async function listItems(): Promise<PluggyItemRow[]> {
   return (data ?? []) as PluggyItemRow[];
 }
 
+/** Conta quantos lançamentos já foram importados por uma conexão. */
+export async function countLancamentosDoItem(itemId: string): Promise<number> {
+  const { count, error } = await sb
+    .from("lancamentos")
+    .select("id", { count: "exact", head: true })
+    .eq("pluggy_item_id", itemId);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+/** Remove uma conexão Pluggy e TODOS os dados importados por ela (lançamentos,
+ *  camada crua, saldos e investimentos). A RLS isola por usuário. Retorna a
+ *  lista de avisos não-críticos (tabelas auxiliares que falharam ao limpar). */
+export async function deleteItem(itemId: string): Promise<string[]> {
+  // ordem: filhos primeiro, conexão (pluggy_items) por último
+  const alvos: { tabela: string; col: string; critico?: boolean }[] = [
+    { tabela: "lancamentos", col: "pluggy_item_id", critico: true },
+    { tabela: "pluggy_transacoes_raw", col: "item_id" },
+    { tabela: "pluggy_contas_raw", col: "item_id" },
+    { tabela: "pluggy_saldos", col: "item_id" },
+    { tabela: "pluggy_investments", col: "item_id" },
+    { tabela: "pluggy_items", col: "item_id", critico: true },
+  ];
+  const avisos: string[] = [];
+  for (const a of alvos) {
+    const { error } = await sb.from(a.tabela).delete().eq(a.col, itemId);
+    if (error) {
+      if (a.critico) throw new Error(`Erro ao limpar ${a.tabela}: ${error.message}`);
+      avisos.push(`${a.tabela}: ${error.message}`);
+    }
+  }
+  return avisos;
+}
+
 export interface InvestSyncResult {
   ok: boolean;
   itens: number;

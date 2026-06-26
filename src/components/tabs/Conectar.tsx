@@ -2,11 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { PluggyConnect } from "react-pluggy-connect";
 import { Panel } from "../ui";
+import { useConfirm } from "../Confirm";
 import { resolverBanco } from "../../lib/bancos";
 import {
   getConnectToken,
   syncItem,
   listItems,
+  deleteItem,
+  countLancamentosDoItem,
   type PluggyItemRow,
   type SyncResult,
 } from "../../lib/pluggy";
@@ -45,6 +48,7 @@ export function Conectar({ reload }: { reload: () => void }) {
   const [itens, setItens] = useState<PluggyItemRow[]>([]);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirm();
 
   const carregar = useCallback(async () => {
     try {
@@ -92,26 +96,63 @@ export function Conectar({ reload }: { reload: () => void }) {
   const sincronizarTudo = useCallback(async () => {
     if (itens.length === 0) return;
     setBusy(true);
+    let feitos = 0;
     setMsg(`Atualizando no banco… 0 de ${itens.length} (pode levar até ~1 min).`);
-    let ok = 0, erros = 0, reconectar = 0;
+    const comErro: string[] = [];      // conexões que falharam
+    const comReconexao: string[] = []; // conexões que pediram reautenticação
     await Promise.all(itens.map(async (it) => {
       try {
         const r = await syncItem(it.item_id, it.sync_from ?? corte, true);
-        ok++;
-        if (precisaReconectar(r.status)) reconectar++;
-      } catch {
-        erros++;
+        if (precisaReconectar(r.status)) comReconexao.push(nomeBanco(it));
+      } catch (e) {
+        comErro.push(`${nomeBanco(it)} (${(e as Error).message})`);
       }
-      setMsg(`Atualizando no banco… ${ok + erros} de ${itens.length} (pode levar até ~1 min).`);
+      feitos++;
+      setMsg(`Atualizando no banco… ${feitos} de ${itens.length} (pode levar até ~1 min).`);
     }));
     await carregar();
     reload();
-    const partes = [`✓ ${itens.length} conexão(ões) sincronizada(s)`];
-    if (erros) partes.push(`${erros} com erro`);
-    if (reconectar) partes.push(`${reconectar} pedindo reconexão`);
-    setMsg(partes.join(" · ") + ".");
+    const ok = itens.length - comErro.length;
+    const partes = [`✓ ${ok} de ${itens.length} conexão(ões) sincronizada(s)`];
+    if (comErro.length) partes.push(`❌ erro em: ${comErro.join("; ")}`);
+    if (comReconexao.length) partes.push(`⚠ precisam de Reconectar: ${comReconexao.join("; ")}`);
+    setMsg(partes.join("\n"));
     setBusy(false);
   }, [itens, corte, carregar, reload]);
+
+  // exclui uma conexão e TODOS os dados importados por ela
+  const excluir = useCallback(async (it: PluggyItemRow) => {
+    let n = 0;
+    try {
+      n = await countLancamentosDoItem(it.item_id);
+    } catch { /* segue mesmo sem a contagem */ }
+    const ok = await confirm({
+      title: `Excluir a conexão ${nomeBanco(it)}?`,
+      message: (
+        <>
+          Isso remove a conexão e <strong>{n} lançamento(s)</strong> importado(s) por ela,
+          além dos saldos e investimentos vinculados. Os dados de outras conexões não são afetados.
+          <br />
+          Esta ação <strong>não pode ser desfeita</strong>.
+        </>
+      ),
+      confirmLabel: "Excluir conexão",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    setMsg(`Excluindo ${nomeBanco(it)}…`);
+    try {
+      const avisos = await deleteItem(it.item_id);
+      setMsg(`✓ Conexão ${nomeBanco(it)} excluída.${avisos.length ? ` (avisos: ${avisos.join("; ")})` : ""}`);
+      await carregar();
+      reload();
+    } catch (e) {
+      setMsg("Erro ao excluir: " + (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [confirm, carregar, reload]);
 
   // callback de sucesso do widget: pega o itemId e ja sincroniza
   const onSuccess = useCallback(async (data: { item: { id: string } }) => {
@@ -156,7 +197,7 @@ export function Conectar({ reload }: { reload: () => void }) {
           lançamentos.
         </p>
 
-        {msg && <div className="mt-4 text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2">{msg}</div>}
+        {msg && <div className="mt-4 text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2 whitespace-pre-line">{msg}</div>}
       </Panel>
 
       {itens.length > 0 && (
@@ -211,6 +252,14 @@ export function Conectar({ reload }: { reload: () => void }) {
                     className="bg-transparent text-muted border border-line rounded-[9px] px-3 py-[7px] text-[12.5px] font-medium cursor-pointer disabled:opacity-50 hover:text-txt transition-colors"
                   >
                     Reconectar
+                  </button>
+                  <button
+                    onClick={() => excluir(it)}
+                    disabled={busy}
+                    title="Excluir esta conexão e os dados importados por ela"
+                    className="bg-transparent text-red border border-line rounded-[9px] px-3 py-[7px] text-[12.5px] font-medium cursor-pointer disabled:opacity-50 hover:border-red transition-colors"
+                  >
+                    Excluir
                   </button>
                 </div>
               </div>
