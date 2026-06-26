@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useCallback, Fragment, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Kpi, Select, Seg, Toolbar, Panel } from "../ui";
 import { useConfirm } from "../Confirm";
 import { useToast } from "../Toast";
@@ -140,6 +141,9 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   // edição do orçamento previsto a partir do realizado (botão "↑ orçar" / "↑ prever")
   const [orcEdit, setOrcEdit] = useState<null | "conta" | "cartao" | "receita">(null);
   const [orcVal, setOrcVal] = useState("");
+  // pop-up de sugestão (média móvel) ao passar o mouse no valor previsto orçável
+  const [sug, setSug] = useState<{ tipo: "conta" | "cartao" | "receita"; left: number; top: number; up: boolean } | null>(null);
+  const sugCloseT = useRef<number | undefined>(undefined);
   const [cartaoOrc, setCartaoOrc] = useState(""); // orçamento mensal do cartão (texto do input)
   const [cartaoReal, setCartaoReal] = useState(""); // total real do cartão no mês selecionado (texto)
   const [copiado, setCopiado] = useState(false);
@@ -593,19 +597,48 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const cartaoParcial = (c: string) => !mesFechado(c) && realCartao(c) == null && autosCartao[c] != null;
   const TIP_PARCIAL = "Mês em aberto: é o gasto parcial do cartão (lançamentos importados até agora), ainda não a fatura fechada. Vira valor real quando o mês terminar — ou digite a fatura na linha 💳 do rodapé.";
 
-  // ---------- "subir" o realizado para o orçamento previsto ----------
-  // sugestão = média dos meses já fechados que aparecem no histórico (ignora meses sem dado)
-  const mediaFechados = (fn: (c: string) => number | null) => {
-    const vs = histMeses.map(fn).filter((v): v is number => v != null);
-    return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : 0;
-  };
+  // ---------- sugestão de orçamento: média móvel dos meses fechados do histórico ----------
+  // Mostrada num POP-UP ao passar o mouse no valor (não substitui nada sozinha). Aplicar é
+  // ação explícita (botão "Usar"); clicar no valor apenas edita o que já está lá.
+  function dadosSugestao(tipo: "conta" | "cartao" | "receita") {
+    const fn = tipo === "conta" ? contaGeralEfet
+      : tipo === "cartao" ? cartaoVarEfet
+      : (c: string) => autosReceita[c] ?? null; // receita: o que entrou de fato (lançado)
+    const itens = histMeses.map((c) => ({ label: dvLabel(c), valor: fn(c) }));
+    const vs = itens.map((m) => m.valor).filter((v): v is number => v != null);
+    const media = vs.length ? Math.round(vs.reduce((a, b) => a + b, 0) / vs.length) : 0;
+    return { itens, media, n: vs.length };
+  }
+  // valor já orçado/previsto da linha no mês atual (para editar sem sobrescrever)
+  const orcAtual = (tipo: "conta" | "cartao" | "receita") =>
+    tipo === "conta" ? contaGeralPrev(comp) : tipo === "cartao" ? cartaoVarPrev(comp) : (receitaPrevMes(comp) || null);
   function iniciarOrc(tipo: "conta" | "cartao" | "receita") {
-    const sug = tipo === "conta" ? mediaFechados(contaGeralEfet)
-      : tipo === "cartao" ? mediaFechados((c) => cartaoVarEfet(c))
-      : mediaFechados((c) => autosReceita[c]); // receita: média do que entrou de fato (lançado)
-    setOrcVal(sug ? String(Math.round(sug)).replace(".", ",") : "");
+    window.clearTimeout(sugCloseT.current); setSug(null); // some o pop-up ao entrar em edição
+    const atual = orcAtual(tipo);
+    // já tem previsto → edita o valor atual; vazio → parte da média como ponto de partida
+    const base = atual != null ? atual : dadosSugestao(tipo).media;
+    setOrcVal(base ? String(base).replace(".", ",") : "");
     setOrcEdit(tipo);
   }
+  function usarMedia(tipo: "conta" | "cartao" | "receita") {
+    const { media } = dadosSugestao(tipo);
+    setOrcVal(media ? String(media).replace(".", ",") : "");
+    setOrcEdit(tipo);
+  }
+  // pop-up de sugestão (hover): abre na posição do valor; fecha com pequeno atraso para
+  // dar tempo de levar o mouse até a caixa e clicar em "Usar".
+  function abrirSug(tipo: "conta" | "cartao" | "receita", el: HTMLElement) {
+    window.clearTimeout(sugCloseT.current);
+    const r = el.getBoundingClientRect();
+    const w = 244, h = 168;
+    const espacoAbaixo = window.innerHeight - r.bottom;
+    const up = espacoAbaixo < h && r.top > espacoAbaixo;
+    let left = r.left;
+    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
+    setSug({ tipo, left: Math.max(8, left), top: up ? r.top : r.bottom, up });
+  }
+  const fecharSugLento = () => { sugCloseT.current = window.setTimeout(() => setSug(null), 140); };
+  const fecharSugJa = () => { window.clearTimeout(sugCloseT.current); setSug(null); };
   async function salvarOrcConta() { setOrcEdit(null); await salvarOrcamentoConta(orcVal); }
   async function salvarOrcReceita() { setOrcEdit(null); await salvarOrcamentoReceita(orcVal); }
   async function salvarOrcCartaoVar() {
@@ -781,6 +814,47 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
 
       {view === "mes" ? (
         <>
+          {sug && createPortal(
+            <div
+              className="fixed z-[71] bg-card border border-line rounded-[12px] shadow-pop p-3 text-[12px] fade-in"
+              style={{ left: sug.left, width: 244, ...(sug.up ? { bottom: window.innerHeight - sug.top + 6 } : { top: sug.top + 6 }) }}
+              onMouseEnter={() => window.clearTimeout(sugCloseT.current)}
+              onMouseLeave={fecharSugJa}
+            >
+              {(() => {
+                const { itens, media, n } = dadosSugestao(sug.tipo);
+                const base = sug.tipo === "conta" ? "gasto na conta (gerais)"
+                  : sug.tipo === "cartao" ? "gasto no cartão (fora recorrentes)" : "receita que entrou (lançada)";
+                const cor = sug.tipo === "cartao" ? "bg-violet" : sug.tipo === "receita" ? "bg-green" : "bg-accent";
+                return (
+                  <>
+                    <div className="font-semibold text-txt mb-[2px]">📊 Média móvel</div>
+                    <div className="text-muted mb-2 leading-snug">média do {base} nos meses fechados do histórico</div>
+                    <div className="flex flex-col gap-[3px] mb-[10px]">
+                      {itens.map((m) => (
+                        <div key={m.label} className="flex justify-between tabular-nums">
+                          <span className="text-muted">{m.label}</span>
+                          <span className={m.valor == null ? "text-line" : "text-txt"}>{m.valor == null ? "sem dado" : fmtCell(m.valor)}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between border-t border-line pt-[4px] mt-[1px] font-semibold tabular-nums">
+                        <span>média{n ? ` · ${n}` : ""}</span><span>{media ? fmtCell(media) : "—"}</span>
+                      </div>
+                    </div>
+                    {n > 0 ? (
+                      <button onClick={() => { usarMedia(sug.tipo); fecharSugJa(); }}
+                        className={`btn w-full ${cor} hover:opacity-90 text-white rounded-[8px] px-3 py-[6px] text-[12px] border-0 transition-opacity`}>
+                        Usar {fmtCell(media)} como previsto
+                      </button>
+                    ) : (
+                      <div className="text-muted text-[11.5px]">Sem meses fechados com dado para sugerir uma média.</div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>,
+            document.body
+          )}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
             <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={BRL(prevGer)} sub="recorrentes (plano)" />
             <Kpi title="Gastos realizados" value={BRL(efetGer)} sub={cartaoParcial(comp) ? "cartão ainda parcial · mês em aberto" : "recorrente + conta + cartão"} color="text-amber" />
@@ -837,10 +911,12 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                               onChange={(e) => setOrcVal(e.target.value)} onBlur={salvarOrcConta}
                               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setOrcEdit(null); }} />
                           ) : (
-                            <button onClick={() => iniciarOrc("conta")} title="preencher o orçamento previsto com a média dos meses fechados (você ajusta antes de salvar)"
-                              className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-accent">
-                              {contaGeralPrev(comp) == null ? <span className="text-accent">↑ orçar</span> : fmtCell(contaGeralPrev(comp) as number)}
-                            </button>
+                            <span className="inline-block" onMouseEnter={(e) => abrirSug("conta", e.currentTarget)} onMouseLeave={fecharSugLento}>
+                              <button onClick={() => iniciarOrc("conta")} title="clique para digitar o previsto · passe o mouse para ver a média móvel"
+                                className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-accent">
+                                {contaGeralPrev(comp) == null ? <span className="text-accent">↑ orçar</span> : fmtCell(contaGeralPrev(comp) as number)}
+                              </button>
+                            </span>
                           )}
                         </td>
                         <td className="num text-muted border-t-2 !border-t-line">{(() => { const v = contaGeralEfet(comp); return v == null ? "—" : fmtCell(v); })()}</td>
@@ -856,10 +932,12 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                               onChange={(e) => setOrcVal(e.target.value)} onBlur={salvarOrcCartaoVar}
                               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setOrcEdit(null); }} />
                           ) : (
-                            <button onClick={() => iniciarOrc("cartao")} title="preencher o orçamento previsto com a média dos meses fechados (você ajusta antes de salvar)"
-                              className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-violet">
-                              {cartaoVarPrev(comp) == null ? <span className="text-violet">↑ orçar</span> : fmtCell(cartaoVarPrev(comp) as number)}
-                            </button>
+                            <span className="inline-block" onMouseEnter={(e) => abrirSug("cartao", e.currentTarget)} onMouseLeave={fecharSugLento}>
+                              <button onClick={() => iniciarOrc("cartao")} title="clique para digitar o previsto · passe o mouse para ver a média móvel"
+                                className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-violet">
+                                {cartaoVarPrev(comp) == null ? <span className="text-violet">↑ orçar</span> : fmtCell(cartaoVarPrev(comp) as number)}
+                              </button>
+                            </span>
                           )}
                         </td>
                         <td className={`num ${cartaoParcial(comp) ? "!text-muted" : ""}`} title={cartaoParcial(comp) ? TIP_PARCIAL : undefined}>
@@ -885,16 +963,18 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                               onChange={(e) => setOrcVal(e.target.value)} onBlur={salvarOrcReceita}
                               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setOrcEdit(null); }} />
                           ) : (
-                            <button onClick={() => iniciarOrc("receita")} title="definir a receita prevista por mês (preenche com a média do que entrou; você ajusta antes de salvar). Para mudar só um mês, use a aba Projeção."
-                              className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-green">
-                              {(() => {
-                                const v = receitaPrevMes(comp);
-                                const ajust = !!receitaPlano && (mensal[comp]?.[receitaPlano.id]?.valor_real ?? null) != null;
-                                return v
-                                  ? <span className={ajust ? "underline decoration-dotted underline-offset-2" : ""} title={ajust ? "ajustado neste mês na aba Projeção" : undefined}>{fmtCell(v)}</span>
-                                  : <span className="text-green underline decoration-dotted">↑ prever</span>;
-                              })()}
-                            </button>
+                            <span className="inline-block" onMouseEnter={(e) => abrirSug("receita", e.currentTarget)} onMouseLeave={fecharSugLento}>
+                              <button onClick={() => iniciarOrc("receita")} title="clique para digitar a receita prevista · passe o mouse para ver a média do que entrou. Para mudar só um mês, use a aba Projeção."
+                                className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-green">
+                                {(() => {
+                                  const v = receitaPrevMes(comp);
+                                  const ajust = !!receitaPlano && (mensal[comp]?.[receitaPlano.id]?.valor_real ?? null) != null;
+                                  return v
+                                    ? <span className={ajust ? "underline decoration-dotted underline-offset-2" : ""} title={ajust ? "ajustado neste mês na aba Projeção" : undefined}>{fmtCell(v)}</span>
+                                    : <span className="text-green underline decoration-dotted">↑ prever</span>;
+                                })()}
+                              </button>
+                            </span>
                           )}
                         </td>
                         <td className="num">{efetRec ? fmtCell(efetRec) : "—"}</td>
@@ -931,7 +1011,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (duplo clique). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦 e 💳, clique em <b className="text-accent">↑ orçar</b> para preencher o orçamento com a <b>média dos meses fechados</b> (você ajusta antes de salvar). Clique no nome de um grupo (<b>🔁 Gastos recorrentes</b>, <b>📦 Outros gastos</b>) para <b>minimizar</b> — os itens somem e fica só o total na linha-cabeçalho. O <b>Σ Gastos gerais</b> é a soma das quatro linhas acima: <b>🔁 recorrentes + 📦 outros + 🏦 conta (gerais) + 💳 cartão</b>.
+            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (duplo clique). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦, 💳 e 💰, <b>clique</b> para digitar o valor (não sobrescreve o que já está lá) e <b>passe o mouse</b> em cima para abrir um pop-up com a <b>média móvel dos meses fechados</b> — clique em <b>Usar</b> ali para aplicá-la. Clique no nome de um grupo (<b>🔁 Gastos recorrentes</b>, <b>📦 Outros gastos</b>) para <b>minimizar</b> — os itens somem e fica só o total na linha-cabeçalho. O <b>Σ Gastos gerais</b> é a soma das quatro linhas acima: <b>🔁 recorrentes + 📦 outros + 🏦 conta (gerais) + 💳 cartão</b>.
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
             {!temOrcConta && <> <span className="text-amber">{MSG_MIGRACAO_CONTA}</span></>}
             {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
