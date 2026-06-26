@@ -5,7 +5,7 @@ import { Panel, BarRow, Select, Seg } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
-  BRL, BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal,
+  BRL, BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dataCompleta,
   dvDiasNoMes, dvLabel, MES_ABREV, mesCurto, normEstab,
 } from "../../lib/finance";
 import { type Plano, projetar, contribNoMes, ehReceitaTipo } from "../../lib/projecao";
@@ -415,7 +415,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                 <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: corCategoria(catKey(d)) }} />
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-medium truncate">{d.descricao}</div>
-                  <div className="text-[11.5px] text-muted truncate">{d.data_mov} · {catKey(d)} · {d.origem}</div>
+                  <div className="text-[11.5px] text-muted truncate">{dataCompleta(d)} · {catKey(d)} · {d.origem}</div>
                 </div>
                 <div className={`tabular-nums text-[13px] font-medium shrink-0 ${ehReceita(d.classe) || d.valor > 0 ? "text-green" : ""}`}>
                   {BRL(d.valor)}
