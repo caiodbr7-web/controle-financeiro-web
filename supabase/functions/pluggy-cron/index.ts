@@ -191,12 +191,27 @@ function bancoCanonico(blob: string): string | null {
   return null;
 }
 
+const normNome = (s: string): string =>
+  semAcento(s).toLowerCase().replace(/\s+/g, " ").trim();
+
+// Overrides POR CONTA: cartões do agregador "MeuPluggy" cujo nome do produto não
+// cita o banco (ex.: "platinum"), informados pelo dono das contas. Match exato —
+// NÃO entram no bancoCanonico (universal) p/ não dar falso positivo.
+const OVERRIDE_CONTA: Record<string, string> = {
+  "platinum": "Nubank",
+  "person multiplo black pontos": "Itau",
+};
+
 // Banco POR CONTA: agregadores ("MeuPluggy") trazem contas de bancos diferentes
 // numa só conexão — o banco real está no nome de cada conta, não no conector.
 function resolverBancoDaConta(connectorName: string | null, account: any): string {
   const nomes = [account?.marketingName, account?.name].filter(
     (x: unknown): x is string => !!x,
   );
+  for (const n of nomes) {
+    const ov = OVERRIDE_CONTA[normNome(n)];
+    if (ov) return ov;
+  }
   const blob = [connectorName ?? "", ...nomes].join(" ");
   const canon = bancoCanonico(blob);
   if (canon) return canon;
