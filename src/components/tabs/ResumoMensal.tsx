@@ -4,8 +4,8 @@ import type { Lancamento } from "../../types";
 import { Panel, Kpi, Select, Toolbar } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import {
-  BRL, brlShort, ehGasto, ehReceita, ehTransfer, catKey, corChave, corCategoria,
-  deltaTxt, dvLabel, dvParcialLimite, mesReal,
+  BRL, brlShort, ehTransfer, catKey, corChave, corCategoria,
+  deltaTxt, dvLabel, dvParcialLimite, mesComp, valorGasto, valorReceita, valorAporte, valorReceitaInvest,
 } from "../../lib/finance";
 
 interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[]; openModal: (t: string, r: Lancamento[]) => void; }
@@ -17,13 +17,14 @@ function PctLabel(props: any) {
   return <text x={x + width / 2} y={y + height / 2} fill="#fff" fontSize={10} fontWeight={600} textAnchor="middle" dominantBaseline="central">{Math.round(value)}%</text>;
 }
 
-/* Toda esta aba agrupa pelo MÊS REAL da compra/movimento (não pela competência da fatura). */
+/* Toda esta aba agrupa pela COMPETÊNCIA (fatura/extrato do mês), eixo único do contrato.
+   Gasto/receita já excluem transferência interna e aporte (ver lancClasses). */
 export function ResumoMensal({ dados, allDados, openModal }: Props) {
   const [mes, setMes] = useState("");
   const cc = useChart();
 
-  // lançamentos decorados com o mês real (1 passada)
-  const rows = useMemo(() => dados.map((d) => ({ d, mk: mesReal(d) })), [dados]);
+  // lançamentos decorados com o mês de competência (1 passada)
+  const rows = useMemo(() => dados.map((d) => ({ d, mk: mesComp(d) })), [dados]);
   const mesesReais = useMemo(() => [...new Set(rows.map((r) => r.mk))].sort(), [rows]);
   const lim = useMemo(() => dvParcialLimite(allDados), [allDados]);
 
@@ -45,20 +46,24 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
   const parcial = m >= lim;
 
   const agg = (k: string) => {
-    let rec = 0, gas = 0, tr = 0;
+    let rec = 0, gas = 0, tr = 0, inv = 0, recInv = 0;
     for (const r of rows) {
       if (r.mk !== k) continue;
-      if (ehGasto(r.d.classe)) gas += Math.abs(r.d.valor);
-      else if (ehReceita(r.d.classe)) rec += Math.abs(r.d.valor);
-      else if (ehTransfer(r.d.classe)) tr += r.d.valor;
+      gas += valorGasto(r.d);
+      rec += valorReceita(r.d);
+      inv += valorAporte(r.d);
+      recInv += valorReceitaInvest(r.d);
+      if (ehTransfer(r.d.classe)) tr += r.d.valor;
     }
-    return { rec, gas, tr, saldo: rec - gas };
+    return { rec, gas, tr, saldo: rec - gas, inv, recInv };
   };
   const a = useMemo(() => agg(m), [rows, m]);
   const pa = useMemo(() => (prev ? agg(prev) : null), [rows, prev]);
 
-  const gRows = useMemo(() => rows.filter((r) => r.mk === m && ehGasto(r.d.classe)).map((r) => r.d), [rows, m]);
-  const rRows = useMemo(() => rows.filter((r) => r.mk === m && ehReceita(r.d.classe)).map((r) => r.d), [rows, m]);
+  // gastos do mês para os detalhamentos por categoria/origem: pura classe Gasto e
+  // NÃO-interna (valorGasto > 0 ⇒ Gasto e !interna). rRows idem para receita real.
+  const gRows = useMemo(() => rows.filter((r) => r.mk === m && valorGasto(r.d) > 0).map((r) => r.d), [rows, m]);
+  const rRows = useMemo(() => rows.filter((r) => r.mk === m && valorReceita(r.d) > 0).map((r) => r.d), [rows, m]);
 
   const catData = useMemo(() => {
     const cat: Record<string, number> = {};
@@ -84,8 +89,8 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
   const insights = useMemo(() => {
     const prevMeses = mesesReais.slice(Math.max(0, idx - 3), idx);
     const catMes = (cat: string, k: string) => rows
-      .filter((r) => r.mk === k && ehGasto(r.d.classe) && catKey(r.d) === cat)
-      .reduce((s, r) => s + Math.abs(r.d.valor), 0);
+      .filter((r) => r.mk === k && valorGasto(r.d) > 0 && catKey(r.d) === cat)
+      .reduce((s, r) => s + valorGasto(r.d), 0);
     const oport = catData.map((c) => {
       const avg = prevMeses.length ? prevMeses.reduce((s, pm) => s + catMes(c.cat, pm), 0) / prevMeses.length : 0;
       return { cat: c.cat, atual: c.valor, avg, delta: c.valor - avg };
@@ -94,13 +99,13 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
     return { top: catData.slice(0, 4), oport: oport.slice(0, 3), economia, temPrev: prevMeses.length > 0 };
   }, [catData, rows, mesesReais, idx]);
 
-  // composição empilhada: 6 meses reais terminando no mês selecionado (% e R$)
+  // composição empilhada: 6 meses (competência) terminando no mês selecionado (% e R$)
   const stack6 = useMemo(() => {
     const meses6 = mesesReais.filter((k) => k <= m).slice(-6);
     const catTot: Record<string, number> = {};
     const porMes = meses6.map((k) => {
       const cat: Record<string, number> = {};
-      rows.forEach((r) => { if (r.mk !== k || !ehGasto(r.d.classe)) return; const ck = catKey(r.d); cat[ck] = (cat[ck] || 0) + Math.abs(r.d.valor); catTot[ck] = (catTot[ck] || 0) + Math.abs(r.d.valor); });
+      rows.forEach((r) => { const g = valorGasto(r.d); if (r.mk !== k || g <= 0) return; const ck = catKey(r.d); cat[ck] = (cat[ck] || 0) + g; catTot[ck] = (catTot[ck] || 0) + g; });
       return { k, cat, total: Object.values(cat).reduce((s, v) => s + v, 0) };
     });
     const cats = Object.keys(catTot).sort((a, b) => catTot[b] - catTot[a]);
@@ -110,7 +115,7 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
   }, [rows, mesesReais, m]);
 
   const segClick = (c: string, comp: string) =>
-    openModal(c + " · " + dvLabel(comp), rows.filter((r) => r.mk === comp && ehGasto(r.d.classe) && catKey(r.d) === c).map((r) => r.d));
+    openModal(c + " · " + dvLabel(comp), rows.filter((r) => r.mk === comp && valorGasto(r.d) > 0 && catKey(r.d) === c).map((r) => r.d));
 
   if (!m) return <div className="text-muted">Sem dados.</div>;
 
@@ -119,7 +124,7 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
       <Toolbar
         right={
           <span className="text-muted text-[12px]">
-            pela data da compra · {gRows.length + rRows.length} transações
+            por competência · {gRows.length + rRows.length} transações
             {parcial ? " · mês parcial (faturas por vir)" : prev ? ` · vs ${dvLabel(prev)}` : ""}
           </span>
         }
@@ -135,6 +140,14 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
         <Kpi title="Saldo" value={BRL(a.saldo)} sub={deltaTxt(a.saldo, pa?.saldo)} color={a.saldo >= 0 ? "text-green" : "text-red"} />
         <Kpi title="Transf. / Pagtos" value={BRL(a.tr)} sub={deltaTxt(a.tr, pa?.tr)} color="text-violet" />
       </div>
+
+      {/* investimentos do mês — só aparece quando há aporte/renda classificados */}
+      {(a.inv > 0 || a.recInv > 0 || (pa && (pa.inv > 0 || pa.recInv > 0))) && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
+          <Kpi title="Investido no mês" value={BRL(a.inv)} sub={`${deltaTxt(a.inv, pa?.inv)} · Σ Aporte`} color="text-violet" />
+          <Kpi title="Renda de investimentos" value={BRL(a.recInv)} sub={`${deltaTxt(a.recInv, pa?.recInv)} · rendimentos/dividendos`} color="text-green" />
+        </div>
+      )}
 
       {/* ---- topo: 3 colunas (barras · rosca · insights), tudo do mês selecionado ---- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-[18px]">
@@ -216,7 +229,7 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
         </Panel>
       </div>
 
-      {/* ---- composição: 6 meses reais até o mês selecionado, 100% e em R$ ---- */}
+      {/* ---- composição: 6 meses (competência) até o mês selecionado, 100% e em R$ ---- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px] mt-1">
         <Panel title="Composição mensal" sub="(% por categoria · 6 meses até o selecionado · clique p/ detalhar)">
           <div className="h-[clamp(260px,34vh,360px)] mt-2">
@@ -303,7 +316,7 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
         </Panel>
       </div>
       <div className="text-muted text-[12px] mt-1">
-        Tudo nesta aba é agrupado pela <b>data real da compra/movimento</b>, não pela competência da fatura. Meses marcados com * ainda podem receber compras das próximas faturas.
+        Tudo nesta aba é agrupado pela <b>competência</b> (fatura/extrato do mês) — parcelas contam no mês em que caem. Despesas/Receitas excluem transferências internas e aportes; investimento (Σ Aporte) e renda de investimentos aparecem em métricas próprias. Meses marcados com * ainda podem receber faturas futuras.
       </div>
     </div>
   );

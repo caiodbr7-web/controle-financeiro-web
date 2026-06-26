@@ -1,5 +1,18 @@
 import type { Lancamento, Modo } from "../types";
 import { semAcento } from "./texto";
+import {
+  ehGasto as ehGastoClasse,
+  ehReceita as ehReceitaClasse,
+  ehTransfer as ehTransferClasse,
+  valorGasto as valorGastoClasse,
+  valorReceita as valorReceitaClasse,
+  valorAporte as valorAporteClasse,
+  valorReceitaInvest as valorReceitaInvestClasse,
+} from "./lancClasses";
+// reexporta os helpers de valor do contrato, sem duplicar lógica:
+export {
+  valorGasto, valorReceita, valorAporte, valorReceitaInvest,
+} from "./lancClasses";
 
 // ---------- formatação ----------
 export const BRL = (v: number) =>
@@ -40,11 +53,24 @@ export const mesCurto = (c: string) => {
 };
 
 // ---------- classes ----------
-export const ehGasto = (c: string | null) => c === "Gasto";
-export const ehReceita = (c: string | null) => c === "Receita";
-export const ehTransfer = (c: string | null) => String(c || "").startsWith("Transfer");
+// FONTE ÚNICA EM CÓDIGO: os predicados de classe e os critérios de inclusão dos
+// dashboards moram em src/lib/lancClasses.ts. Aqui só REEXPORTAMOS (sem duplicar a
+// lógica) e reexpomos os helpers de valor que respeitam `interna`/Aporte/Receita
+// Investimento. Ver docs/fonte-unica-lancamentos.md §3.4.
+export const ehGasto = ehGastoClasse;
+export const ehReceita = ehReceitaClasse;
+export const ehTransfer = ehTransferClasse;
+// helpers de valor reexportados acima (de lancClasses; respeitam `interna`):
+//  valorGasto    — Gasto (+) menos Estorno/Credito (−), 0 se interna/Aporte
+//  valorReceita  — Receita real (exclui interna e Receita Investimento)
+//  valorAporte   — Σ Aporte (investido no mês)
+//  valorReceitaInvest — Σ Receita Investimento (renda de investimentos)
 export const catKey = (d: Lancamento) =>
   d.categoria_manual || d.categoria_auto || d.detalhe || "Sem categoria";
+
+// mês de COMPETÊNCIA ("YYYY-MM") — eixo único de TODO total mensal (decisão 2 do
+// contrato). A competência é guardada como "YYYY-MM (Mmm/AA)"; pegamos o prefixo.
+export const mesComp = (d: { competencia: string }) => String(d.competencia || "").slice(0, 7);
 
 // ---------- cores por banco / origem ----------
 export const BANK_COLORS: Record<string, { cartao: string; conta: string }> = {
@@ -72,17 +98,27 @@ export const corChave = (k: string) => {
 };
 export const ordemChave = (k: string) => BANK_ORDER[bankOf(k)] * 10 + (isConta(k) ? 1 : 0);
 
-// ---------- agregação mensal ----------
-export interface MonthAgg { rec: number; gas: number; tr: number; saldo: number; }
+// ---------- agregação mensal (eixo COMPETÊNCIA) ----------
+// Delega aos helpers do contrato: gasto/receita excluem `interna` e `Aporte`;
+// Receita Investimento NÃO entra em receita (ganha métrica própria `recInv`);
+// `inv` = Σ Aporte (investido no mês). `tr` = fluxo neutro (transferência/pagto).
+export interface MonthAgg {
+  rec: number; gas: number; tr: number; saldo: number;
+  inv: number; recInv: number;
+}
+// aceita "YYYY-MM" OU a competência completa "YYYY-MM (...)" como filtro de mês
 export function monthAgg(dados: Lancamento[], m: string): MonthAgg {
-  let rec = 0, gas = 0, tr = 0;
+  const mk = String(m).slice(0, 7);
+  let rec = 0, gas = 0, tr = 0, inv = 0, recInv = 0;
   for (const d of dados) {
-    if (d.competencia !== m) continue;
-    if (ehGasto(d.classe)) gas += Math.abs(d.valor);
-    else if (ehReceita(d.classe)) rec += Math.abs(d.valor);
-    else if (ehTransfer(d.classe)) tr += d.valor;
+    if (mesComp(d) !== mk) continue;
+    gas += valorGastoClasse(d);
+    rec += valorReceitaClasse(d);
+    inv += valorAporteClasse(d);
+    recInv += valorReceitaInvestClasse(d);
+    if (ehTransfer(d.classe)) tr += d.valor;
   }
-  return { rec, gas, tr, saldo: rec - gas };
+  return { rec, gas, tr, saldo: rec - gas, inv, recInv };
 }
 
 export function deltaTxt(cur: number, prev: number | null | undefined) {
@@ -130,16 +166,26 @@ export function dataOrdKey(d: Lancamento): string {
   return String(d.competencia || "").slice(0, 7) + "-00";
 }
 
+// valor de GASTO de uma linha (Gasto + / Estorno − / resto 0), delegando ao
+// contrato: respeita `interna` (transferência interna e aporte NÃO contam).
 export function dvGasto(d: Lancamento): number {
-  if (d.classe === "Gasto") return Math.abs(d.valor);
-  if (d.classe === "Estorno/Credito") return -Math.abs(d.valor);
-  return 0;
+  return valorGastoClasse(d);
 }
 
-// mês pela DATA REAL do movimento ("YYYY-MM"); cai no mês de competência quando não há data válida
+// mês pela DATA REAL do movimento ("YYYY-MM"); cai no mês de competência quando não há data válida.
+// NOTA: o eixo dos totais mensais é a COMPETÊNCIA (use mesComp). `mesReal` só serve para
+// usos legados (conciliação) que precisam casar pela data real do extrato.
 export function mesReal(d: Lancamento): string {
   const r = dvDataReal(d);
   return r ? r.k : String(d.competencia).slice(0, 7);
+}
+
+// dia do mês (1..31) a partir do "dd/mm" do movimento; cai no dia 1 quando inválido.
+// É só o EIXO X da curva diária — o mês ao qual o dia pertence vem da competência.
+export function diaDoMov(d: Lancamento): number {
+  const m = String(d.data_mov || "").match(/^(\d{1,2})\/(\d{1,2})$/);
+  const dia = m ? +m[1] : 1;
+  return dia >= 1 && dia <= 31 ? dia : 1;
 }
 
 export function mvOrigemOk(origem: string, modo: Modo): boolean {
@@ -172,31 +218,33 @@ export function mvLimiteParcial(allDados: Lancamento[], modo: Modo): string {
   return dvParcialLimite(allDados);
 }
 
-// série diária (mapa mês -> array[31] de gasto por dia), respeitando o modo
+// série diária (mapa mês -> array[31] de gasto por dia), respeitando o modo.
+// EIXO DO MÊS = competência (cada parcela cai no mês da fatura/extrato); o DIA
+// (eixo x dentro do mês) vem da data real do movimento — sem data válida, dia 1.
 export function dvSeries(dados: Lancamento[], months: string[], modo: Modo) {
   const map: Record<string, number[]> = {};
   for (const d of dados) {
     const g = dvGasto(d);
     if (!g) continue;
     if (!mvOrigemOk(d.origem, modo)) continue;
-    const r = dvDataReal(d);
-    if (!r) continue;
-    (map[r.k] = map[r.k] || new Array(31).fill(0))[r.d - 1] += g;
+    const k = mesComp(d);
+    if (!/^\d{4}-\d{2}$/.test(k)) continue;
+    (map[k] = map[k] || new Array(31).fill(0))[diaDoMov(d) - 1] += g;
   }
   const first = months.length ? String(months[0]).slice(0, 7) : "0000-00";
   return { keys: Object.keys(map).filter((k) => k >= first).sort(), map };
 }
 
-// série mensal (total por mês), só meses completos
+// série mensal (total por mês), só meses completos. EIXO = competência.
 export function mvSeriesMensal(dados: Lancamento[], allDados: Lancamento[], months: string[], modo: Modo) {
   const tot: Record<string, number> = {};
   for (const d of dados) {
     const g = dvGasto(d);
     if (!g) continue;
     if (!mvOrigemOk(d.origem, modo)) continue;
-    const r = dvDataReal(d);
-    if (!r) continue;
-    tot[r.k] = (tot[r.k] || 0) + g;
+    const k = mesComp(d);
+    if (!/^\d{4}-\d{2}$/.test(k)) continue;
+    tot[k] = (tot[k] || 0) + g;
   }
   const first = months.length ? String(months[0]).slice(0, 7) : "0000-00";
   const lim = mvLimiteParcial(allDados, modo);
