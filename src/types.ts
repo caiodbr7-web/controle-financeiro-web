@@ -24,6 +24,12 @@ export interface Lancamento {
   pluggy_tx_id?: string | null;
   pluggy_account_id?: string | null;
   pluggy_item_id?: string | null;
+  // classificação unificada (ver src/lib/lancClasses.ts e docs/fonte-unica-lancamentos.md)
+  interna?: boolean | null;        // movimento entre contas próprias (transf. interna / fatura / aporte/resgate)
+  par_hash?: string | null;        // liga as duas pernas casadas de uma transferência
+  subtipo?: string | null;         // rótulo legível: Pagamento de fatura, Entre contas proprias, Aporte, Resgate, Rendimentos, Salario...
+  classe_manual?: string | null;   // override do usuário p/ `classe` (a re-tradução respeita)
+  interna_manual?: boolean | null; // override do usuário p/ `interna` (a re-tradução respeita)
 }
 
 // Saldo diário reconstruído de uma conta bancária (tabela public.pluggy_saldos)
