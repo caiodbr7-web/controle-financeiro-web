@@ -308,10 +308,12 @@ begin
           end
       end as classe_auto,
       -- interna automática (movimento entre contas próprias)
-      (subtipo_out in ('Pagamento de fatura','Resgate','Investimento','Entre contas proprias')) as interna_auto,
+      -- coalesce(subtipo_out,''): subtipo_out NULL (gasto/receita comum) faria
+      -- `NULL in (...)` => NULL, e a coluna `interna` é NOT NULL. String vazia => false.
+      (coalesce(subtipo_out,'') in ('Pagamento de fatura','Resgate','Investimento','Entre contas proprias')) as interna_auto,
       -- candidato a ser uma PERNA de transferência casável (p/ par_hash):
       -- pagamento de fatura, entre contas próprias, aporte/resgate e transf. genérica
-      (subtipo_out in ('Pagamento de fatura','Resgate','Investimento','Entre contas proprias','Transferencia')) as eh_perna
+      (coalesce(subtipo_out,'') in ('Pagamento de fatura','Resgate','Investimento','Entre contas proprias','Transferencia')) as eh_perna
     from cls
   ),
   pernas as (
@@ -416,7 +418,7 @@ begin
     n.classe_auto_final,                                  -- classe (regra; override no UPDATE)
     n.categoria_pluggy,                                   -- categoria_auto = categoria REAL Pluggy
     n.subtipo_final,                                      -- subtipo legível
-    n.interna_auto_final,                                 -- interna (regra; override no UPDATE)
+    coalesce(n.interna_auto_final, false),                -- interna (NOT NULL; nunca NULL)
     n.par_hash_out,                                       -- par_hash (pernas casadas)
     round(n.valor_norm, 2),
     'Pessoal',
