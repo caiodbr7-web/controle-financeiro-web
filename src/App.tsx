@@ -17,7 +17,6 @@ import { Classificar } from "./components/tabs/Classificar";
 import { Planejamento } from "./components/tabs/Planejamento";
 import { Adicionar, type MetodoAdd } from "./components/tabs/Adicionar";
 import { OpenBanking } from "./components/tabs/OpenBanking";
-import { Conciliacao } from "./components/tabs/Conciliacao";
 import { Saldo } from "./components/tabs/Saldo";
 import { Investimentos } from "./components/tabs/Investimentos";
 
@@ -29,7 +28,6 @@ const SUB_IMPORT: SubAba[] = [
   { id: "adicionar", label: "Adicionar" },
   { id: "classificar", label: "Classificar" },
   { id: "lanc", label: "Lançamentos" },
-  { id: "conciliacao", label: "Conciliação" },
   { id: "openbanking", label: "Open Banking" },
 ];
 /* sub-abas da aba Saldo (saldos das contas via Open Finance) */
@@ -165,7 +163,6 @@ export default function App() {
     { id: "conectar", label: "Conectar banco", grupo: "Importação", keywords: "pluggy open finance sincronizar adicionar", run: () => { setAddMetodo("banco"); navTo("adicionar"); } },
     { id: "classificar", label: "Classificar", grupo: "Importação", keywords: "categorizar pendencias", dot: pendClass > 0, hint: pendClass > 0 ? String(pendClass) : undefined, run: () => navTo("classificar") },
     { id: "lanc", label: "Lançamentos", grupo: "Importação", keywords: "tabela transacoes exportar", run: () => navTo("lanc") },
-    { id: "conciliacao", label: "Conciliação", grupo: "Importação", keywords: "duplicatas pdf open finance", run: () => navTo("conciliacao") },
     { id: "openbanking", label: "Open Banking", grupo: "Importação", keywords: "pluggy validacao", run: () => navTo("openbanking") },
     { id: "tema", label: "Alternar tema", grupo: "Ações", keywords: "claro escuro dark light", run: cycle },
     { id: "v-pessoal", label: "Visão: Pessoal", grupo: "Ações", run: () => setVisao("pessoal") },
@@ -316,7 +313,6 @@ export default function App() {
           {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}
           {aba === "adicionar" && <Adicionar reload={reload} metodo={addMetodo} onMetodo={setAddMetodo} />}
           {aba === "openbanking" && <OpenBanking />}
-          {aba === "conciliacao" && <Conciliacao />}
           {aba === "investimentos" && <Investimentos />}
           {ehSaldo && <Saldo aba={aba} />}
         </div>

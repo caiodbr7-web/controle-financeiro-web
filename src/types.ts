@@ -74,4 +74,4 @@ export interface InvestimentoHist {
 
 export type Visao = "ALL" | "pessoal" | "corporativo";
 export type Modo = "cartao" | "ambos" | "conta";
-export type Aba = "inicio" | "geral" | "mensal" | "diario" | "planejamento" | "classificar" | "lanc" | "adicionar" | "openbanking" | "conciliacao" | "saldo_evolucao" | "saldo_dados" | "investimentos";
+export type Aba = "inicio" | "geral" | "mensal" | "diario" | "planejamento" | "classificar" | "lanc" | "adicionar" | "openbanking" | "saldo_evolucao" | "saldo_dados" | "investimentos";
