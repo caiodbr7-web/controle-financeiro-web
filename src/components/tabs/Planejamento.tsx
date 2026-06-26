@@ -797,6 +797,73 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     );
   }
 
+  // linha de item na visão "Projeção" (uma célula por mês do horizonte, com duplo clique p/ ajuste)
+  function LinhaProj(p: Plano) {
+    return (
+      <tr key={p.id} className={p.ativo ? "" : "opacity-45"}>
+        <td className="min-w-[230px] !pl-[26px]">
+          <div className="flex items-center gap-2">
+            <input type="checkbox" checked={p.ativo} onChange={() => toggleAtivo(p)} title={p.ativo ? "ativo" : "ignorado"} className="cursor-pointer" />
+            <div className="min-w-0">
+              <div className="font-medium truncate">{p.nome}{p.categoria && <span className="text-muted text-[11px] font-normal"> · {p.categoria}</span>}</div>
+              <div className="text-muted text-[11px]">{resumoItem(p)}</div>
+            </div>
+            <CartaoToggle p={p} />
+          </div>
+        </td>
+        {meses.map((m) => {
+          const editando = editCell?.id === p.id && editCell?.k === m.k;
+          const ajustado = ovr[m.k]?.[p.id] != null;
+          const v = p.ativo ? valProj(p, m.k) : 0;
+          return (
+            <td key={m.k} onDoubleClick={() => editarCelula(p, m.k)}
+              title={p.ativo ? "duplo clique para ajustar só este mês" : undefined}
+              className={`num ${ehReceitaTipo(p.tipo) ? "text-green" : ""} ${p.ativo && !editando ? "cursor-pointer" : ""}`}>
+              {editando ? (
+                <input autoFocus className={`${inp} w-[58px] text-right`} value={editVal}
+                  onChange={(e) => setEditVal(e.target.value)}
+                  onBlur={() => salvarOverride(p, m.k)}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setEditCell(null); }} />
+              ) : (
+                <span className={ajustado ? "text-accent font-medium underline decoration-dotted underline-offset-2" : ""}
+                  title={ajustado ? "ajustado manualmente" : undefined}>
+                  {v ? fmtCell(v) : <span className="text-line">·</span>}
+                </span>
+              )}
+            </td>
+          );
+        })}
+        <td className="whitespace-nowrap text-[12px] text-right">
+          <button onClick={() => editar(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-accent transition-colors">editar</button>
+          <span className="text-line mx-1">·</span>
+          <button onClick={() => remover(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-red transition-colors">remover</button>
+        </td>
+      </tr>
+    );
+  }
+
+  // cabeçalho de um grupo colapsável na visão "Projeção": "grande nome" no topo com o total
+  // por mês do horizonte na própria linha; clicar minimiza/expande os itens (mesmo padrão do Mês).
+  function GrupoProj({ gkey, titulo, sub, valor, count, colorCls = "" }: {
+    gkey: string; titulo: string; sub?: string;
+    valor: (i: number) => number; count: number; colorCls?: string;
+  }) {
+    const col = !!colapsado[gkey];
+    return (
+      <tr className={`font-bold bg-card2 ${colorCls}`}>
+        <td className="border-t-2 !border-t-line">
+          <button onClick={() => toggleGrupo(gkey)} title={col ? "Mostrar os itens deste grupo" : "Minimizar: esconder os itens e ver só o total"}
+            className="bg-transparent border-0 p-0 cursor-pointer inline-flex items-center gap-[6px] text-left text-inherit font-bold">
+            <span className="text-muted w-[10px] text-[10px] leading-none">{col ? "▶" : "▼"}</span>
+            <span>{titulo}{sub && <span className="text-muted font-normal"> · {sub}</span>}{col && <span className="text-muted font-normal text-[11px]"> · {count} {count === 1 ? "item" : "itens"}</span>}</span>
+          </button>
+        </td>
+        {proj.map((m, i) => { const v = valor(i); return <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{v ? fmtCell(v) : <span className="text-line">·</span>}</td>; })}
+        <td className="border-t-2 !border-t-line"></td>
+      </tr>
+    );
+  }
+
   return (
     <div>
       <Toolbar
@@ -1037,70 +1104,21 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {TIPOS.map((t) => {
-                    const itens = planos.filter((p) => p.tipo === t.v);
-                    if (!itens.length) return null;
+                  {/* mesma estrutura da visão "Mês": grupos colapsáveis com o total no cabeçalho */}
+                  {(() => {
+                    const fixos = planos.filter((p) => p.tipo === "fixo");
+                    const outros = planos.filter((p) => p.tipo !== "fixo" && !ehReceitaTipo(p.tipo));
                     return (
-                      <Fragment key={t.v}>
-                        <tr className="bg-card2"><td colSpan={colCount} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">
-                          <button onClick={() => toggleGrupo("proj-" + t.v)} title={colapsado["proj-" + t.v] ? "Mostrar os itens deste grupo" : "Minimizar: esconder os itens e ver só o total"}
-                            className="bg-transparent border-0 p-0 cursor-pointer inline-flex items-center gap-[6px] text-muted font-semibold uppercase tracking-wide">
-                            <span className="w-[10px] text-[10px] leading-none">{colapsado["proj-" + t.v] ? "▶" : "▼"}</span>
-                            {t.icon} {t.label}{colapsado["proj-" + t.v] && <span className="normal-case font-normal"> · {itens.length} {itens.length === 1 ? "item" : "itens"}</span>}
-                          </button>
-                        </td></tr>
-                        {!colapsado["proj-" + t.v] && itens.map((p) => (
-                          <tr key={p.id} className={p.ativo ? "" : "opacity-45"}>
-                            <td className="min-w-[230px]">
-                              <div className="flex items-center gap-2">
-                                <input type="checkbox" checked={p.ativo} onChange={() => toggleAtivo(p)} title={p.ativo ? "ativo" : "ignorado"} className="cursor-pointer" />
-                                <div className="min-w-0">
-                                  <div className="font-medium truncate">{p.nome}{p.categoria && <span className="text-muted text-[11px] font-normal"> · {p.categoria}</span>}</div>
-                                  <div className="text-muted text-[11px]">{resumoItem(p)}</div>
-                                </div>
-                                <CartaoToggle p={p} />
-                              </div>
-                            </td>
-                            {meses.map((m) => {
-                              const editando = editCell?.id === p.id && editCell?.k === m.k;
-                              const ajustado = ovr[m.k]?.[p.id] != null;
-                              const v = p.ativo ? valProj(p, m.k) : 0;
-                              return (
-                                <td key={m.k} onDoubleClick={() => editarCelula(p, m.k)}
-                                  title={p.ativo ? "duplo clique para ajustar só este mês" : undefined}
-                                  className={`num ${ehReceitaTipo(p.tipo) ? "text-green" : ""} ${p.ativo && !editando ? "cursor-pointer" : ""}`}>
-                                  {editando ? (
-                                    <input autoFocus className={`${inp} w-[58px] text-right`} value={editVal}
-                                      onChange={(e) => setEditVal(e.target.value)}
-                                      onBlur={() => salvarOverride(p, m.k)}
-                                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setEditCell(null); }} />
-                                  ) : (
-                                    <span className={ajustado ? "text-accent font-medium underline decoration-dotted underline-offset-2" : ""}
-                                      title={ajustado ? "ajustado manualmente" : undefined}>
-                                      {v ? fmtCell(v) : <span className="text-line">·</span>}
-                                    </span>
-                                  )}
-                                </td>
-                              );
-                            })}
-                            <td className="whitespace-nowrap text-[12px] text-right">
-                              <button onClick={() => editar(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-accent transition-colors">editar</button>
-                              <span className="text-line mx-1">·</span>
-                              <button onClick={() => remover(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-red transition-colors">remover</button>
-                            </td>
-                          </tr>
-                        ))}
-                        {/* total dos recorrentes logo abaixo da lista de fixos */}
-                        {t.v === "fixo" && (
-                          <tr className="font-bold">
-                            <td className="border-t-2 !border-t-line">🔁 Gastos recorrentes <span className="text-muted font-normal">· fixos mensais</span></td>
-                            {proj.map((m, i) => <td key={m.k} className={`num border-t-2 !border-t-line ${i === 0 ? "text-accent" : ""}`}>{m.recorr ? fmtCell(m.recorr) : <span className="text-line">·</span>}</td>)}
-                            <td className="border-t-2 !border-t-line"></td>
-                          </tr>
-                        )}
-                      </Fragment>
+                      <>
+                        {/* 🔁 Gastos recorrentes (fixos) — cabeçalho com total no topo; itens logo abaixo */}
+                        {!!fixos.length && <GrupoProj gkey="proj-fixo" titulo="🔁 Gastos recorrentes" sub="fixos mensais" valor={(i) => proj[i].recorr} count={fixos.length} />}
+                        {!!fixos.length && !colapsado["proj-fixo"] && fixos.map(LinhaProj)}
+                        {/* 📦 Outros gastos (parcelamentos, pagamentos, metas) — cabeçalho com total no topo; itens abaixo */}
+                        {!!outros.length && <GrupoProj gkey="proj-outros" titulo="📦 Outros gastos" sub="parcelamento, meta…" valor={(i) => proj[i].contaOutros} count={outros.length} />}
+                        {!!outros.length && !colapsado["proj-outros"] && outros.map(LinhaProj)}
+                      </>
                     );
-                  })}
+                  })()}
                   {!loading && !planos.length && <tr><td colSpan={colCount} className="!p-4 text-muted">Nenhum item ainda. Adicione abaixo.</td></tr>}
                   {loading && <tr><td colSpan={colCount} className="!p-4 text-muted">Carregando…</td></tr>}
                 </tbody>
@@ -1113,12 +1131,6 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       <td className="border-t-2 !border-t-line">🏦 Gastos na conta <span className="text-muted font-normal">· gerais (orçado)</span></td>
                       {proj.map((m, i) => <td key={m.k} className={`num text-muted border-t-2 !border-t-line ${i === 0 ? "!text-accent" : ""}`}>{m.contaOrc ? fmtCell(m.contaOrc) : <span className="text-line">·</span>}</td>)}
                       <td className="border-t-2 !border-t-line"></td>
-                    </tr>
-                    {/* 📦 conta — outros gastos (parcelas, metas, pagamentos) */}
-                    <tr className="text-[12.5px]" title="parcelamentos, metas e pagamentos pagos pela conta (fora do cartão)">
-                      <td>📦 Outros gastos <span className="text-muted font-normal">· parcelamento, meta…</span></td>
-                      {proj.map((m, i) => <td key={m.k} className={`num text-muted ${i === 0 ? "!text-accent" : ""}`}>{m.contaOutros ? fmtCell(m.contaOutros) : <span className="text-line">·</span>}</td>)}
-                      <td></td>
                     </tr>
                     {/* 💳 cartão variável (total do cartão fora os recorrentes marcados) */}
                     <tr className="text-violet text-[12.5px]" title="total do cartão (orçamento, senão soma dos itens marcados 💳) além dos recorrentes já marcados">
@@ -1166,13 +1178,25 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       {proj.map((m) => <td key={m.k} className={`num border-t-2 !border-t-line ${m.saldo < 0 ? "text-red" : "text-green"}`}>{fmtCell(m.saldo)}</td>)}
                       <td className="border-t-2 !border-t-line"></td>
                     </tr>
+                    {/* 💰 Receitas previstas (itens do plano) — abaixo do saldo, como na visão Mês */}
+                    {(() => {
+                      const receitas = planos.filter((p) => ehReceitaTipo(p.tipo));
+                      if (!receitas.length) return null;
+                      const total = (i: number) => receitas.reduce((s, p) => s + (p.ativo ? valProj(p, meses[i].k) : 0), 0);
+                      return (
+                        <>
+                          <GrupoProj gkey="proj-receita" titulo="💰 Receitas previstas" sub="plano" valor={total} count={receitas.length} colorCls="text-green" />
+                          {!colapsado["proj-receita"] && receitas.map(LinhaProj)}
+                        </>
+                      );
+                    })()}
                   </tfoot>
                 )}
               </table>
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). O rodapé segue a mesma estrutura da visão <b>Mês</b>: <b>🔁 recorrentes</b> (fixos), <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos três, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>duplo clique</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados. Clique no nome de um grupo (🔁/💳/📌/✈️/💰) para <b>minimizar</b> e esconder seus itens.
+            Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). <b>Mesma estrutura da visão Mês</b>: <b>🔁 Gastos recorrentes</b> e <b>📦 Outros gastos</b> trazem o total no próprio cabeçalho — clique no nome para <b>minimizar</b> e esconder os itens; depois vêm <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos quatro, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>duplo clique</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
             {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
           </div>
