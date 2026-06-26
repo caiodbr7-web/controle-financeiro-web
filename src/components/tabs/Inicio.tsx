@@ -5,8 +5,8 @@ import { Panel, BarRow, Select, Seg } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
-  BRL, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dvSeries,
-  dvDiasNoMes, dvLabel, dvParcialLimite, MES_ABREV, mesCurto, normEstab,
+  BRL, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal,
+  dvDiasNoMes, dvLabel, MES_ABREV, mesCurto, normEstab,
 } from "../../lib/finance";
 import { type Plano, projetar, contribNoMes, ehReceitaTipo } from "../../lib/projecao";
 
@@ -63,13 +63,31 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   const [selKey, setSelKey] = useState("");
   const [janela, setJanela] = useState(3);
 
-  // meses disponíveis para escolher (pela data real da compra) + o mês civil atual
+  // Série diária por COMPETÊNCIA (mês da fatura/extrato), não pela data da compra.
+  // Assim cada parcela conta no mês em que cai na fatura (sofá 12x = 1 parcela/mês),
+  // e o total do mês bate com a fatura + extrato — cartão e conta juntos.
+  // O dia (eixo x) vem da data_mov; sem data válida, cai no dia 1.
+  const compSeries = useMemo(() => {
+    const map: Record<string, number[]> = {};
+    for (const d of dados) {
+      const g = dvGasto(d);
+      if (!g) continue;
+      const k = String(d.competencia || "").slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(k)) continue;
+      const m = String(d.data_mov || "").match(/^(\d{1,2})\/(\d{1,2})$/);
+      let dia = m ? +m[1] : 1;
+      if (!(dia >= 1 && dia <= 31)) dia = 1;
+      (map[k] = map[k] || new Array(31).fill(0))[dia - 1] += g;
+    }
+    return map;
+  }, [dados]);
+
+  // meses disponíveis para escolher (por competência) + o mês civil atual
   const mesesOpc = useMemo(() => {
-    const { map } = dvSeries(dados, months, "ambos");
-    const ks = new Set(Object.keys(map));
+    const ks = new Set(Object.keys(compSeries));
     ks.add(mesAtual);
     return [...ks].filter((k) => k <= mesAtual).sort().reverse();
-  }, [dados, months, mesAtual]);
+  }, [compSeries, mesAtual]);
 
   // default / correção do mês selecionado: o mais recente disponível (= mês atual)
   useEffect(() => {
@@ -80,8 +98,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   /* ---------- gasto do mês selecionado vs média da janela ---------- */
   const calc = useMemo(() => {
     if (!selKey) return null;
-    const { map } = dvSeries(dados, months, "ambos");
-    const lim = dvParcialLimite(allDados);
+    const map = compSeries;
 
     const cum = (k: string) => {
       const nd = dvDiasNoMes(k); const out: number[] = []; let s = 0;
@@ -91,14 +108,13 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
 
     const nd = dvDiasNoMes(selKey);
     const isAtual = selKey === mesAtual;
-    const completo = selKey < lim; // mês fechado E com as faturas já importadas
+    const completo = selKey < mesAtual; // fatura/extrato do mês já fechou
     const refDay = isAtual ? Math.min(hoje.getDate(), nd) : nd; // "este momento do mês"
-    // comparação justa com a média: mês completo, ou mês corrente comparado no mesmo
-    // dia. Um mês passado ainda parcial (faltam faturas) não é comparável de forma justa.
+    // comparação justa com a média: mês fechado, ou mês corrente comparado no mesmo dia.
     const comparavel = completo || isAtual;
 
-    // benchmark: média acumulada dos N meses completos ANTERIORES ao selecionado
-    const base = Object.keys(map).filter((k) => k < selKey && k < lim).sort().slice(-janela);
+    // benchmark: média acumulada dos N meses fechados ANTERIORES ao selecionado
+    const base = Object.keys(map).filter((k) => k < selKey).sort().slice(-janela);
     const bench: (number | null)[] = [];
     for (let j = 0; j < 31; j++) {
       let s = 0, c = 0;
@@ -125,16 +141,16 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
       selKey, isAtual, completo, comparavel, nd, refDay, gastoAtual, benchAtRef: benchAtRef ?? null, benchFim,
       delta, chart, serieNome, benchNome, temBench: base.length > 0, nBase: base.length,
     };
-  }, [dados, allDados, months, selKey, janela, mesAtual, hoje]);
+  }, [compSeries, selKey, janela, mesAtual, hoje]);
 
-  /* ---------- top categorias do mês selecionado ---------- */
+  /* ---------- top categorias do mês selecionado (por competência) ---------- */
   const topCats = useMemo(() => {
     if (!calc) return { rows: [] as { cat: string; val: number; itens: Lancamento[] }[], total: 0 };
     const tot: Record<string, number> = {};
     const itens: Record<string, Lancamento[]> = {};
     dados.forEach((d) => {
       const g = dvGasto(d); if (!g) return;
-      const r = dvDataReal(d); if (!r || r.k !== calc.selKey) return;
+      if (String(d.competencia || "").slice(0, 7) !== calc.selKey) return;
       const k = catKey(d);
       tot[k] = (tot[k] || 0) + g;
       (itens[k] = itens[k] || []).push(d);
@@ -242,7 +258,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
         <Panel className="!mb-0 flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
             <div className="text-muted text-[12.5px] font-medium min-w-0">
-              {dvLabel(calc.selKey)} {calc.completo ? "· mês fechado" : calc.isAtual ? "· parcial · em curso" : "· parcial · faturas por vir"} vs média {janela}m
+              {dvLabel(calc.selKey)} {calc.completo ? "· fatura fechada" : "· em curso"} vs média {janela}m
             </div>
             <div className="flex items-center gap-[6px] shrink-0">
               <Seg size="sm" value={String(janela)} onChange={(v) => setJanela(+v)} options={JANELAS} />
@@ -291,7 +307,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             )}
           </div>
           <div className="text-[11.5px] text-muted mt-2">
-            Pela data real da compra, cartão + contas.{!calc.completo ? " Parte das compras deste mês ainda está em faturas não importadas." : ""}
+            Pela competência (fatura/extrato do mês), cartão + contas — parcelas contam no mês em que caem na fatura.{!calc.completo ? " Mês ainda em curso." : ""}
           </div>
         </Panel>
 
@@ -301,7 +317,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             <BigVal
               label={`Gasto atual · ${dvLabel(calc.selKey)}`}
               value={BRL(calc.gastoAtual)}
-              sub={calc.isAtual ? `até hoje · dia ${calc.refDay}/${calc.nd}` : calc.completo ? "mês fechado" : "parcial · faturas por vir"}
+              sub={calc.isAtual ? `até hoje · dia ${calc.refDay}/${calc.nd}` : "fatura + extrato do mês"}
               dot={roxo}
             />
             <BigVal
