@@ -3,7 +3,7 @@ import type { Lancamento } from "../../types";
 import { Kpi, Select, Seg } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
-import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, catKey, dataCompleta, ehGasto, ehReceita } from "../../lib/finance";
+import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, catKey, dataCompleta, dataOrdKey, ehGasto, ehReceita } from "../../lib/finance";
 import { baixarCsv } from "../../lib/csv";
 import { useToast } from "../Toast";
 import { ArquivosPanel } from "./Arquivos";
@@ -46,9 +46,11 @@ export function Lancamentos({ dados, allDados, months }: Props) {
       (!fComp || d.competencia === fComp) && (!fBanco || d.banco === fBanco) &&
       (!fOrigem || d.origem === fOrigem) && (!fClasse || d.classe === fClasse) &&
       (!q || String(d.descricao || "").toLowerCase().includes(q) || String(d.detalhe || "").toLowerCase().includes(q)));
-    return r.sort((a, b) => sortCol === "valor"
-      ? (a.valor - b.valor) * sortDir
-      : String(a[sortCol] || "").localeCompare(String(b[sortCol] || "")) * sortDir);
+    return r.sort((a, b) => {
+      if (sortCol === "valor") return (a.valor - b.valor) * sortDir;
+      if (sortCol === "data_mov") return dataOrdKey(a).localeCompare(dataOrdKey(b)) * sortDir;
+      return String(a[sortCol] || "").localeCompare(String(b[sortCol] || "")) * sortDir;
+    });
   }, [dados, busca, periodoSet, fComp, fBanco, fOrigem, fClasse, sortCol, sortDir]);
 
   // volta pro topo da paginação quando o filtro muda

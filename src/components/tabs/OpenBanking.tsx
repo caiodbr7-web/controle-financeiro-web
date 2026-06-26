@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { Lancamento } from "../../types";
 import { Kpi, Select } from "../ui";
 import { sb } from "../../lib/supabase";
-import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, dataCompleta, ehGasto, ehReceita } from "../../lib/finance";
+import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, dataCompleta, dataOrdKey, ehGasto, ehReceita } from "../../lib/finance";
 
 /* ============================================================================
    Aba "Open Banking" — superfície de VALIDAÇÃO do Pluggy.
@@ -133,6 +133,7 @@ export function OpenBanking() {
         String(d.pluggy_account_id || "").toLowerCase().includes(q) ||
         String(d.pluggy_item_id || "").toLowerCase().includes(q)));
     return r.sort((a, b) => {
+      if (sortCol === "data_mov") return dataOrdKey(a).localeCompare(dataOrdKey(b)) * sortDir;
       const va = a[sortCol], vb = b[sortCol];
       if (typeof va === "number" && typeof vb === "number") return (va - vb) * sortDir;
       return String(va ?? "").localeCompare(String(vb ?? "")) * sortDir;

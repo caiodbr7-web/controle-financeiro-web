@@ -122,6 +122,14 @@ export function dataCompleta(d: Lancamento): string {
   return String(d.data_mov || "") || "—";
 }
 
+// chave cronológica "YYYY-MM-DD" para ORDENAR pela data do movimento (a coluna
+// "Data" guarda só "dd/mm", que ordenaria por dia). Cai na competência se inválida.
+export function dataOrdKey(d: Lancamento): string {
+  const r = dvDataReal(d);
+  if (r) return `${r.k}-${String(r.d).padStart(2, "0")}`;
+  return String(d.competencia || "").slice(0, 7) + "-00";
+}
+
 export function dvGasto(d: Lancamento): number {
   if (d.classe === "Gasto") return Math.abs(d.valor);
   if (d.classe === "Estorno/Credito") return -Math.abs(d.valor);
