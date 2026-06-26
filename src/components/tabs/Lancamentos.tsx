@@ -44,6 +44,9 @@ export function Lancamentos({ dados, allDados, months }: Props) {
   // feedback "salvando…/✓" da correção de classe/interna (separado da categoria)
   const [salvosClasse, setSalvosClasse] = useState<Record<number, string>>({});
   const [visiveis, setVisiveis] = useState(PAGINA);
+  const [sel, setSel] = useState<Set<number>>(new Set()); // ids selecionados p/ edição em massa
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [rev, setRev] = useState(0); // bump força recompute dos memos após editar em memória
 
   const bancos = useMemo(() => [...new Set(dados.map((d) => d.banco))].sort(), [dados]);
   const origens = useMemo(() => [...new Set(dados.filter((d) => !fBanco || d.banco === fBanco).map((d) => d.origem))].sort(), [dados, fBanco]);
@@ -78,16 +81,16 @@ export function Lancamentos({ dados, allDados, months }: Props) {
       if (sortCol === "data_mov") return dataOrdKey(a).localeCompare(dataOrdKey(b)) * sortDir;
       return String(a[sortCol] || "").localeCompare(String(b[sortCol] || "")) * sortDir;
     });
-  }, [dados, busca, periodoSet, fComp, fBanco, fOrigem, fClasse, visao, sortCol, sortDir]);
+  }, [dados, busca, periodoSet, fComp, fBanco, fOrigem, fClasse, visao, sortCol, sortDir, rev]);
 
   // volta pro topo da paginação quando o filtro muda
-  useEffect(() => { setVisiveis(PAGINA); }, [busca, periodoSet, fComp, fBanco, fOrigem, fClasse, visao]);
+  useEffect(() => { setVisiveis(PAGINA); setSel(new Set()); }, [busca, periodoSet, fComp, fBanco, fOrigem, fClasse, visao]);
 
   const totals = useMemo(() => {
     let gasto = 0, receita = 0;
     rows.forEach((d) => { if (ehGasto(d.classe)) gasto += Math.abs(d.valor); else if (ehReceita(d.classe)) receita += Math.abs(d.valor); });
     return { gasto, receita, saldo: receita - gasto };
-  }, [rows]);
+  }, [rows, rev]);
 
   // contadores das visões de verificação (sobre o conjunto `dados` da visão atual de natureza/modo)
   const auditoria = useMemo(() => {
@@ -98,7 +101,7 @@ export function Lancamentos({ dados, allDados, months }: Props) {
       if (ehInterna(d) && !d.par_hash) internaSemPar++;
     });
     return { aporte, rinvest, internaSemPar };
-  }, [dados]);
+  }, [dados, rev]);
 
   async function salvarCat(d: Lancamento, valor: string) {
     setSalvos((s) => ({ ...s, [d.id]: "salvando…" }));
@@ -114,10 +117,13 @@ export function Lancamentos({ dados, allDados, months }: Props) {
   async function salvarClasse(d: Lancamento, valor: string) {
     const manual = valor || null;
     setSalvosClasse((s) => ({ ...s, [d.id]: "salvando…" }));
-    const { error } = await sb.from("lancamentos").update({ classe_manual: manual }).eq("id", d.id);
+    // grava override + (quando definido) o efetivo `classe`, p/ refletir já nos dashboards
+    const patch = manual ? { classe_manual: manual, classe: manual } : { classe_manual: null };
+    const { error } = await sb.from("lancamentos").update(patch).eq("id", d.id);
     if (error) { setSalvosClasse((s) => ({ ...s, [d.id]: "" })); toast({ message: "Erro ao salvar classe: " + error.message, variant: "error" }); return; }
     d.classe_manual = manual;
     if (manual) d.classe = manual; // override aplicado: reflete já no efetivo p/ a UI
+    setRev((r) => r + 1);
     setSalvosClasse((s) => ({ ...s, [d.id]: "✓" }));
     setTimeout(() => setSalvosClasse((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
   }
@@ -125,13 +131,46 @@ export function Lancamentos({ dados, allDados, months }: Props) {
   // correção manual de "entre contas próprias" → grava em `interna_manual` (boolean override).
   async function salvarInterna(d: Lancamento, valor: boolean) {
     setSalvosClasse((s) => ({ ...s, [d.id]: "salvando…" }));
-    const { error } = await sb.from("lancamentos").update({ interna_manual: valor }).eq("id", d.id);
+    const { error } = await sb.from("lancamentos").update({ interna_manual: valor, interna: valor }).eq("id", d.id);
     if (error) { setSalvosClasse((s) => ({ ...s, [d.id]: "" })); toast({ message: "Erro ao salvar: " + error.message, variant: "error" }); return; }
     d.interna_manual = valor;
     d.interna = valor; // reflete já no efetivo p/ a UI
+    setRev((r) => r + 1);
     setSalvosClasse((s) => ({ ...s, [d.id]: "✓" }));
     setTimeout(() => setSalvosClasse((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
   }
+
+  // ---------- seleção + edição em massa ----------
+  const toggleOne = (id: number) =>
+    setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = () =>
+    setSel((cur) => {
+      const all = rows.length > 0 && rows.every((d) => cur.has(d.id));
+      return all ? new Set<number>() : new Set(rows.map((d) => d.id));
+    });
+
+  // aplica um patch (override + efetivo) a TODOS os selecionados, em lotes de 500.
+  async function bulkUpdate(patch: Record<string, unknown>, apply: (d: Lancamento) => void, label: string) {
+    const ids = [...sel];
+    if (!ids.length) return;
+    setBulkBusy(true);
+    for (let i = 0; i < ids.length; i += 500) {
+      const { error } = await sb.from("lancamentos").update(patch).in("id", ids.slice(i, i + 500));
+      if (error) { setBulkBusy(false); toast({ message: "Erro na edição em massa: " + error.message, variant: "error" }); return; }
+    }
+    dados.forEach((d) => { if (sel.has(d.id)) apply(d); });
+    setBulkBusy(false); setRev((r) => r + 1); setSel(new Set());
+    toast({ message: `${ids.length.toLocaleString("pt-BR")} ${label}`, variant: "success" });
+  }
+  // classe_manual + classe efetivo (reflete já nos dashboards; o sync mantém via coalesce).
+  const bulkClasse = (v: string) => {
+    if (!v) return;
+    bulkUpdate({ classe_manual: v, classe: v }, (d) => { d.classe_manual = v; d.classe = v; }, "lançamentos reclassificados");
+  };
+  // interna_manual + interna efetivo.
+  const bulkInterna = (v: boolean) =>
+    bulkUpdate({ interna_manual: v, interna: v }, (d) => { d.interna_manual = v; d.interna = v; },
+      v ? "marcados como entre contas próprias" : "desmarcados de entre contas próprias");
 
   function exportar() {
     baixarCsv("lancamentos", rows, [
@@ -165,6 +204,7 @@ export function Lancamentos({ dados, allDados, months }: Props) {
   const temFiltro = busca || periodo !== "all" || fComp || fBanco || fOrigem || fClasse || visao !== "all";
   const limpar = () => { setBusca(""); setPeriodo("all"); setFComp(""); setFBanco(""); setFOrigem(""); setFClasse(""); setVisao("all"); };
   const mostrados = rows.slice(0, visiveis);
+  const allSel = rows.length > 0 && rows.every((d) => sel.has(d.id));
 
   // célula de categoria (compartilhada entre tabela e cartões)
   const catCell = (d: Lancamento) => (
@@ -294,11 +334,36 @@ export function Lancamentos({ dados, allDados, months }: Props) {
         />
       </div>
 
+      {/* ----- edição em massa: barra de ação (aparece com ≥1 selecionado) ----- */}
+      {sel.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 px-3 py-[10px] bg-accent/10 border border-accent/30 rounded-[12px]">
+          <span className="text-[13px] font-semibold whitespace-nowrap">{sel.size.toLocaleString("pt-BR")} selecionado(s)</span>
+          <Select value="" onChange={bulkClasse} className="!py-[5px] !text-[12.5px]">
+            <option value="">Definir classe…</option>
+            {CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </Select>
+          <button className="btn-ghost" disabled={bulkBusy} onClick={() => bulkInterna(true)}>Marcar “entre contas”</button>
+          <button className="btn-ghost" disabled={bulkBusy} onClick={() => bulkInterna(false)}>Desmarcar “entre contas”</button>
+          <span className="text-[11.5px] text-muted">Receita/Gasto só contam se “entre contas” estiver desmarcado.</span>
+          <button className="btn-ghost ml-auto" disabled={bulkBusy} onClick={() => setSel(new Set())}>Limpar seleção</button>
+        </div>
+      )}
+
+      {/* mobile: selecionar todos do filtro atual */}
+      <div className="md:hidden mb-2">
+        <button className="btn-ghost" onClick={toggleAll}>{allSel ? "Limpar seleção" : `Selecionar todos (${rows.length.toLocaleString("pt-BR")})`}</button>
+      </div>
+
       {/* ----- desktop: tabela ----- */}
       <div className="hidden md:block bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
         <div className="max-h-[560px] overflow-auto scroll-thin">
           <table className="tbl min-w-[1040px]">
             <thead><tr>
+              <th className="sticky top-0 bg-card z-[1] w-[34px] text-center">
+                <input type="checkbox" className="accent-accent w-[14px] h-[14px] align-middle"
+                  ref={(el) => { if (el) el.indeterminate = sel.size > 0 && !allSel; }}
+                  checked={allSel} onChange={toggleAll} title="Selecionar todos (filtro atual)" />
+              </th>
               {th("competencia", "Mês")}{th("banco", "Banco")}{th("origem", "Origem")}{th("data_mov", "Data")}
               {th("descricao", "Descrição")}{th("classe", "Classe")}
               <th className="sticky top-0 bg-card z-[1]">Tipo / par</th>
@@ -307,7 +372,11 @@ export function Lancamentos({ dados, allDados, months }: Props) {
             </tr></thead>
             <tbody>
               {mostrados.map((d) => (
-                <tr key={d.id}>
+                <tr key={d.id} className={sel.has(d.id) ? "bg-accent/5" : ""}>
+                  <td className="text-center">
+                    <input type="checkbox" className="accent-accent w-[14px] h-[14px] align-middle"
+                      checked={sel.has(d.id)} onChange={() => toggleOne(d.id)} />
+                  </td>
                   <td>{mesCurto(d.competencia)}</td>
                   <td>{d.banco}</td>
                   <td>{d.origem}</td>
@@ -330,11 +399,15 @@ export function Lancamentos({ dados, allDados, months }: Props) {
       {/* ----- mobile: cartões ----- */}
       <div className="md:hidden bg-card border border-line rounded-[18px] shadow-card divide-y divide-line overflow-hidden">
         {mostrados.map((d) => (
-          <div key={d.id} className="p-[13px]">
+          <div key={d.id} className={`p-[13px] ${sel.has(d.id) ? "bg-accent/5" : ""}`}>
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[13.5px] font-medium truncate" title={d.descricao}>{d.descricao}</div>
-                <div className="text-[11.5px] text-muted truncate">{mesCurto(d.competencia)} · {d.origem} · {dataCompleta(d)}</div>
+              <div className="min-w-0 flex items-start gap-2">
+                <input type="checkbox" className="accent-accent w-[15px] h-[15px] mt-[2px] shrink-0"
+                  checked={sel.has(d.id)} onChange={() => toggleOne(d.id)} />
+                <div className="min-w-0">
+                  <div className="text-[13.5px] font-medium truncate" title={d.descricao}>{d.descricao}</div>
+                  <div className="text-[11.5px] text-muted truncate">{mesCurto(d.competencia)} · {d.origem} · {dataCompleta(d)}</div>
+                </div>
               </div>
               <div className="text-right shrink-0">
                 <div className={`tabular-nums text-[13.5px] font-medium ${d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}`}>{valCell(d)}</div>
