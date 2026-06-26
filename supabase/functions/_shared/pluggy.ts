@@ -87,7 +87,7 @@ export function bancoCanonico(blob: string): string | null {
   const n = semAcento(blob).toLowerCase();
   if (n.includes("nubank") || n.includes("nu pagamentos") || n.includes("nu financeira")) return "Nubank";
   if (n.includes("itau")) return "Itau";
-  if (n.includes("picpay")) return "PicPay";
+  if (n.includes("picpay") || n.includes("pic pay")) return "PicPay";
   if (n.includes("rico")) return "Rico";
   if (XP.test(n)) return "XP";
   if (n.includes("bradesco")) return "Bradesco";
@@ -116,13 +116,19 @@ export function resolverBanco(connector: string | null, contas: string[]): strin
   return contas.find(Boolean) || connector || "Banco";
 }
 
-/** Resolve o nome do banco de um item a partir do conector + contas da Pluggy. */
-export function resolverBancoDoItem(
+/**
+ * Resolve o banco de UMA conta (não do item). É por-conta de propósito: conectores
+ * agregadores da Pluggy (ex.: "MeuPluggy", connector_id 200) trazem, numa única
+ * conexão, contas de bancos diferentes — XP, Nubank, PicPay, Itaú… O nome real de
+ * cada banco está no name/marketingName da PRÓPRIA conta, não no conector. Resolver
+ * no nível do item rotularia todas as contas com um banco só (errado).
+ */
+export function resolverBancoDaConta(
   connectorName: string | null,
-  accounts: PluggyAccount[],
+  account: PluggyAccount,
 ): string {
-  const nomes = accounts.flatMap((a) =>
-    [a.marketingName, a.name].filter((x): x is string => !!x)
+  const nomes = [account.marketingName, account.name].filter(
+    (x): x is string => !!x,
   );
   return resolverBanco(connectorName, nomes);
 }

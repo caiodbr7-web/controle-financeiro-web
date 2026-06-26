@@ -14,7 +14,7 @@ export function bancoCanonico(blob: string): string | null {
   const n = semAcento(blob).toLowerCase();
   if (n.includes("nubank") || n.includes("nu pagamentos") || n.includes("nu financeira")) return "Nubank";
   if (n.includes("itau")) return "Itau";
-  if (n.includes("picpay")) return "PicPay";
+  if (n.includes("picpay") || n.includes("pic pay")) return "PicPay";
   if (n.includes("rico")) return "Rico";
   if (XP.test(n)) return "XP";
   if (n.includes("bradesco")) return "Bradesco";
