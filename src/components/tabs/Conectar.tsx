@@ -36,6 +36,9 @@ function precisaReconectar(status?: string | null): boolean {
   return status === "WAITING_USER_INPUT" || status === "LOGIN_ERROR" || status === "OUTDATED";
 }
 
+/* resultado do último sync de UMA conexão, exibido na própria linha */
+type ItemFeedback = { tipo: "ok" | "erro" | "reconectar"; texto: string };
+
 /* Aba "Conectar": conecta bancos via Open Finance (Pluggy) e importa as
    transacoes direto para a tabela `lancamentos`. Modo hibrido com PDFs:
    a "data de corte" evita contar a mesma transacao duas vezes. */
@@ -48,6 +51,8 @@ export function Conectar({ reload }: { reload: () => void }) {
   const [itens, setItens] = useState<PluggyItemRow[]>([]);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  // feedback por conexão (item_id -> resultado do último sync), mostrado na linha
+  const [feedback, setFeedback] = useState<Record<string, ItemFeedback>>({});
   const confirm = useConfirm();
 
   const carregar = useCallback(async () => {
@@ -73,20 +78,26 @@ export function Conectar({ reload }: { reload: () => void }) {
     }
   }, []);
 
+  // resultado de UMA conexão -> feedback exibido na linha dela
+  const feedbackDe = (r: SyncResult): ItemFeedback =>
+    precisaReconectar(r.status)
+      ? { tipo: "reconectar", texto: "O banco pediu reautenticação — clique em Reconectar." }
+      : { tipo: "ok", texto: `${r.inseridos} lançamento(s) importado(s) (${r.contas} conta(s), a partir de ${r.from}).` };
+
   // sincroniza um item ja conectado, FORCANDO a Pluggy a buscar dados frescos
   const sincronizar = useCallback(async (itemId: string) => {
     setMsg("Atualizando no banco… isso pode levar alguns segundos.");
     setBusy(true);
+    setFeedback((f) => { const n = { ...f }; delete n[itemId]; return n; });
     try {
       const r: SyncResult = await syncItem(itemId, corte, true);
-      const aviso = precisaReconectar(r.status)
-        ? " ⚠ O banco pediu reautenticação — clique em Reconectar para atualizar."
-        : "";
-      setMsg(`✓ ${r.inseridos} lançamentos importados (${r.contas} conta(s), a partir de ${r.from}).${aviso}`);
+      setFeedback((f) => ({ ...f, [itemId]: feedbackDe(r) }));
+      setMsg("");
       await carregar();
       reload();
     } catch (e) {
-      setMsg("Erro na sincronização: " + (e as Error).message);
+      setFeedback((f) => ({ ...f, [itemId]: { tipo: "erro", texto: (e as Error).message } }));
+      setMsg("");
     } finally {
       setBusy(false);
     }
@@ -96,27 +107,26 @@ export function Conectar({ reload }: { reload: () => void }) {
   const sincronizarTudo = useCallback(async () => {
     if (itens.length === 0) return;
     setBusy(true);
-    let feitos = 0;
+    setFeedback({}); // limpa o feedback anterior; cada linha é preenchida ao concluir
+    let feitos = 0, erros = 0;
     setMsg(`Atualizando no banco… 0 de ${itens.length} (pode levar até ~1 min).`);
-    const comErro: string[] = [];      // conexões que falharam
-    const comReconexao: string[] = []; // conexões que pediram reautenticação
     await Promise.all(itens.map(async (it) => {
       try {
         const r = await syncItem(it.item_id, it.sync_from ?? corte, true);
-        if (precisaReconectar(r.status)) comReconexao.push(nomeBanco(it));
+        setFeedback((f) => ({ ...f, [it.item_id]: feedbackDe(r) }));
       } catch (e) {
-        comErro.push(`${nomeBanco(it)} (${(e as Error).message})`);
+        erros++;
+        setFeedback((f) => ({ ...f, [it.item_id]: { tipo: "erro", texto: (e as Error).message } }));
       }
       feitos++;
       setMsg(`Atualizando no banco… ${feitos} de ${itens.length} (pode levar até ~1 min).`);
     }));
     await carregar();
     reload();
-    const ok = itens.length - comErro.length;
-    const partes = [`✓ ${ok} de ${itens.length} conexão(ões) sincronizada(s)`];
-    if (comErro.length) partes.push(`❌ erro em: ${comErro.join("; ")}`);
-    if (comReconexao.length) partes.push(`⚠ precisam de Reconectar: ${comReconexao.join("; ")}`);
-    setMsg(partes.join("\n"));
+    setMsg(
+      `✓ ${itens.length - erros} de ${itens.length} sincronizada(s)` +
+      (erros ? ` · ${erros} com erro (detalhes em cada linha abaixo).` : "."),
+    );
     setBusy(false);
   }, [itens, corte, carregar, reload]);
 
@@ -144,6 +154,7 @@ export function Conectar({ reload }: { reload: () => void }) {
     setMsg(`Excluindo ${nomeBanco(it)}…`);
     try {
       const avisos = await deleteItem(it.item_id);
+      setFeedback((f) => { const n = { ...f }; delete n[it.item_id]; return n; });
       setMsg(`✓ Conexão ${nomeBanco(it)} excluída.${avisos.length ? ` (avisos: ${avisos.join("; ")})` : ""}`);
       await carregar();
       reload();
@@ -262,6 +273,24 @@ export function Conectar({ reload }: { reload: () => void }) {
                     Excluir
                   </button>
                 </div>
+                {feedback[it.item_id] && (
+                  <div
+                    className={`w-full text-[12px] mt-1 rounded-[8px] px-2 py-[5px] ${
+                      feedback[it.item_id].tipo === "erro"
+                        ? "text-red bg-red/10"
+                        : feedback[it.item_id].tipo === "reconectar"
+                        ? "text-amber bg-amber/10"
+                        : "text-green bg-green/10"
+                    }`}
+                  >
+                    {feedback[it.item_id].tipo === "erro"
+                      ? "❌ "
+                      : feedback[it.item_id].tipo === "reconectar"
+                      ? "⚠ "
+                      : "✓ "}
+                    {feedback[it.item_id].texto}
+                  </div>
+                )}
               </div>
             ))}
           </div>
