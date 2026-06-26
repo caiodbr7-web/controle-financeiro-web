@@ -144,6 +144,10 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const [cartaoReal, setCartaoReal] = useState(""); // total real do cartão no mês selecionado (texto)
   const [copiado, setCopiado] = useState(false);
   const [view, setView] = useState<"mes" | "proj">("mes");
+  // grupos colapsáveis (chave -> minimizado?): cada "grande nome" (recorrentes, outros…)
+  // pode esconder seus itens e mostrar só o total na própria linha-cabeçalho
+  const [colapsado, setColapsado] = useState<Record<string, boolean>>({});
+  const toggleGrupo = useCallback((k: string) => setColapsado((c) => ({ ...c, [k]: !c[k] })), []);
 
   // projeção
   const [n, setN] = useState(12);
@@ -611,9 +615,11 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     await salvarOrcamentoCartao(total);
   }
 
-  // total geral consolidado (recorrentes + variável conta + variável cartão)
-  const geraisPrev = (c: string) => recorrPrev(c) + (contaVarPrev(c) ?? 0) + (cartaoVarPrev(c) ?? 0);
-  const geraisEfet = (c: string) => recorrEfet(c) + (contaVarEfet(c) ?? 0) + cartaoVarEfet(c);
+  // total geral consolidado = soma EXATA das quatro linhas exibidas, na ordem da planilha:
+  //   Σ Gastos gerais = 🔁 recorrentes + 📦 outros + 🏦 conta (gerais) + 💳 cartão
+  //   (equivale ao =+H17+H16+H13+H4 da célula; baldes disjuntos, nada conta em dobro)
+  const geraisPrev = (c: string) => recorrPrev(c) + contaOutrosPrev(c) + (contaGeralPrev(c) ?? 0) + (cartaoVarPrev(c) ?? 0);
+  const geraisEfet = (c: string) => recorrEfet(c) + contaOutrosEfet(c) + (contaGeralEfet(c) ?? 0) + cartaoVarEfet(c);
 
   // receita REAL do mês: o que entrou de fato (lançamentos classe Receita). Sem lançamento,
   // mês FECHADO cai só nos itens de receita do plano (não na receita prevista — coluna é "real");
@@ -675,7 +681,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     return (
       <Fragment key={p.id}>
         <tr>
-          <td className="font-medium">
+          <td className="font-medium !pl-[26px]">
             <div className="flex items-center gap-2">
               <input type="checkbox" checked={p.ativo} onChange={() => toggleAtivo(p)} title="ativo" className="cursor-pointer" />
               <div className="min-w-0">
@@ -732,6 +738,32 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     );
   }
 
+  // cabeçalho de um grupo colapsável na visão "Mês": o "grande nome" no topo já com o
+  // total do mês (hist./previsto/real) na própria linha; clicar minimiza/expande os itens.
+  function GrupoMes({ gkey, titulo, sub, histFn, prev, real, count, dashZero = false, colorCls = "" }: {
+    gkey: string; titulo: string; sub?: string;
+    histFn: (c: string) => number | null; prev: number | null; real: number | null;
+    count: number; dashZero?: boolean; colorCls?: string;
+  }) {
+    const col = !!colapsado[gkey];
+    const cell = (v: number | null) => (v == null || (dashZero && !v) ? "—" : fmtCell(v));
+    return (
+      <tr className={`font-bold bg-card2 ${colorCls}`}>
+        <td className="border-t-2 !border-t-line" colSpan={2}>
+          <button onClick={() => toggleGrupo(gkey)} title={col ? "Mostrar os itens deste grupo" : "Minimizar: esconder os itens e ver só o total"}
+            className="bg-transparent border-0 p-0 cursor-pointer inline-flex items-center gap-[6px] text-left text-inherit font-bold">
+            <span className="text-muted w-[10px] text-[10px] leading-none">{col ? "▶" : "▼"}</span>
+            <span>{titulo}{sub && <span className="text-muted font-normal"> · {sub}</span>}{col && <span className="text-muted font-normal text-[11px]"> · {count} {count === 1 ? "item" : "itens"}</span>}</span>
+          </button>
+        </td>
+        {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line">{cell(histFn(c))}</td>)}
+        <td className="num border-t-2 !border-t-line">{cell(prev)}</td>
+        <td className="num border-t-2 !border-t-line">{cell(real)}</td>
+        <td className="border-t-2 !border-t-line" colSpan={2}></td>
+      </tr>
+    );
+  }
+
   return (
     <div>
       <Toolbar
@@ -775,28 +807,31 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* GASTOS — recorrentes (fixos) listados primeiro, com o total logo abaixo */}
+                  {/* GASTOS — grupos colapsáveis: cada "grande nome" (recorrentes, outros) traz o
+                      total na própria linha-cabeçalho e lista os itens logo abaixo (dá pra minimizar). */}
                   {!!gastosMes.length && <tr className="bg-card2"><td colSpan={9} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">Gastos</td></tr>}
-                  {gastosRecorrentes.map(LinhaMes)}
+
+                  {/* 🔁 Gastos recorrentes (fixos) — cabeçalho com total no topo; itens logo abaixo */}
                   {!loading && !!gastosRecorrentes.length && (
-                    <tr className="font-bold">
-                      <td className="border-t-2 !border-t-line" colSpan={2}>🔁 Gastos recorrentes <span className="text-muted font-normal">· fixos mensais</span></td>
-                      {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line">{fmtCell(recorrEfet(c))}</td>)}
-                      <td className="num border-t-2 !border-t-line">{fmtCell(recorrPrev(comp))}</td>
-                      <td className="num border-t-2 !border-t-line">{fmtCell(recorrEfet(comp))}</td>
-                      <td className="border-t-2 !border-t-line" colSpan={2}></td>
-                    </tr>
+                    <GrupoMes gkey="recorrentes" titulo="🔁 Gastos recorrentes" sub="fixos mensais"
+                      histFn={recorrEfet} prev={recorrPrev(comp)} real={recorrEfet(comp)} count={gastosRecorrentes.length} />
                   )}
-                  {/* itens não-recorrentes (parcelas, metas, pagamentos) */}
-                  {gastosOutrosLista.map(LinhaMes)}
+                  {!colapsado.recorrentes && gastosRecorrentes.map(LinhaMes)}
+
+                  {/* 📦 Outros gastos (parcelas, metas, pagamentos) — cabeçalho com total no topo; itens abaixo */}
+                  {!loading && !!gastosOutrosLista.length && (
+                    <GrupoMes gkey="outros" titulo="📦 Outros gastos" sub="parcelamento, meta…"
+                      histFn={contaOutrosEfet} prev={contaOutrosPrev(comp)} real={contaOutrosEfet(comp)} count={gastosOutrosLista.length} dashZero />
+                  )}
+                  {!colapsado.outros && gastosOutrosLista.map(LinhaMes)}
 
                   {!loading && (!!itensMes.length || !!receitaPlano || !!contaPlano || !!cartaoPlano) && (
                     <Fragment key="resumo-gastos">
-                      {/* 🏦 conta — gerais (orçado) */}
+                      {/* 🏦 conta — gerais (orçado) · começa o bloco consolidado (borda no topo) */}
                       <tr className="text-[12.5px]" title="gasto corriqueiro da conta (Pix/débito) que você orça; realizado = o que saiu da conta além dos recorrentes e dos itens avulsos">
-                        <td colSpan={2}>🏦 Gastos na conta <span className="text-muted font-normal">· gerais (orçado)</span></td>
-                        {histMeses.map((c) => { const v = contaGeralEfet(c); return <td key={c} className="num text-muted">{v == null ? "—" : fmtCell(v)}</td>; })}
-                        <td className="num text-muted !py-1">
+                        <td colSpan={2} className="border-t-2 !border-t-line">🏦 Gastos na conta <span className="text-muted font-normal">· gerais (orçado)</span></td>
+                        {histMeses.map((c) => { const v = contaGeralEfet(c); return <td key={c} className="num text-muted border-t-2 !border-t-line">{v == null ? "—" : fmtCell(v)}</td>; })}
+                        <td className="num text-muted !py-1 border-t-2 !border-t-line">
                           {orcEdit === "conta" ? (
                             <input autoFocus className={`${inp} w-[84px] text-right`} value={orcVal}
                               onChange={(e) => setOrcVal(e.target.value)} onBlur={salvarOrcConta}
@@ -808,16 +843,8 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                             </button>
                           )}
                         </td>
-                        <td className="num text-muted">{(() => { const v = contaGeralEfet(comp); return v == null ? "—" : fmtCell(v); })()}</td>
-                        <td colSpan={2}></td>
-                      </tr>
-                      {/* 📦 conta — outros gastos (parcelas, metas, pagamentos) */}
-                      <tr className="text-[12.5px]" title="parcelamentos, metas e pagamentos pagos pela conta (fora do cartão) — somados dos itens acima">
-                        <td colSpan={2}>📦 Outros gastos <span className="text-muted font-normal">· parcelamento, meta…</span></td>
-                        {histMeses.map((c) => { const v = contaOutrosEfet(c); return <td key={c} className="num text-muted">{v ? fmtCell(v) : "—"}</td>; })}
-                        <td className="num text-muted">{contaOutrosPrev(comp) ? fmtCell(contaOutrosPrev(comp)) : "—"}</td>
-                        <td className="num text-muted">{contaOutrosEfet(comp) ? fmtCell(contaOutrosEfet(comp)) : "—"}</td>
-                        <td colSpan={2}></td>
+                        <td className="num text-muted border-t-2 !border-t-line">{(() => { const v = contaGeralEfet(comp); return v == null ? "—" : fmtCell(v); })()}</td>
+                        <td colSpan={2} className="border-t-2 !border-t-line"></td>
                       </tr>
                       {/* 💳 cartão variável, fora os recorrentes marcados */}
                       <tr className="text-violet text-[12.5px]" title="o que caiu no cartão além dos recorrentes marcados — vem dos lançamentos importados (origem Cartao)">
@@ -904,7 +931,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (duplo clique). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦 e 💳, clique em <b className="text-accent">↑ orçar</b> para preencher o orçamento com a <b>média dos meses fechados</b> (você ajusta antes de salvar).
+            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (duplo clique). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦 e 💳, clique em <b className="text-accent">↑ orçar</b> para preencher o orçamento com a <b>média dos meses fechados</b> (você ajusta antes de salvar). Clique no nome de um grupo (<b>🔁 Gastos recorrentes</b>, <b>📦 Outros gastos</b>) para <b>minimizar</b> — os itens somem e fica só o total na linha-cabeçalho. O <b>Σ Gastos gerais</b> é a soma das quatro linhas acima: <b>🔁 recorrentes + 📦 outros + 🏦 conta (gerais) + 💳 cartão</b>.
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
             {!temOrcConta && <> <span className="text-amber">{MSG_MIGRACAO_CONTA}</span></>}
             {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
@@ -935,8 +962,14 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                     if (!itens.length) return null;
                     return (
                       <Fragment key={t.v}>
-                        <tr className="bg-card2"><td colSpan={colCount} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">{t.icon} {t.label}</td></tr>
-                        {itens.map((p) => (
+                        <tr className="bg-card2"><td colSpan={colCount} className="!py-[6px] text-[11px] uppercase tracking-wide text-muted font-semibold">
+                          <button onClick={() => toggleGrupo("proj-" + t.v)} title={colapsado["proj-" + t.v] ? "Mostrar os itens deste grupo" : "Minimizar: esconder os itens e ver só o total"}
+                            className="bg-transparent border-0 p-0 cursor-pointer inline-flex items-center gap-[6px] text-muted font-semibold uppercase tracking-wide">
+                            <span className="w-[10px] text-[10px] leading-none">{colapsado["proj-" + t.v] ? "▶" : "▼"}</span>
+                            {t.icon} {t.label}{colapsado["proj-" + t.v] && <span className="normal-case font-normal"> · {itens.length} {itens.length === 1 ? "item" : "itens"}</span>}
+                          </button>
+                        </td></tr>
+                        {!colapsado["proj-" + t.v] && itens.map((p) => (
                           <tr key={p.id} className={p.ativo ? "" : "opacity-45"}>
                             <td className="min-w-[230px]">
                               <div className="flex items-center gap-2">
@@ -1059,7 +1092,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             </div>
           </div>
           <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). O rodapé segue a mesma estrutura da visão <b>Mês</b>: <b>🔁 recorrentes</b> (fixos), <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos três, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>duplo clique</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
+            Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). O rodapé segue a mesma estrutura da visão <b>Mês</b>: <b>🔁 recorrentes</b> (fixos), <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos três, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>duplo clique</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados. Clique no nome de um grupo (🔁/💳/📌/✈️/💰) para <b>minimizar</b> e esconder seus itens.
             {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
             {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
           </div>
