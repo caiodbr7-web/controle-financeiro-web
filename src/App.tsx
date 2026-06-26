@@ -137,7 +137,13 @@ export default function App() {
       : allDados.filter((d) => visao === "pessoal" ? d.categoria_manual !== "Corporativo" : d.categoria_manual === "Corporativo"),
     [allDados, visao]
   );
-  const months = useMemo(() => [...new Set(dados.map((d) => d.competencia))].sort(), [dados]);
+  // competências até o mês civil atual (rows de competência futura são alocados
+  // pela data real da compra; não devem criar meses-fantasma nas abas por competência)
+  const months = useMemo(() => {
+    const h = new Date();
+    const curK = h.getFullYear() + "-" + String(h.getMonth() + 1).padStart(2, "0");
+    return [...new Set(dados.map((d) => d.competencia))].filter((c) => String(c).slice(0, 7) <= curK).sort();
+  }, [dados]);
 
   // pendência global de classificação (pontinho na navegação)
   const pendClass = useMemo(

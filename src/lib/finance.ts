@@ -130,11 +130,15 @@ export function mvOrigemOk(origem: string, modo: Modo): boolean {
 
 // limite de parciais: cartão/ambos usam a regra das faturas; conta só exclui o mês atual
 export function dvParcialLimite(allDados: Lancamento[]): string {
+  const h = new Date();
+  const curK = h.getFullYear() + "-" + String(h.getMonth() + 1).padStart(2, "0");
   let max = "";
   for (const d of allDados) {
     if (String(d.origem || "").startsWith("Cartao")) {
       const c = String(d.competencia).slice(0, 7);
-      if (c > max) max = c;
+      // ignora competências futuras (faturas que o Pluggy adianta) — elas não
+      // estendem o horizonte de meses "completos".
+      if (c > max && c <= curK) max = c;
     }
   }
   return max ? dvAddMes(max, -1) : "9999-99";
