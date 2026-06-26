@@ -4,7 +4,7 @@ import { useConfirm } from "../Confirm";
 import { useToast } from "../Toast";
 import { sb } from "../../lib/supabase";
 import type { Lancamento } from "../../types";
-import { BRL, CATEGORIAS, dvAddMes, dvLabel, ehGasto, ehReceita } from "../../lib/finance";
+import { BRL, CATEGORIAS, dvAddMes, dvLabel, mesComp, valorGasto, valorReceita } from "../../lib/finance";
 import {
   type Plano, type TipoPlano, TIPOS, mesAtual, horizonte, projetar,
   contribNoMes, fimEfetivo, ehReceitaTipo, mesesEntre,
@@ -223,7 +223,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   // ---------- realizado automático (lançamentos vinculados) ----------
   function matchLink(d: Lancamento, p: Plano) {
     if (!p.link_categoria && !p.link_texto) return false;
-    if (!ehGasto(d.classe)) return false;
+    if (valorGasto(d) <= 0) return false; // gasto real, não-interno (exclui transferência interna/aporte)
     if (p.link_categoria && d.categoria_manual !== p.link_categoria) return false;
     if (p.link_texto && !String(d.descricao || "").toLowerCase().includes(p.link_texto.toLowerCase())) return false;
     return true;
@@ -236,7 +236,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       todos.forEach((c) => {
         if (!p.link_categoria && !p.link_texto) { out[p.id][c] = null; return; }
         let sum = 0, cnt = 0;
-        lancamentos.forEach((d) => { if (String(d.competencia).slice(0, 7) === c && matchLink(d, p)) { sum += Math.abs(d.valor); cnt++; } });
+        lancamentos.forEach((d) => { if (mesComp(d) === c && matchLink(d, p)) { sum += valorGasto(d); cnt++; } });
         out[p.id][c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
       });
     });
@@ -244,15 +244,17 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   }, [planos, lancamentos, comp, histMeses]);
 
   // ---------- total REAL do cartão (lançamentos com origem "Cartao...") por mês ----------
-  // O que de fato caiu no cartão em cada mês: soma dos gastos importados cuja origem
-  // começa com "Cartao" (mesmo critério das outras telas, ver mvOrigemOk em finance.ts).
+  // O que de fato caiu no cartão em cada mês: soma dos gastos importados (classe Gasto,
+  // NÃO-interna — exclui pagamento de fatura/transf.) cuja origem começa com "Cartao".
+  // Eixo = competência (mesComp); valorGasto respeita interna e desconta estorno.
   const autosCartao = useMemo(() => {
     const todos = [...histMeses, comp];
     const out: Record<string, number | null> = {};
     todos.forEach((c) => {
       let sum = 0, cnt = 0;
       lancamentos.forEach((d) => {
-        if (String(d.competencia).slice(0, 7) === c && ehGasto(d.classe) && String(d.origem || "").startsWith("Cartao")) { sum += Math.abs(d.valor); cnt++; }
+        const g = valorGasto(d);
+        if (mesComp(d) === c && g > 0 && String(d.origem || "").startsWith("Cartao")) { sum += g; cnt++; }
       });
       out[c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
     });
@@ -260,29 +262,33 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   }, [lancamentos, comp, histMeses]);
 
   // ---------- total REAL da conta (lançamentos com origem "Conta...") por mês ----------
-  // O que de fato saiu da conta (Pix, débito, transferências) em cada mês.
+  // O que de fato saiu da conta (Pix, débito) em cada mês, excluindo transferências
+  // internas/aportes (valorGasto = 0 quando interna).
   const autosConta = useMemo(() => {
     const todos = [...histMeses, comp];
     const out: Record<string, number | null> = {};
     todos.forEach((c) => {
       let sum = 0, cnt = 0;
       lancamentos.forEach((d) => {
-        if (String(d.competencia).slice(0, 7) === c && ehGasto(d.classe) && String(d.origem || "").startsWith("Conta")) { sum += Math.abs(d.valor); cnt++; }
+        const g = valorGasto(d);
+        if (mesComp(d) === c && g > 0 && String(d.origem || "").startsWith("Conta")) { sum += g; cnt++; }
       });
       out[c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
     });
     return out;
   }, [lancamentos, comp, histMeses]);
 
-  // ---------- total REAL de RECEITAS (lançamentos classe "Receita") por mês ----------
-  // O que de fato entrou no mês (salário, freela, rendimentos) — base do Saldo do mês real.
+  // ---------- total REAL de RECEITAS (classe Receita, NÃO-interna) por mês ----------
+  // O que de fato entrou no mês (salário, freela) — base do Saldo do mês real. Exclui
+  // receita de investimento e transferências internas (valorReceita já filtra).
   const autosReceita = useMemo(() => {
     const todos = [...histMeses, comp];
     const out: Record<string, number | null> = {};
     todos.forEach((c) => {
       let sum = 0, cnt = 0;
       lancamentos.forEach((d) => {
-        if (String(d.competencia).slice(0, 7) === c && ehReceita(d.classe)) { sum += Math.abs(d.valor); cnt++; }
+        const r = valorReceita(d);
+        if (mesComp(d) === c && r > 0) { sum += r; cnt++; }
       });
       out[c] = cnt > 0 ? Math.round(sum * 100) / 100 : null;
     });

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { Lancamento } from "../types";
 import { BRL, catKey, corCategoria, dataCompleta } from "../lib/finance";
+import { ehInterna } from "../lib/lancClasses";
 
 export interface ModalData { title: string; rows: Lancamento[]; }
 
@@ -62,11 +63,12 @@ export function Modal({ data, onClose }: { data: ModalData | null; onClose: () =
           </table>
           <h4 className="text-[11px] text-muted uppercase tracking-[.05em] mt-[18px] mb-2 font-semibold">Transações ({data.rows.length})</h4>
           <div className="max-h-[420px] overflow-auto scroll-thin">
-            <table className="tbl min-w-[520px]">
+            <table className="tbl min-w-[620px]">
               <thead><tr>
                 <th>Data</th>
                 <th>Descrição</th>
                 <th>Origem</th>
+                <th>Classe / tipo</th>
                 <th>Categoria</th>
                 <th className="num">Valor</th>
               </tr></thead>
@@ -76,6 +78,13 @@ export function Modal({ data, onClose }: { data: ModalData | null; onClose: () =
                     <td className="whitespace-nowrap">{dataCompleta(d)}</td>
                     <td className="max-w-[230px] truncate" title={d.descricao}>{d.descricao}</td>
                     <td>{d.origem}</td>
+                    <td className="whitespace-nowrap">
+                      <span className="inline-flex items-center gap-[5px]">
+                        {d.classe || "—"}
+                        {ehInterna(d) && <span className="text-violet text-[11px]" title="Entre contas próprias">⇄</span>}
+                        {d.subtipo && <span className="text-muted text-[11px]">· {d.subtipo}</span>}
+                      </span>
+                    </td>
                     <td>{catKey(d)}</td>
                     <td className={`num ${d.valor < 0 ? "text-red" : "text-green"}`}>{BRL(d.valor)}</td>
                   </tr>

@@ -7,7 +7,7 @@ import { Panel, Kpi, Seg, Toolbar } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import {
   BRL, brlShort, ehGasto, ehReceita, ehTransfer, corChave, ordemChave,
-  dvLabel, dvParcialLimite, mesReal,
+  dvLabel, dvParcialLimite, mesComp, valorGasto, valorReceita, valorAporte, valorReceitaInvest,
 } from "../../lib/finance";
 
 interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[]; openModal: (t: string, r: Lancamento[]) => void; }
@@ -16,15 +16,16 @@ const PERIODOS = [
   { v: "6", label: "6m" }, { v: "12", label: "12m" }, { v: "24", label: "24m" }, { v: "all", label: "Tudo" },
 ];
 
-/* Toda esta aba agrupa pelo MÊS REAL da compra/movimento (não pela competência da fatura). */
+/* Toda esta aba agrupa pela COMPETÊNCIA (fatura/extrato do mês), eixo único do contrato.
+   Gasto/receita já excluem transferência interna e aporte (ver lancClasses). */
 export function VisaoGeral({ dados, allDados, openModal }: Props) {
   const [periodo, setPeriodo] = useState("12");
   const cc = useChart();
 
-  const rows = useMemo(() => dados.map((d) => ({ d, mk: mesReal(d) })), [dados]);
+  const rows = useMemo(() => dados.map((d) => ({ d, mk: mesComp(d) })), [dados]);
   const lim = useMemo(() => dvParcialLimite(allDados), [allDados]);
 
-  // meses reais disponíveis, sem o mês civil atual (sempre incompleto)
+  // meses de competência disponíveis, sem o mês civil atual (sempre incompleto)
   const mesesReais = useMemo(() => {
     const h = new Date();
     const atual = h.getFullYear() + "-" + String(h.getMonth() + 1).padStart(2, "0");
@@ -40,14 +41,16 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
   const rotulo = (k: string) => dvLabel(k) + (k >= lim ? "*" : "");
 
   const agg = (k: string) => {
-    let rec = 0, gas = 0, tr = 0;
+    let rec = 0, gas = 0, tr = 0, inv = 0, recInv = 0;
     for (const r of rows) {
       if (r.mk !== k) continue;
-      if (ehGasto(r.d.classe)) gas += Math.abs(r.d.valor);
-      else if (ehReceita(r.d.classe)) rec += Math.abs(r.d.valor);
-      else if (ehTransfer(r.d.classe)) tr += r.d.valor;
+      gas += valorGasto(r.d);
+      rec += valorReceita(r.d);
+      inv += valorAporte(r.d);
+      recInv += valorReceitaInvest(r.d);
+      if (ehTransfer(r.d.classe)) tr += r.d.valor;
     }
-    return { rec, gas, tr, saldo: rec - gas };
+    return { rec, gas, tr, saldo: rec - gas, inv, recInv };
   };
   const aggs = useMemo(() => vm.map((k) => ({ m: k, ...agg(k) })), [rows, vm]);
 
@@ -62,21 +65,29 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
     const last3 = vm.slice(Math.max(0, ri - 2), ri + 1); const n = last3.length || 1;
     const av = { rec: 0, gas: 0, saldo: 0 };
     last3.forEach((x) => { const aa = agg(x); av.rec += aa.rec; av.gas += aa.gas; av.saldo += aa.saldo; });
-    return { label: dvLabel(ref), cur, av: { rec: av.rec / n, gas: av.gas / n, saldo: av.saldo / n } };
-  }, [rows, vm, lim]);
+    const temInvest = aggs.some((a) => a.inv > 0 || a.recInv > 0);
+    return { label: dvLabel(ref), cur, temInvest, av: { rec: av.rec / n, gas: av.gas / n, saldo: av.saldo / n } };
+  }, [rows, vm, lim, aggs]);
 
-  const pivot = (classFn: (c: string | null) => boolean, keyFn: (d: Lancamento) => string) => {
+  // empilhado por cartão/conta (gasto) e por banco (receita). O valor por segmento
+  // usa o helper do contrato (valFn): respeita `interna` e desconta estorno no gasto,
+  // para o total do empilhado bater com as barras de Despesas/Receitas.
+  const pivot = (
+    classFn: (c: string | null) => boolean,
+    keyFn: (d: Lancamento) => string,
+    valFn: (d: Lancamento) => number,
+  ) => {
     const keys = [...new Set(rows.filter((r) => classFn(r.d.classe)).map((r) => keyFn(r.d)))]
       .sort((a, b) => ordemChave(a) - ordemChave(b) || String(a).localeCompare(String(b)));
     const data = vm.map((k) => {
       const row: any = { mes: rotulo(k), _m: k };
-      keys.forEach((kk) => { row[kk] = rows.filter((r) => r.mk === k && classFn(r.d.classe) && keyFn(r.d) === kk).reduce((s, r) => s + Math.abs(r.d.valor), 0); });
+      keys.forEach((kk) => { row[kk] = rows.filter((r) => r.mk === k && keyFn(r.d) === kk).reduce((s, r) => s + valFn(r.d), 0); });
       return row;
     });
     return { keys, data };
   };
-  const gastoPivot = useMemo(() => pivot(ehGasto, (d) => d.origem), [rows, vm, lim]);
-  const recPivot = useMemo(() => pivot(ehReceita, (d) => d.banco), [rows, vm, lim]);
+  const gastoPivot = useMemo(() => pivot(ehGasto, (d) => d.origem, valorGasto), [rows, vm, lim]);
+  const recPivot = useMemo(() => pivot(ehReceita, (d) => d.banco, valorReceita), [rows, vm, lim]);
 
   const chartData = aggs.map((a) => ({ mes: rotulo(a.m), Receitas: a.rec, Despesas: a.gas, Saldo: a.saldo, _m: a.m }));
 
@@ -88,7 +99,7 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
       <Toolbar
         right={vm.length > 0 && (
           <span className="text-muted text-[12px]">
-            pela data da compra · {dvLabel(vm[0])} — {dvLabel(vm[vm.length - 1])} · {vm.length} meses
+            por competência · {dvLabel(vm[0])} — {dvLabel(vm[vm.length - 1])} · {vm.length} meses
           </span>
         )}
       >
@@ -104,7 +115,15 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
         </div>
       )}
 
-      <Panel title="Evolução mensal" sub="(pela data da compra · clique nas barras p/ detalhar)">
+      {/* investimentos do mês de referência — só aparece quando há aporte/renda classificados */}
+      {kpis && kpis.temInvest && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
+          <Kpi title="Investido no mês" value={BRL(kpis.cur.inv)} sub={`${kpis.label} · aportes (Σ Aporte)`} color="text-violet" />
+          <Kpi title="Renda de investimentos" value={BRL(kpis.cur.recInv)} sub={`${kpis.label} · rendimentos/dividendos`} color="text-green" />
+        </div>
+      )}
+
+      <Panel title="Evolução mensal" sub="(por competência · clique nas barras p/ detalhar)">
         <div className="h-[clamp(280px,42vh,420px)]">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
@@ -148,6 +167,8 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
               <th className="num">Receitas</th>
               <th className="num">Despesas</th>
               <th className="num">Saldo</th>
+              <th className="num">Investido</th>
+              <th className="num">Renda invest.</th>
               <th className="num">Transf. / Pagtos</th>
             </tr></thead>
             <tbody>
@@ -157,6 +178,8 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
                   <td className="num text-green">{BRL(a.rec)}</td>
                   <td className="num text-red">{BRL(a.gas)}</td>
                   <td className={`num ${a.saldo >= 0 ? "text-green" : "text-red"}`}>{BRL(a.saldo)}</td>
+                  <td className="num text-violet">{a.inv ? BRL(a.inv) : "—"}</td>
+                  <td className="num text-green">{a.recInv ? BRL(a.recInv) : "—"}</td>
                   <td className="num">{BRL(a.tr)}</td>
                 </tr>
               ))}
@@ -164,7 +187,7 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
           </table>
         </div>
         <div className="text-muted text-[12px] mt-2">
-          Agrupado pela <b>data real da compra/movimento</b> (não pela competência da fatura). Meses com * ainda podem receber compras das próximas faturas; o mês atual fica de fora.
+          Agrupado pela <b>competência</b> (fatura/extrato do mês) — parcelas contam no mês em que caem. Receitas/Despesas excluem transferências internas e aportes; <b>Investido</b> = aportes (Σ Aporte) e <b>Renda invest.</b> = rendimentos/dividendos recebidos. Meses com * ainda podem receber faturas futuras; o mês atual fica de fora.
         </div>
       </Panel>
     </div>

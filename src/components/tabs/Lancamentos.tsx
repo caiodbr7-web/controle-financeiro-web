@@ -4,6 +4,12 @@ import { Kpi, Select, Seg } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
 import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, catKey, dataCompleta, dataOrdKey, ehGasto, ehReceita } from "../../lib/finance";
+import {
+  CLASSES,
+  ehInterna,
+  ehAporte,
+  ehReceitaInvest,
+} from "../../lib/lancClasses";
 import { baixarCsv } from "../../lib/csv";
 import { useToast } from "../Toast";
 import { ArquivosPanel } from "./Arquivos";
@@ -13,6 +19,14 @@ interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[];
 const PERIODOS = [
   { v: "all", label: "Tudo" }, { v: "12", label: "12m" }, { v: "6", label: "6m" }, { v: "3", label: "3m" },
 ];
+// visões de verificação (auditoria do dono) — filtram sobre as classes/flags efetivas
+const VISOES = [
+  { v: "all", label: "Todos" },
+  { v: "aporte", label: "Aportes" },
+  { v: "rinvest", label: "Renda invest." },
+  { v: "interna_sem_par", label: "Interna s/ par" },
+] as const;
+type VisaoLanc = (typeof VISOES)[number]["v"];
 const PAGINA = 200;
 
 export function Lancamentos({ dados, allDados, months }: Props) {
@@ -23,9 +37,12 @@ export function Lancamentos({ dados, allDados, months }: Props) {
   const [fBanco, setFBanco] = useState("");
   const [fOrigem, setFOrigem] = useState("");
   const [fClasse, setFClasse] = useState("");
+  const [visao, setVisao] = useState<VisaoLanc>("all");
   const [sortCol, setSortCol] = useState<keyof Lancamento>("competencia");
   const [sortDir, setSortDir] = useState(-1);
   const [salvos, setSalvos] = useState<Record<number, string>>({});
+  // feedback "salvando…/✓" da correção de classe/interna (separado da categoria)
+  const [salvosClasse, setSalvosClasse] = useState<Record<number, string>>({});
   const [visiveis, setVisiveis] = useState(PAGINA);
 
   const bancos = useMemo(() => [...new Set(dados.map((d) => d.banco))].sort(), [dados]);
@@ -39,28 +56,49 @@ export function Lancamentos({ dados, allDados, months }: Props) {
     return new Set(ms.slice(-(parseInt(periodo, 10) || 12)));
   }, [dados, periodo]);
 
+  // visão de verificação: filtra sobre as classes/flags EFETIVAS já gravadas em `lancamentos`
+  const passaVisao = (d: Lancamento): boolean => {
+    if (visao === "aporte") return ehAporte(d.classe);
+    if (visao === "rinvest") return ehReceitaInvest(d.classe);
+    // interna marcada (entre contas próprias) mas sem perna casada — auditar
+    if (visao === "interna_sem_par") return ehInterna(d) && !d.par_hash;
+    return true;
+  };
+
   const rows = useMemo(() => {
     const q = busca.toLowerCase();
     const r = dados.filter((d) =>
       (!periodoSet || periodoSet.has(d.competencia)) &&
       (!fComp || d.competencia === fComp) && (!fBanco || d.banco === fBanco) &&
       (!fOrigem || d.origem === fOrigem) && (!fClasse || d.classe === fClasse) &&
+      passaVisao(d) &&
       (!q || String(d.descricao || "").toLowerCase().includes(q) || String(d.detalhe || "").toLowerCase().includes(q)));
     return r.sort((a, b) => {
       if (sortCol === "valor") return (a.valor - b.valor) * sortDir;
       if (sortCol === "data_mov") return dataOrdKey(a).localeCompare(dataOrdKey(b)) * sortDir;
       return String(a[sortCol] || "").localeCompare(String(b[sortCol] || "")) * sortDir;
     });
-  }, [dados, busca, periodoSet, fComp, fBanco, fOrigem, fClasse, sortCol, sortDir]);
+  }, [dados, busca, periodoSet, fComp, fBanco, fOrigem, fClasse, visao, sortCol, sortDir]);
 
   // volta pro topo da paginação quando o filtro muda
-  useEffect(() => { setVisiveis(PAGINA); }, [busca, periodoSet, fComp, fBanco, fOrigem, fClasse]);
+  useEffect(() => { setVisiveis(PAGINA); }, [busca, periodoSet, fComp, fBanco, fOrigem, fClasse, visao]);
 
   const totals = useMemo(() => {
     let gasto = 0, receita = 0;
     rows.forEach((d) => { if (ehGasto(d.classe)) gasto += Math.abs(d.valor); else if (ehReceita(d.classe)) receita += Math.abs(d.valor); });
     return { gasto, receita, saldo: receita - gasto };
   }, [rows]);
+
+  // contadores das visões de verificação (sobre o conjunto `dados` da visão atual de natureza/modo)
+  const auditoria = useMemo(() => {
+    let aporte = 0, rinvest = 0, internaSemPar = 0;
+    dados.forEach((d) => {
+      if (ehAporte(d.classe)) aporte += Math.abs(d.valor);
+      if (ehReceitaInvest(d.classe)) rinvest += Math.abs(d.valor);
+      if (ehInterna(d) && !d.par_hash) internaSemPar++;
+    });
+    return { aporte, rinvest, internaSemPar };
+  }, [dados]);
 
   async function salvarCat(d: Lancamento, valor: string) {
     setSalvos((s) => ({ ...s, [d.id]: "salvando…" }));
@@ -71,6 +109,30 @@ export function Lancamentos({ dados, allDados, months }: Props) {
     setTimeout(() => setSalvos((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
   }
 
+  // correção manual da CLASSE → grava em `classe_manual` (override). A re-tradução respeita.
+  // Espelha o efetivo `d.classe` na hora só p/ a UI refletir; o efetivo real é recomputado no banco.
+  async function salvarClasse(d: Lancamento, valor: string) {
+    const manual = valor || null;
+    setSalvosClasse((s) => ({ ...s, [d.id]: "salvando…" }));
+    const { error } = await sb.from("lancamentos").update({ classe_manual: manual }).eq("id", d.id);
+    if (error) { setSalvosClasse((s) => ({ ...s, [d.id]: "" })); toast({ message: "Erro ao salvar classe: " + error.message, variant: "error" }); return; }
+    d.classe_manual = manual;
+    if (manual) d.classe = manual; // override aplicado: reflete já no efetivo p/ a UI
+    setSalvosClasse((s) => ({ ...s, [d.id]: "✓" }));
+    setTimeout(() => setSalvosClasse((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
+  }
+
+  // correção manual de "entre contas próprias" → grava em `interna_manual` (boolean override).
+  async function salvarInterna(d: Lancamento, valor: boolean) {
+    setSalvosClasse((s) => ({ ...s, [d.id]: "salvando…" }));
+    const { error } = await sb.from("lancamentos").update({ interna_manual: valor }).eq("id", d.id);
+    if (error) { setSalvosClasse((s) => ({ ...s, [d.id]: "" })); toast({ message: "Erro ao salvar: " + error.message, variant: "error" }); return; }
+    d.interna_manual = valor;
+    d.interna = valor; // reflete já no efetivo p/ a UI
+    setSalvosClasse((s) => ({ ...s, [d.id]: "✓" }));
+    setTimeout(() => setSalvosClasse((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
+  }
+
   function exportar() {
     baixarCsv("lancamentos", rows, [
       { label: "Competência", value: (d) => mesCurto(d.competencia) },
@@ -79,6 +141,9 @@ export function Lancamentos({ dados, allDados, months }: Props) {
       { label: "Data", value: (d) => dataCompleta(d) },
       { label: "Descrição", value: (d) => d.descricao },
       { label: "Classe", value: (d) => d.classe },
+      { label: "Subtipo", value: (d) => d.subtipo || "" },
+      { label: "Interna", value: (d) => (ehInterna(d) ? "sim" : "nao") },
+      { label: "Par casado", value: (d) => (d.par_hash ? "sim" : "nao") },
       { label: "Categoria", value: (d) => catKey(d) },
       { label: "Valor", value: (d) => Number(d.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
       { label: "Moeda", value: (d) => d.moeda || "BRL" },
@@ -97,8 +162,8 @@ export function Lancamentos({ dados, allDados, months }: Props) {
     );
   }
 
-  const temFiltro = busca || periodo !== "all" || fComp || fBanco || fOrigem || fClasse;
-  const limpar = () => { setBusca(""); setPeriodo("all"); setFComp(""); setFBanco(""); setFOrigem(""); setFClasse(""); };
+  const temFiltro = busca || periodo !== "all" || fComp || fBanco || fOrigem || fClasse || visao !== "all";
+  const limpar = () => { setBusca(""); setPeriodo("all"); setFComp(""); setFBanco(""); setFOrigem(""); setFClasse(""); setVisao("all"); };
   const mostrados = rows.slice(0, visiveis);
 
   // célula de categoria (compartilhada entre tabela e cartões)
@@ -108,6 +173,57 @@ export function Lancamentos({ dados, allDados, months }: Props) {
       {salvos[d.id] && <span className="text-[12px] text-green">{salvos[d.id]}</span>}
     </span>
   );
+
+  // seletor de CLASSE: grava em `classe_manual` (override). Valor exibido = classe efetiva.
+  const classeCell = (d: Lancamento) => (
+    <span className="inline-flex items-center gap-2 min-w-0">
+      <Select
+        value={d.classe || ""}
+        onChange={(v) => salvarClasse(d, v)}
+        className={`!pl-2 !py-[5px] !text-[12.5px] ${d.classe_manual ? "border-accent" : ""}`}
+      >
+        <option value="">— sem classe —</option>
+        {CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+      </Select>
+      {d.classe_manual && <span className="text-[10px] text-accent" title="Classe corrigida na mão (override)">✎</span>}
+      {salvosClasse[d.id] && <span className="text-[12px] text-green">{salvosClasse[d.id]}</span>}
+    </span>
+  );
+
+  // selos: entre contas próprias (interna), subtipo, e par casado
+  const selos = (d: Lancamento) => (
+    <span className="inline-flex flex-wrap items-center gap-[5px]">
+      {ehInterna(d) && (
+        <span className="inline-flex items-center rounded-full bg-violet/15 text-violet px-[7px] py-[1px] text-[10.5px] font-semibold" title="Movimento entre contas próprias (não entra em gasto/receita)">
+          ⇄ interna{d.interna_manual != null ? " ✎" : ""}
+        </span>
+      )}
+      {d.subtipo && (
+        <span className="inline-flex items-center rounded-full bg-fill text-muted px-[7px] py-[1px] text-[10.5px] font-medium" title="Subtipo">
+          {d.subtipo}
+        </span>
+      )}
+      {d.par_hash && (
+        <span className="inline-flex items-center rounded-full bg-green/10 text-green px-[7px] py-[1px] text-[10.5px] font-semibold" title="Tem par casado (as duas pernas da transferência foram ligadas)">
+          🔗 par
+        </span>
+      )}
+    </span>
+  );
+
+  // checkbox "entre contas próprias" → grava em `interna_manual`
+  const internaToggle = (d: Lancamento) => (
+    <label className="inline-flex items-center gap-[5px] text-[11.5px] text-muted cursor-pointer select-none whitespace-nowrap" title="Marcar/desmarcar movimento entre contas próprias (grava em interna_manual)">
+      <input
+        type="checkbox"
+        checked={ehInterna(d)}
+        onChange={(e) => salvarInterna(d, e.target.checked)}
+        className="accent-accent w-[14px] h-[14px]"
+      />
+      entre contas próprias
+    </label>
+  );
+
   const valCell = (d: Lancamento) => (
     <>
       {fmtMoeda(d.valor, d.moeda)}
@@ -138,6 +254,7 @@ export function Lancamentos({ dados, allDados, months }: Props) {
           <option value="">Todas as classes</option>
           {classes.map((c) => <option key={c}>{c}</option>)}
         </Select>
+        <Seg size="sm" value={visao} onChange={(v) => setVisao(v as VisaoLanc)} options={VISOES as unknown as { v: string; label: string }[]} />
         {temFiltro && <button className="btn-ghost" onClick={limpar}>Limpar</button>}
         <button className="btn-ghost ml-auto" onClick={exportar} disabled={!rows.length}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
@@ -152,13 +269,39 @@ export function Lancamentos({ dados, allDados, months }: Props) {
         <Kpi title="Lançamentos" value={rows.length.toLocaleString("pt-BR")} />
       </div>
 
+      {/* visões de verificação (auditoria) — clique pra filtrar */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-[14px] mb-[18px]">
+        <Kpi
+          title="Aportes (investido)"
+          value={BRL(auditoria.aporte)}
+          sub={visao === "aporte" ? "filtrando ✓" : "ver Aportes"}
+          color="text-violet"
+          onClick={() => setVisao((v) => (v === "aporte" ? "all" : "aporte"))}
+        />
+        <Kpi
+          title="Renda de investimentos"
+          value={BRL(auditoria.rinvest)}
+          sub={visao === "rinvest" ? "filtrando ✓" : "ver Renda invest."}
+          color="text-accent"
+          onClick={() => setVisao((v) => (v === "rinvest" ? "all" : "rinvest"))}
+        />
+        <Kpi
+          title="Interna sem par casado"
+          value={auditoria.internaSemPar.toLocaleString("pt-BR")}
+          sub={visao === "interna_sem_par" ? "filtrando ✓" : "auditar par_hash nulo"}
+          color={auditoria.internaSemPar ? "text-amber" : "text-muted"}
+          onClick={() => setVisao((v) => (v === "interna_sem_par" ? "all" : "interna_sem_par"))}
+        />
+      </div>
+
       {/* ----- desktop: tabela ----- */}
       <div className="hidden md:block bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
         <div className="max-h-[560px] overflow-auto scroll-thin">
-          <table className="tbl min-w-[820px]">
+          <table className="tbl min-w-[1040px]">
             <thead><tr>
               {th("competencia", "Mês")}{th("banco", "Banco")}{th("origem", "Origem")}{th("data_mov", "Data")}
               {th("descricao", "Descrição")}{th("classe", "Classe")}
+              <th className="sticky top-0 bg-card z-[1]">Tipo / par</th>
               <th className="sticky top-0 bg-card z-[1]">Categoria</th>
               {th("valor", "Valor")}
             </tr></thead>
@@ -170,7 +313,11 @@ export function Lancamentos({ dados, allDados, months }: Props) {
                   <td>{d.origem}</td>
                   <td className="whitespace-nowrap">{dataCompleta(d)}</td>
                   <td className="max-w-[230px] truncate" title={d.descricao}>{d.descricao}</td>
-                  <td>{d.classe}</td>
+                  <td>
+                    {classeCell(d)}
+                    <div className="mt-[5px]">{internaToggle(d)}</div>
+                  </td>
+                  <td>{selos(d)}</td>
                   <td>{catCell(d)}</td>
                   <td className={`num ${d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}`}>{valCell(d)}</td>
                 </tr>
@@ -193,6 +340,11 @@ export function Lancamentos({ dados, allDados, months }: Props) {
                 <div className={`tabular-nums text-[13.5px] font-medium ${d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}`}>{valCell(d)}</div>
                 <div className="text-[11px] text-muted">{d.classe}</div>
               </div>
+            </div>
+            {(ehInterna(d) || d.subtipo || d.par_hash) && <div className="mt-[8px]">{selos(d)}</div>}
+            <div className="mt-[10px] flex flex-wrap items-center gap-2">
+              {classeCell(d)}
+              {internaToggle(d)}
             </div>
             <div className="mt-[10px] flex items-center gap-2">
               {ehGasto(d.classe) && !d.categoria_manual && <span className="w-[7px] h-[7px] rounded-full bg-amber shrink-0" />}

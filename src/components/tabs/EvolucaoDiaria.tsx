@@ -7,7 +7,7 @@ import type { Lancamento, Modo } from "../../types";
 import { Panel, Kpi, Seg } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import {
-  BRL, brlShort, dvSeries, dvDiasNoMes, dvLabel, dvGasto, dvDataReal,
+  BRL, brlShort, dvSeries, dvDiasNoMes, dvLabel, dvGasto, mesComp,
   mvLimiteParcial, mvSeriesMensal, mvOrigemOk, MODOS, deltaTxt,
 } from "../../lib/finance";
 
@@ -61,7 +61,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
     const showSet = new Set(show);
     show.forEach((k) => { modeTot += (cums[k][dvDiasNoMes(k) - 1] as number) || 0; diasTot += dvDiasNoMes(k); });
     dados.forEach((d) => {
-      const g = dvGasto(d); if (!g) return; const r = dvDataReal(d); if (!r || !showSet.has(r.k)) return;
+      const g = dvGasto(d); if (!g) return; const k = mesComp(d); if (!showSet.has(k)) return;
       const o = String(d.origem || ""); if (o.startsWith("Cartao")) cardTot += g; else if (o.startsWith("Conta")) contaTot += g;
     });
     const splitTot = cardTot + contaTot;
@@ -98,7 +98,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
     <div>
       <Panel
         title="Gasto acumulado ao longo do mês"
-        sub="(pela data real da compra · só meses completos)"
+        sub="(por competência · dia a dia pela data da compra · só meses completos)"
         right={
           <div className="flex items-center gap-2 flex-wrap">
             <Seg size="sm" value={mesesSel} onChange={setMesesSel} options={MESES_OPTS} />
@@ -159,7 +159,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
                 cursor="pointer"
                 onClick={(d: any) => {
                   const k = d?.payload?._k ?? d?._k; if (!k) return;
-                  const rows = dados.filter((x) => { if (!dvGasto(x)) return false; if (!mvOrigemOk(x.origem, modo)) return false; const r = dvDataReal(x); return r && r.k === k; });
+                  const rows = dados.filter((x) => { if (!dvGasto(x)) return false; if (!mvOrigemOk(x.origem, modo)) return false; return mesComp(x) === k; });
                   openModal("Gasto " + meta.rotulo + " · " + dvLabel(k), rows);
                 }} />
               <Line type="monotone" dataKey="media" name="Média 3 meses" stroke={cc.saldo} strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />

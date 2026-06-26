@@ -6,8 +6,10 @@ import { useChart, ChartTip } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
   BRL, BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dataCompleta,
-  dvDiasNoMes, dvLabel, MES_ABREV, mesCurto, normEstab,
+  dvDiasNoMes, dvLabel, MES_ABREV, mesCurto, mesComp, diaDoMov, normEstab,
+  valorAporte, valorReceitaInvest,
 } from "../../lib/finance";
+import { ehInterna } from "../../lib/lancClasses";
 import { type Plano, projetar, contribNoMes, ehReceitaTipo } from "../../lib/projecao";
 
 interface Props {
@@ -70,14 +72,11 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   const compSeries = useMemo(() => {
     const map: Record<string, number[]> = {};
     for (const d of dados) {
-      const g = dvGasto(d);
+      const g = dvGasto(d); // já exclui interna/aporte e desconta estorno (lancClasses)
       if (!g) continue;
-      const k = String(d.competencia || "").slice(0, 7);
+      const k = mesComp(d);
       if (!/^\d{4}-\d{2}$/.test(k)) continue;
-      const m = String(d.data_mov || "").match(/^(\d{1,2})\/(\d{1,2})$/);
-      let dia = m ? +m[1] : 1;
-      if (!(dia >= 1 && dia <= 31)) dia = 1;
-      (map[k] = map[k] || new Array(31).fill(0))[dia - 1] += g;
+      (map[k] = map[k] || new Array(31).fill(0))[diaDoMov(d) - 1] += g;
     }
     return map;
   }, [dados]);
@@ -150,7 +149,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
     const itens: Record<string, Lancamento[]> = {};
     dados.forEach((d) => {
       const g = dvGasto(d); if (!g) return;
-      if (String(d.competencia || "").slice(0, 7) !== calc.selKey) return;
+      if (mesComp(d) !== calc.selKey) return;
       const k = catKey(d);
       tot[k] = (tot[k] || 0) + g;
       (itens[k] = itens[k] || []).push(d);
@@ -162,11 +161,25 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
     return { rows: rows.slice(0, 6), total: rows.reduce((s, x) => s + x.val, 0) };
   }, [dados, calc]);
 
+  /* ---------- investimentos do mês selecionado (por competência) ---------- */
+  // Investido (Σ Aporte) e Renda de investimentos (Σ Receita Investimento) — métricas
+  // próprias, apartadas de gasto/receita. Só renderiza quando há valor classificado.
+  const investMes = useMemo(() => {
+    if (!calc) return { inv: 0, recInv: 0 };
+    let inv = 0, recInv = 0;
+    dados.forEach((d) => {
+      if (mesComp(d) !== calc.selKey) return;
+      inv += valorAporte(d);
+      recInv += valorReceitaInvest(d);
+    });
+    return { inv, recInv };
+  }, [dados, calc]);
+
   /* ---------- últimos lançamentos conhecidos ---------- */
   const ultimos = useMemo(() => {
     const arr: { d: Lancamento; k: string; dia: number }[] = [];
     dados.forEach((d) => {
-      if (!ehGasto(d.classe) && !ehReceita(d.classe)) return;
+      if (ehInterna(d) || (!ehGasto(d.classe) && !ehReceita(d.classe))) return; // esconde movimentos internos (ex.: gasto marcado "entre contas")
       const r = dvDataReal(d); if (!r) return;
       arr.push({ d, k: r.k, dia: r.d });
     });
@@ -397,6 +410,16 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             </div>
           ) : (
             <div className="text-muted text-[13px] py-2">Sem gastos registrados neste mês.</div>
+          )}
+          {(investMes.inv > 0 || investMes.recInv > 0) && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 pt-3 border-t border-line text-[12px]">
+              {investMes.inv > 0 && (
+                <span className="text-muted">Investido no mês <b className="text-violet">{BRL(investMes.inv)}</b></span>
+              )}
+              {investMes.recInv > 0 && (
+                <span className="text-muted">Renda de investimentos <b className="text-green">{BRL(investMes.recInv)}</b></span>
+              )}
+            </div>
           )}
         </Panel>
 

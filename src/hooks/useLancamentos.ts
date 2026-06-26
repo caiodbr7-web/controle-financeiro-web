@@ -20,9 +20,15 @@ import type { Lancamento } from "../types";
 const CORTE_OPEN_BANKING = "2026-06"; // Open Banking assume deste mês em diante
 
 const compKey = (d: Lancamento) => String(d.competencia || "").slice(0, 7);
+// Uma competência só posiciona a linha no corte se for um "YYYY-MM" válido. Sem
+// isso, "" (competência nula/corrompida) passaria em `"" < CORTE` e uma linha
+// sem âncora de mês entraria nos dashboards do lado do PDF — contando num mês
+// que não é o dela. Conservador: competência inválida = OCULTA (auditoria W2).
+const COMP_RE = /^\d{4}-\d{2}$/;
 /** Um lançamento é visível nos dashboards se está do lado certo do corte. */
 export function lancVisivel(d: Lancamento): boolean {
   const m = compKey(d);
+  if (!COMP_RE.test(m)) return false; // sem competência válida não há lado do corte
   return d.fonte_dados === "pluggy"
     ? m >= CORTE_OPEN_BANKING && m <= mesAtual() // OF: do corte até o mês atual (sem futuro)
     : m < CORTE_OPEN_BANKING; // PDF (fonte nula/pdf): antes do corte

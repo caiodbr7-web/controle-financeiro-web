@@ -65,6 +65,13 @@ export function Adicionar({
       </div>
 
       {metodo === "arquivo" ? <Importar reload={reload} /> : <Conectar reload={reload} />}
+
+      <div className="text-muted text-[12px] mt-4 leading-relaxed max-w-[760px]">
+        A <b>classe</b> (Gasto, Receita, Aporte, Receita Investimento, Transferência/Pagamento) e a
+        marca de <b>movimento entre contas próprias</b> são definidas automaticamente na importação e
+        no sync do banco. Se algo vier errado, corrija na mão na aba <b>Lançamentos</b> — a correção é
+        preservada e respeitada nas próximas sincronizações.
+      </div>
     </div>
   );
 }
