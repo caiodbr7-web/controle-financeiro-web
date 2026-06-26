@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, ComposedChart, Bar, Line, BarChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import type { Lancamento } from "../../types";
-import { Panel, Kpi, Seg, Toolbar } from "../ui";
+import { Panel, Kpi, Seg, Select, Toolbar } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import {
   BRL, brlShort, ehGasto, ehReceita, ehTransfer, corChave, ordemChave,
@@ -20,6 +20,7 @@ const PERIODOS = [
    Gasto/receita já excluem transferência interna e aporte (ver lancClasses). */
 export function VisaoGeral({ dados, allDados, openModal }: Props) {
   const [periodo, setPeriodo] = useState("12");
+  const [mesSel, setMesSel] = useState("auto"); // "auto" = último mês completo do recorte
   const cc = useChart();
 
   const rows = useMemo(() => dados.map((d) => ({ d, mk: mesComp(d) })), [dados]);
@@ -54,20 +55,38 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
   };
   const aggs = useMemo(() => vm.map((k) => ({ m: k, ...agg(k) })), [rows, vm]);
 
-  // KPIs: referência = último mês completo do recorte; média 3m termina nele
+  // mês de referência dos KPIs: em "auto", o último mês completo (não-parcial) do
+  // recorte; senão, o mês escolhido no seletor. A média 3m sempre termina nele.
+  const autoIdx = useMemo(() => {
+    if (!vm.length) return -1;
+    for (let i = vm.length - 1; i >= 0; i--) if (vm[i] < lim) return i;
+    return vm.length - 1;
+  }, [vm, lim]);
+  const refIdx = useMemo(() => {
+    const sel = vm.indexOf(mesSel);
+    return sel >= 0 ? sel : autoIdx; // mês escolhido fora do recorte cai no auto
+  }, [vm, mesSel, autoIdx]);
+
   const kpis = useMemo(() => {
-    if (!vm.length) return null;
-    let ri = -1;
-    for (let i = vm.length - 1; i >= 0; i--) if (vm[i] < lim) { ri = i; break; }
-    if (ri < 0) ri = vm.length - 1;
-    const ref = vm[ri];
+    if (refIdx < 0) return null;
+    const ref = vm[refIdx];
     const cur = agg(ref);
-    const last3 = vm.slice(Math.max(0, ri - 2), ri + 1); const n = last3.length || 1;
+    const last3 = vm.slice(Math.max(0, refIdx - 2), refIdx + 1); const n = last3.length || 1;
     const av = { rec: 0, gas: 0, saldo: 0 };
     last3.forEach((x) => { const aa = agg(x); av.rec += aa.rec; av.gas += aa.gas; av.saldo += aa.saldo; });
     const temInvest = aggs.some((a) => a.inv > 0 || a.recInv > 0);
-    return { label: dvLabel(ref), cur, temInvest, av: { rec: av.rec / n, gas: av.gas / n, saldo: av.saldo / n } };
-  }, [rows, vm, lim, aggs]);
+    return { label: dvLabel(ref), parcial: ref >= lim, cur, temInvest, av: { rec: av.rec / n, gas: av.gas / n, saldo: av.saldo / n } };
+  }, [rows, vm, refIdx, lim, aggs]);
+
+  // opções do seletor de mês dos KPIs (mais recente primeiro). "Automático" mostra
+  // para qual mês completo caiu; o * marca meses ainda parciais, como no gráfico.
+  const mesOpts = useMemo(() => {
+    const auto = autoIdx >= 0 ? ` (${dvLabel(vm[autoIdx])})` : "";
+    const opts = [{ v: "auto", label: `Automático${auto}` }];
+    for (let i = vm.length - 1; i >= 0; i--) opts.push({ v: vm[i], label: rotulo(vm[i]) });
+    return opts;
+  }, [vm, autoIdx, lim]);
+  const mesSelView = vm.includes(mesSel) ? mesSel : "auto";
 
   // empilhado por cartão/conta (gasto) e por banco (receita). O valor por segmento
   // usa o helper do contrato (valFn): respeita `interna` e desconta estorno no gasto,
@@ -104,6 +123,14 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
         )}
       >
         <Seg value={periodo} onChange={setPeriodo} options={PERIODOS} />
+        {vm.length > 0 && (
+          <label className="inline-flex items-center gap-2 text-[12.5px] text-muted">
+            <span className="hidden sm:inline">Indicadores de</span>
+            <Select value={mesSelView} onChange={setMesSel} className="py-[6px]">
+              {mesOpts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+            </Select>
+          </label>
+        )}
       </Toolbar>
 
       {kpis && (
@@ -112,6 +139,12 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
           <Kpi title="Despesas" value={BRL(kpis.cur.gas)} sub={`${kpis.label} · média 3m ${BRL(kpis.av.gas)}`} color="text-red" />
           <Kpi title="Saldo" value={BRL(kpis.cur.saldo)} sub={`receitas − despesas · média 3m ${BRL(kpis.av.saldo)}`} color={kpis.cur.saldo >= 0 ? "text-green" : "text-red"} />
           <Kpi title="Transf. / Pagtos" value={BRL(kpis.cur.tr)} sub="não é consumo (líquido)" color="text-violet" />
+        </div>
+      )}
+
+      {kpis?.parcial && (
+        <div className="text-muted text-[12px] -mt-[8px] mb-[18px]">
+          <b>{kpis.label}*</b> é um mês <b>parcial</b> — ainda pode receber faturas/parcelas futuras, então os valores podem subir.
         </div>
       )}
 
