@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { sb } from "../lib/supabase";
 import { mesAtual } from "../lib/projecao";
-import { dvDataReal } from "../lib/finance";
 import type { Lancamento } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -10,13 +9,9 @@ import type { Lancamento } from "../types";
 // por isso cada mês deve vir de UMA fonte só. Regra (por competência "YYYY-MM"):
 //     competência <  CORTE                    ->  PDF (histórico curado)
 //     CORTE <= competência <= mês atual        ->  Open Banking (Pluggy)
-//     competência >  mês atual                 ->  só conta se a COMPRA já aconteceu
-//                                                  (data real <= mês atual): recupera
-//                                                  compras passadas que o Pluggy já
-//                                                  adiantou para uma fatura futura.
-//                                                  Parcelas cujo gasto ainda não
-//                                                  ocorreu (data real no futuro) ficam
-//                                                  ocultas (ver Planejamento).
+//     competência >  mês atual                 ->  OCULTO (faturas futuras que o Pluggy
+//                                                  adianta — não são gasto realizado;
+//                                                  ver Planejamento)
 // Para voltar a só-PDF, use um corte no futuro distante (ex.: "9999-99");
 // para tudo via Open Banking, use "0000-00".
 // As abas Conciliação e Open Banking NÃO usam este hook (têm query própria),
@@ -28,16 +23,9 @@ const compKey = (d: Lancamento) => String(d.competencia || "").slice(0, 7);
 /** Um lançamento é visível nos dashboards se está do lado certo do corte. */
 export function lancVisivel(d: Lancamento): boolean {
   const m = compKey(d);
-  if (d.fonte_dados === "pluggy") {
-    if (m < CORTE_OPEN_BANKING) return false;   // antes do corte: vem do PDF
-    if (m <= mesAtual()) return true;           // até o mês atual: sempre visível
-    // competência futura: conta só se a compra já aconteceu (data real <= mês atual).
-    // Assim recuperamos compras passadas adiantadas para uma fatura futura, sem
-    // contar parcelas futuras (data real ainda no futuro).
-    const r = dvDataReal(d);
-    return !!r && r.k <= mesAtual();
-  }
-  return m < CORTE_OPEN_BANKING; // PDF (fonte nula/pdf): antes do corte
+  return d.fonte_dados === "pluggy"
+    ? m >= CORTE_OPEN_BANKING && m <= mesAtual() // OF: do corte até o mês atual (sem futuro)
+    : m < CORTE_OPEN_BANKING; // PDF (fonte nula/pdf): antes do corte
 }
 
 /** Carrega todos os lançamentos (paginado) e aplica o corte de fonte por período. */

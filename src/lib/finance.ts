@@ -9,6 +9,10 @@ export const BRL = (v: number) =>
 
 export const brlShort = (v: number) => "R$ " + Number(v || 0).toLocaleString("pt-BR");
 
+// reais sem centavos — para os números grandes do painel
+export const BRL0 = (v: number) =>
+  (v < 0 ? "-" : "") + "R$ " + Math.round(Math.abs(v || 0)).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+
 // símbolo por moeda ISO; cai para o próprio código quando não mapeado
 const SIMBOLO_MOEDA: Record<string, string> = {
   BRL: "R$", USD: "US$", EUR: "€", GBP: "£", ARS: "AR$", CLP: "CL$", JPY: "¥",
