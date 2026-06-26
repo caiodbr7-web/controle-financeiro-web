@@ -91,7 +91,11 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
 
     const nd = dvDiasNoMes(selKey);
     const isAtual = selKey === mesAtual;
+    const completo = selKey < lim; // mês fechado E com as faturas já importadas
     const refDay = isAtual ? Math.min(hoje.getDate(), nd) : nd; // "este momento do mês"
+    // comparação justa com a média: mês completo, ou mês corrente comparado no mesmo
+    // dia. Um mês passado ainda parcial (faltam faturas) não é comparável de forma justa.
+    const comparavel = completo || isAtual;
 
     // benchmark: média acumulada dos N meses completos ANTERIORES ao selecionado
     const base = Object.keys(map).filter((k) => k < selKey && k < lim).sort().slice(-janela);
@@ -118,7 +122,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
     }));
 
     return {
-      selKey, isAtual, nd, refDay, gastoAtual, benchAtRef: benchAtRef ?? null, benchFim,
+      selKey, isAtual, completo, comparavel, nd, refDay, gastoAtual, benchAtRef: benchAtRef ?? null, benchFim,
       delta, chart, serieNome, benchNome, temBench: base.length > 0, nBase: base.length,
     };
   }, [dados, allDados, months, selKey, janela, mesAtual, hoje]);
@@ -238,7 +242,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
         <Panel className="!mb-0 flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
             <div className="text-muted text-[12.5px] font-medium min-w-0">
-              {dvLabel(calc.selKey)} {calc.isAtual ? "· parcial" : "· mês fechado"} vs média {janela}m
+              {dvLabel(calc.selKey)} {calc.completo ? "· mês fechado" : calc.isAtual ? "· parcial · em curso" : "· parcial · faturas por vir"} vs média {janela}m
             </div>
             <div className="flex items-center gap-[6px] shrink-0">
               <Seg size="sm" value={String(janela)} onChange={(v) => setJanela(+v)} options={JANELAS} />
@@ -273,16 +277,21 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
               <span className="w-[10px] h-0 border-t-2 border-dashed" style={{ borderColor: cc.media }} />Média {janela}m
             </span>
-            {calc.delta != null && (
+            {calc.delta != null && calc.comparavel && (
               <span className={`inline-flex items-center gap-1 rounded-full px-[10px] py-[3px] text-[12px] font-semibold ${
                 calc.delta <= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"
               }`}>
-                {calc.delta <= 0 ? "▼" : "▲"} {BRL(Math.abs(calc.delta))} {calc.delta <= 0 ? "abaixo" : "acima"} da média
+                {calc.delta <= 0 ? "▼" : "▲"} {BRL(Math.abs(calc.delta))} {calc.delta <= 0 ? "abaixo" : "acima"} da média{calc.isAtual ? " (no mesmo dia)" : ""}
+              </span>
+            )}
+            {calc.delta != null && !calc.comparavel && (
+              <span className="inline-flex items-center gap-1 rounded-full px-[10px] py-[3px] text-[12px] font-medium bg-fill text-muted">
+                comparação parcial · faltam faturas
               </span>
             )}
           </div>
           <div className="text-[11.5px] text-muted mt-2">
-            Pela data real da compra, cartão + contas.{calc.isAtual ? " Parte das compras deste mês ainda pode chegar na próxima fatura." : ""}
+            Pela data real da compra, cartão + contas.{!calc.completo ? " Parte das compras deste mês ainda está em faturas não importadas." : ""}
           </div>
         </Panel>
 
@@ -292,7 +301,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             <BigVal
               label={`Gasto atual · ${dvLabel(calc.selKey)}`}
               value={BRL(calc.gastoAtual)}
-              sub={calc.isAtual ? `até dia ${calc.refDay} de ${calc.nd}` : "mês fechado"}
+              sub={calc.isAtual ? `até hoje · dia ${calc.refDay}/${calc.nd}` : calc.completo ? "mês fechado" : "parcial · faturas por vir"}
               dot={roxo}
             />
             <BigVal
