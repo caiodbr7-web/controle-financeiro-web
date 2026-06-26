@@ -71,6 +71,62 @@ export async function triggerItemUpdate(apiKey: string, itemId: string) {
   return await r.json();
 }
 
+// ----------------------------------------------------------------------------
+// Resolvedor de banco canônico — ESPELHO de src/lib/bancos.ts (e da SQL
+// public.pluggy_banco_canonico). Reconhece a instituição pelo conector + nomes
+// das contas e devolve um nome CANÔNICO. Usado para nunca gravar o genérico
+// "Banco" quando a Pluggy não devolve item.connector.name: nesses casos o nome
+// real costuma estar no name/marketingName das contas. Mantenha os três em sincronia.
+// ----------------------------------------------------------------------------
+const DIACRITICOS = new RegExp("[\\u0300-\\u036f]", "g");
+const semAcento = (s: string): string => s.normalize("NFD").replace(DIACRITICOS, "");
+const XP = /(^|[^a-z])xp([^a-z]|$)/;
+
+/** Reconhece o banco a partir de um texto livre (conector + contas). null se desconhecido. */
+export function bancoCanonico(blob: string): string | null {
+  const n = semAcento(blob).toLowerCase();
+  if (n.includes("nubank") || n.includes("nu pagamentos") || n.includes("nu financeira")) return "Nubank";
+  if (n.includes("itau")) return "Itau";
+  if (n.includes("picpay")) return "PicPay";
+  if (n.includes("rico")) return "Rico";
+  if (XP.test(n)) return "XP";
+  if (n.includes("bradesco")) return "Bradesco";
+  if (n.includes("santander")) return "Santander";
+  if (n.includes("banco do brasil")) return "Banco do Brasil";
+  if (n.includes("caixa")) return "Caixa";
+  if (n.includes("inter")) return "Inter";
+  if (n.includes("c6")) return "C6";
+  if (n.includes("btg")) return "BTG";
+  if (n.includes("mercado pago") || n.includes("mercadopago")) return "Mercado Pago";
+  if (n.includes("pagbank") || n.includes("pagseguro")) return "PagBank";
+  if (n.includes("safra")) return "Safra";
+  if (n.includes("neon")) return "Neon";
+  if (n.includes("sicoob")) return "Sicoob";
+  if (n.includes("sicredi")) return "Sicredi";
+  if (n.includes("original")) return "Original";
+  return null;
+}
+
+/** Nome do banco a gravar, com fallback: conector real (nunca "Pluggy") ou conta. */
+export function resolverBanco(connector: string | null, contas: string[]): string {
+  const blob = [connector ?? "", ...contas].join(" ");
+  const canon = bancoCanonico(blob);
+  if (canon) return canon;
+  if (connector && !/pluggy/i.test(connector)) return connector;
+  return contas.find(Boolean) || connector || "Banco";
+}
+
+/** Resolve o nome do banco de um item a partir do conector + contas da Pluggy. */
+export function resolverBancoDoItem(
+  connectorName: string | null,
+  accounts: PluggyAccount[],
+): string {
+  const nomes = accounts.flatMap((a) =>
+    [a.marketingName, a.name].filter((x): x is string => !!x)
+  );
+  return resolverBanco(connectorName, nomes);
+}
+
 export async function getAccounts(apiKey: string, itemId: string) {
   const r = await fetch(`${PLUGGY_API}/accounts?itemId=${itemId}`, {
     headers: { "X-API-KEY": apiKey },
