@@ -29,25 +29,46 @@ export interface SyncResult {
   ok: boolean;
   contas: number;
   transacoes: number;
-  inseridos: number;
+  /** lançamentos traduzidos; null quando o sync foi só de download (translate=false) */
+  inseridos: number | null;
   from: string;
   por_conta: Record<string, number>;
   /** status do item na Pluggy apos o sync (UPDATED, WAITING_USER_INPUT, LOGIN_ERROR, ...) */
   status?: string | null;
 }
 
-/** Dispara a sincronizacao (contas + transacoes) de um item Pluggy.
- *  refresh=true forca a Pluggy a buscar dados frescos no banco antes de ler
- *  (mais lento, mas pega transacoes recentes que ainda nao estavam no cache). */
-export async function syncItem(itemId: string, from?: string, refresh = false): Promise<SyncResult> {
+export interface SyncOpts {
+  /** força a Pluggy a buscar dados frescos no banco antes de ler (mais lento) */
+  refresh?: boolean;
+  /** roda a tradução CRU->lancamentos + saldos ao final (default true). Passe
+   *  false ao sincronizar várias conexões em paralelo e traduza uma vez só
+   *  depois (via translateLancamentos), evitando timeout no banco. */
+  translate?: boolean;
+}
+
+/** Dispara a sincronizacao (contas + transacoes) de um item Pluggy. */
+export async function syncItem(itemId: string, from?: string, opts: SyncOpts = {}): Promise<SyncResult> {
   const r = await fetch(`${FN_BASE}/pluggy-sync`, {
     method: "POST",
     headers: await authHeaders(),
-    body: JSON.stringify({ itemId, from, refresh }),
+    body: JSON.stringify({ itemId, from, refresh: opts.refresh ?? false, translate: opts.translate ?? true }),
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data?.error || "Falha ao sincronizar");
   return data as SyncResult;
+}
+
+/** Roda a tradução CRU->lancamentos (+ saldos) UMA vez, sem baixar nada da Pluggy.
+ *  Passo final após sincronizar várias conexões com translate=false. */
+export async function translateLancamentos(): Promise<{ inseridos: number }> {
+  const r = await fetch(`${FN_BASE}/pluggy-sync`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ translateOnly: true }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data?.error || "Falha ao traduzir lançamentos");
+  return data as { inseridos: number };
 }
 
 export interface PluggyItemRow {

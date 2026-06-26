@@ -9,12 +9,18 @@
 // Idempotente: cru faz upsert por tx_id/account_id; a traducao faz upsert por
 // hash_natural ('pluggy:<txId>') e PRESERVA categoria_manual editada no front.
 //
-// Body: { itemId: string, from?: "YYYY-MM-DD", refresh?: boolean }
+// Body: { itemId: string, from?: "YYYY-MM-DD", refresh?: boolean,
+//         translate?: boolean, translateOnly?: boolean }
 //   - from: data de corte (modo hibrido). Se omitido, usa o sync_from salvo do
 //     item; se tambem nao houver, importa os ultimos 12 meses (limite do Pluggy).
 //   - refresh: se true, FORCA a Pluggy a buscar dados frescos no banco (PATCH
 //     /items) e espera concluir antes de ler. Sem isso, le apenas o cache que a
 //     Pluggy ja tinha (ex.: transacao recente de cartao pode nao ter chegado).
+//   - translate (default true): se false, so baixa e grava na camada crua, SEM
+//     rodar a traducao SQL nem os saldos. Usado pelo "Sincronizar tudo" para nao
+//     disparar N traducoes em paralelo (evita statement timeout no banco).
+//   - translateOnly: se true, NAO baixa nada; so roda a traducao + saldos UMA
+//     vez. E o passo final do "Sincronizar tudo".
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
@@ -85,9 +91,35 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json().catch(() => ({}));
+    const refresh: boolean = body?.refresh === true;
+    // translate=false: só baixa e grava na camada crua, SEM traduzir/saldos
+    // (usado pelo "Sincronizar tudo" para não rodar a tradução N vezes em paralelo).
+    const traduzir: boolean = body?.translate !== false;
+
+    // translateOnly=true: NÃO baixa nada; só roda a tradução CRU->lancamentos e a
+    // reconstrução de saldos UMA vez. É o passo final do "Sincronizar tudo".
+    if (body?.translateOnly === true) {
+      const { data: inseridos, error: rpcErr } = await admin.rpc(
+        "pluggy_traduzir_lancamentos",
+        { p_user_id: userId },
+      );
+      if (rpcErr) return json({ error: "traduzir lancamentos: " + rpcErr.message }, 500);
+      let saldosDias: number | null = null;
+      try {
+        const { data: nSaldos, error: saldosErr } = await admin.rpc(
+          "pluggy_reconstruir_saldos_diarios",
+          { p_user_id: userId, p_meses: 24 },
+        );
+        if (saldosErr) throw saldosErr;
+        saldosDias = nSaldos ?? 0;
+      } catch (e) {
+        console.error("reconstruir saldos diarios falhou (ignorado):", e);
+      }
+      return json({ ok: true, translateOnly: true, inseridos: inseridos ?? 0, saldos_dias: saldosDias });
+    }
+
     const itemId: string | undefined = body?.itemId;
     if (!itemId) return json({ error: "Falta itemId" }, 400);
-    const refresh: boolean = body?.refresh === true;
 
     // SEGURANCA: esta funcao roda com service role (ignora RLS), entao a posse
     // do item PRECISA ser checada na mao, senao um usuario poderia sincronizar
@@ -175,24 +207,29 @@ Deno.serve(async (req) => {
 
     // 3b) traduz CRU -> lancamentos (funcao SQL; preenche user_id, preserva
     //      categoria_manual). Passa o user_id pois a service role nao tem auth.uid().
-    const { data: inseridos, error: rpcErr } = await admin.rpc(
-      "pluggy_traduzir_lancamentos",
-      { p_user_id: userId },
-    );
-    if (rpcErr) throw new Error("traduzir lancamentos: " + rpcErr.message);
-
-    // 3c) reconstroi o historico DIARIO de saldos (so contas BANK, 24 meses).
-    //      Secundario: se falhar, NAO derruba o sync (os lancamentos ja entraram).
+    //      Pulado quando traduzir=false: o chamador roda a traducao UMA vez ao final.
+    let inseridos: number | null = null;
     let saldosDias: number | null = null;
-    try {
-      const { data: nSaldos, error: saldosErr } = await admin.rpc(
-        "pluggy_reconstruir_saldos_diarios",
-        { p_user_id: userId, p_meses: 24 },
+    if (traduzir) {
+      const { data: nIns, error: rpcErr } = await admin.rpc(
+        "pluggy_traduzir_lancamentos",
+        { p_user_id: userId },
       );
-      if (saldosErr) throw saldosErr;
-      saldosDias = nSaldos ?? 0;
-    } catch (e) {
-      console.error("reconstruir saldos diarios falhou (ignorado):", e);
+      if (rpcErr) throw new Error("traduzir lancamentos: " + rpcErr.message);
+      inseridos = nIns ?? 0;
+
+      // 3c) reconstroi o historico DIARIO de saldos (so contas BANK, 24 meses).
+      //      Secundario: se falhar, NAO derruba o sync (os lancamentos ja entraram).
+      try {
+        const { data: nSaldos, error: saldosErr } = await admin.rpc(
+          "pluggy_reconstruir_saldos_diarios",
+          { p_user_id: userId, p_meses: 24 },
+        );
+        if (saldosErr) throw saldosErr;
+        saldosDias = nSaldos ?? 0;
+      } catch (e) {
+        console.error("reconstruir saldos diarios falhou (ignorado):", e);
+      }
     }
 
     // 4) registra o estado da conexao

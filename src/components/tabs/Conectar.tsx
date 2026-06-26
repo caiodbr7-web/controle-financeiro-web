@@ -7,6 +7,7 @@ import { resolverBanco } from "../../lib/bancos";
 import {
   getConnectToken,
   syncItem,
+  translateLancamentos,
   listItems,
   deleteItem,
   countLancamentosDoItem,
@@ -79,10 +80,16 @@ export function Conectar({ reload }: { reload: () => void }) {
   }, []);
 
   // resultado de UMA conexão -> feedback exibido na linha dela
-  const feedbackDe = (r: SyncResult): ItemFeedback =>
-    precisaReconectar(r.status)
-      ? { tipo: "reconectar", texto: "O banco pediu reautenticação — clique em Reconectar." }
-      : { tipo: "ok", texto: `${r.inseridos} lançamento(s) importado(s) (${r.contas} conta(s), a partir de ${r.from}).` };
+  const feedbackDe = (r: SyncResult): ItemFeedback => {
+    if (precisaReconectar(r.status)) {
+      return { tipo: "reconectar", texto: "O banco pediu reautenticação — clique em Reconectar." };
+    }
+    // inseridos === null quando foi só download (a tradução roda depois, uma vez)
+    const texto = r.inseridos == null
+      ? `${r.transacoes} transação(ões) baixada(s) (${r.contas} conta(s), a partir de ${r.from}).`
+      : `${r.inseridos} lançamento(s) importado(s) (${r.contas} conta(s), a partir de ${r.from}).`;
+    return { tipo: "ok", texto };
+  };
 
   // sincroniza um item ja conectado, FORCANDO a Pluggy a buscar dados frescos
   const sincronizar = useCallback(async (itemId: string) => {
@@ -90,7 +97,7 @@ export function Conectar({ reload }: { reload: () => void }) {
     setBusy(true);
     setFeedback((f) => { const n = { ...f }; delete n[itemId]; return n; });
     try {
-      const r: SyncResult = await syncItem(itemId, corte, true);
+      const r: SyncResult = await syncItem(itemId, corte, { refresh: true });
       setFeedback((f) => ({ ...f, [itemId]: feedbackDe(r) }));
       setMsg("");
       await carregar();
@@ -103,29 +110,40 @@ export function Conectar({ reload }: { reload: () => void }) {
     }
   }, [corte, carregar, reload]);
 
-  // sincroniza TODOS os itens em paralelo, forcando dados frescos na Pluggy
+  // sincroniza TODOS os itens em paralelo (só download, SEM traduzir) e roda a
+  // tradução UMA vez ao final — evita N traduções concorrentes (statement timeout).
   const sincronizarTudo = useCallback(async () => {
     if (itens.length === 0) return;
     setBusy(true);
     setFeedback({}); // limpa o feedback anterior; cada linha é preenchida ao concluir
     let feitos = 0, erros = 0;
-    setMsg(`Atualizando no banco… 0 de ${itens.length} (pode levar até ~1 min).`);
+    setMsg(`Baixando do banco… 0 de ${itens.length} (pode levar até ~1 min).`);
     await Promise.all(itens.map(async (it) => {
       try {
-        const r = await syncItem(it.item_id, it.sync_from ?? corte, true);
+        const r = await syncItem(it.item_id, it.sync_from ?? corte, { refresh: true, translate: false });
         setFeedback((f) => ({ ...f, [it.item_id]: feedbackDe(r) }));
       } catch (e) {
         erros++;
         setFeedback((f) => ({ ...f, [it.item_id]: { tipo: "erro", texto: (e as Error).message } }));
       }
       feitos++;
-      setMsg(`Atualizando no banco… ${feitos} de ${itens.length} (pode levar até ~1 min).`);
+      setMsg(`Baixando do banco… ${feitos} de ${itens.length} (pode levar até ~1 min).`);
     }));
+    // passo final: traduz tudo de uma vez (CRU -> lançamentos + saldos)
+    let erroTraducao = "";
+    try {
+      setMsg(`Processando lançamentos…`);
+      await translateLancamentos();
+    } catch (e) {
+      erroTraducao = (e as Error).message;
+    }
     await carregar();
     reload();
     setMsg(
       `✓ ${itens.length - erros} de ${itens.length} sincronizada(s)` +
-      (erros ? ` · ${erros} com erro (detalhes em cada linha abaixo).` : "."),
+      (erros ? ` · ${erros} com erro (detalhes em cada linha abaixo)` : "") +
+      (erroTraducao ? ` · ⚠ erro ao processar lançamentos: ${erroTraducao}` : "") +
+      ".",
     );
     setBusy(false);
   }, [itens, corte, carregar, reload]);
