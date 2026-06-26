@@ -28,6 +28,11 @@ function nomeContas(it: PluggyItemRow): string {
   return Object.keys(it.last_result?.por_conta ?? {}).join(" · ");
 }
 
+/* status da Pluggy que exigem o usuário reautenticar (MFA/credencial) */
+function precisaReconectar(status?: string | null): boolean {
+  return status === "WAITING_USER_INPUT" || status === "LOGIN_ERROR" || status === "OUTDATED";
+}
+
 /* Aba "Conectar": conecta bancos via Open Finance (Pluggy) e importa as
    transacoes direto para a tabela `lancamentos`. Modo hibrido com PDFs:
    a "data de corte" evita contar a mesma transacao duas vezes. */
@@ -64,13 +69,16 @@ export function Conectar({ reload }: { reload: () => void }) {
     }
   }, []);
 
-  // sincroniza um item ja conectado
+  // sincroniza um item ja conectado, FORCANDO a Pluggy a buscar dados frescos
   const sincronizar = useCallback(async (itemId: string) => {
-    setMsg("Sincronizando…");
+    setMsg("Atualizando no banco… isso pode levar alguns segundos.");
     setBusy(true);
     try {
-      const r: SyncResult = await syncItem(itemId, corte);
-      setMsg(`✓ ${r.inseridos} lançamentos importados (${r.contas} conta(s), a partir de ${r.from}).`);
+      const r: SyncResult = await syncItem(itemId, corte, true);
+      const aviso = precisaReconectar(r.status)
+        ? " ⚠ O banco pediu reautenticação — clique em Reconectar para atualizar."
+        : "";
+      setMsg(`✓ ${r.inseridos} lançamentos importados (${r.contas} conta(s), a partir de ${r.from}).${aviso}`);
       await carregar();
       reload();
     } catch (e) {
@@ -80,24 +88,28 @@ export function Conectar({ reload }: { reload: () => void }) {
     }
   }, [corte, carregar, reload]);
 
-  // sincroniza TODOS os itens em paralelo
+  // sincroniza TODOS os itens em paralelo, forcando dados frescos na Pluggy
   const sincronizarTudo = useCallback(async () => {
     if (itens.length === 0) return;
     setBusy(true);
-    setMsg(`Sincronizando 0 de ${itens.length}…`);
-    let ok = 0, erros = 0;
+    setMsg(`Atualizando no banco… 0 de ${itens.length} (pode levar até ~1 min).`);
+    let ok = 0, erros = 0, reconectar = 0;
     await Promise.all(itens.map(async (it) => {
       try {
-        await syncItem(it.item_id, it.sync_from ?? corte);
+        const r = await syncItem(it.item_id, it.sync_from ?? corte, true);
         ok++;
+        if (precisaReconectar(r.status)) reconectar++;
       } catch {
         erros++;
       }
-      setMsg(`Sincronizando ${ok + erros} de ${itens.length}…`);
+      setMsg(`Atualizando no banco… ${ok + erros} de ${itens.length} (pode levar até ~1 min).`);
     }));
     await carregar();
     reload();
-    setMsg(`✓ ${itens.length} conexão(ões) sincronizada(s)${erros ? ` (${erros} com erro)` : ""}.`);
+    const partes = [`✓ ${itens.length} conexão(ões) sincronizada(s)`];
+    if (erros) partes.push(`${erros} com erro`);
+    if (reconectar) partes.push(`${reconectar} pedindo reconexão`);
+    setMsg(partes.join(" · ") + ".");
     setBusy(false);
   }, [itens, corte, carregar, reload]);
 

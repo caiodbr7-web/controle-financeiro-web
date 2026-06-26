@@ -32,14 +32,18 @@ export interface SyncResult {
   inseridos: number;
   from: string;
   por_conta: Record<string, number>;
+  /** status do item na Pluggy apos o sync (UPDATED, WAITING_USER_INPUT, LOGIN_ERROR, ...) */
+  status?: string | null;
 }
 
-/** Dispara a sincronizacao (contas + transacoes) de um item Pluggy. */
-export async function syncItem(itemId: string, from?: string): Promise<SyncResult> {
+/** Dispara a sincronizacao (contas + transacoes) de um item Pluggy.
+ *  refresh=true forca a Pluggy a buscar dados frescos no banco antes de ler
+ *  (mais lento, mas pega transacoes recentes que ainda nao estavam no cache). */
+export async function syncItem(itemId: string, from?: string, refresh = false): Promise<SyncResult> {
   const r = await fetch(`${FN_BASE}/pluggy-sync`, {
     method: "POST",
     headers: await authHeaders(),
-    body: JSON.stringify({ itemId, from }),
+    body: JSON.stringify({ itemId, from, refresh }),
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data?.error || "Falha ao sincronizar");
