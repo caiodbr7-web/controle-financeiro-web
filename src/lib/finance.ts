@@ -113,6 +113,15 @@ export function dvDataReal(d: Lancamento): { k: string; d: number } | null {
   return { k: (mm > cm ? cy - 1 : cy) + "-" + String(mm).padStart(2, "0"), d: dd };
 }
 
+// data completa "DD/MM/AA" a partir da data real do movimento (usa o ano da
+// competência, tratando a virada de ano: compra em dez na fatura de jan).
+// Cai no data_mov cru quando não há data válida.
+export function dataCompleta(d: Lancamento): string {
+  const r = dvDataReal(d);
+  if (r) return `${String(r.d).padStart(2, "0")}/${r.k.slice(5, 7)}/${r.k.slice(2, 4)}`;
+  return String(d.data_mov || "") || "—";
+}
+
 export function dvGasto(d: Lancamento): number {
   if (d.classe === "Gasto") return Math.abs(d.valor);
   if (d.classe === "Estorno/Credito") return -Math.abs(d.valor);

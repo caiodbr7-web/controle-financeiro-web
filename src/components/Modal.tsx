@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { Lancamento } from "../types";
-import { BRL, catKey, corCategoria } from "../lib/finance";
+import { BRL, catKey, corCategoria, dataCompleta } from "../lib/finance";
 
 export interface ModalData { title: string; rows: Lancamento[]; }
 
@@ -73,7 +73,7 @@ export function Modal({ data, onClose }: { data: ModalData | null; onClose: () =
               <tbody>
                 {ord.map((d) => (
                   <tr key={d.id}>
-                    <td>{d.data_mov}</td>
+                    <td className="whitespace-nowrap">{dataCompleta(d)}</td>
                     <td className="max-w-[230px] truncate" title={d.descricao}>{d.descricao}</td>
                     <td>{d.origem}</td>
                     <td>{catKey(d)}</td>

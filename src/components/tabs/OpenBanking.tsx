@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { Lancamento } from "../../types";
 import { Kpi, Select } from "../ui";
 import { sb } from "../../lib/supabase";
-import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, ehGasto, ehReceita } from "../../lib/finance";
+import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, dataCompleta, ehGasto, ehReceita } from "../../lib/finance";
 
 /* ============================================================================
    Aba "Open Banking" — superfície de VALIDAÇÃO do Pluggy.
@@ -37,7 +37,7 @@ interface ColDef {
 const COLS: ColDef[] = [
   { key: "id", label: "ID", num: true, sortable: true },
   { key: "competencia", label: "Competência", render: (d) => mesCurto(d.competencia), sortable: true },
-  { key: "data_mov", label: "Data", sortable: true },
+  { key: "data_mov", label: "Data", sortable: true, render: (d) => dataCompleta(d) },
   { key: "ano", label: "Ano", num: true, sortable: true },
   { key: "mes", label: "Mês", num: true, sortable: true },
   { key: "banco", label: "Banco", sortable: true },

@@ -3,7 +3,7 @@ import type { Lancamento } from "../../types";
 import { Kpi, Select, Seg } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
-import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, catKey, ehGasto, ehReceita } from "../../lib/finance";
+import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, catKey, dataCompleta, ehGasto, ehReceita } from "../../lib/finance";
 import { baixarCsv } from "../../lib/csv";
 import { useToast } from "../Toast";
 import { ArquivosPanel } from "./Arquivos";
@@ -74,7 +74,7 @@ export function Lancamentos({ dados, allDados, months }: Props) {
       { label: "Competência", value: (d) => mesCurto(d.competencia) },
       { label: "Banco", value: (d) => d.banco },
       { label: "Origem", value: (d) => d.origem },
-      { label: "Data", value: (d) => d.data_mov },
+      { label: "Data", value: (d) => dataCompleta(d) },
       { label: "Descrição", value: (d) => d.descricao },
       { label: "Classe", value: (d) => d.classe },
       { label: "Categoria", value: (d) => catKey(d) },
@@ -166,7 +166,7 @@ export function Lancamentos({ dados, allDados, months }: Props) {
                   <td>{mesCurto(d.competencia)}</td>
                   <td>{d.banco}</td>
                   <td>{d.origem}</td>
-                  <td>{d.data_mov}</td>
+                  <td className="whitespace-nowrap">{dataCompleta(d)}</td>
                   <td className="max-w-[230px] truncate" title={d.descricao}>{d.descricao}</td>
                   <td>{d.classe}</td>
                   <td>{catCell(d)}</td>
@@ -185,7 +185,7 @@ export function Lancamentos({ dados, allDados, months }: Props) {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-[13.5px] font-medium truncate" title={d.descricao}>{d.descricao}</div>
-                <div className="text-[11.5px] text-muted truncate">{mesCurto(d.competencia)} · {d.origem} · {d.data_mov}</div>
+                <div className="text-[11.5px] text-muted truncate">{mesCurto(d.competencia)} · {d.origem} · {dataCompleta(d)}</div>
               </div>
               <div className="text-right shrink-0">
                 <div className={`tabular-nums text-[13.5px] font-medium ${d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}`}>{valCell(d)}</div>
