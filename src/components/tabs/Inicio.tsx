@@ -9,6 +9,7 @@ import {
   dvDiasNoMes, dvLabel, MES_ABREV, mesCurto, mesComp, diaDoMov, normEstab,
   valorAporte, valorReceitaInvest,
 } from "../../lib/finance";
+import { ehInterna } from "../../lib/lancClasses";
 import { type Plano, projetar, contribNoMes, ehReceitaTipo } from "../../lib/projecao";
 
 interface Props {
@@ -178,7 +179,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   const ultimos = useMemo(() => {
     const arr: { d: Lancamento; k: string; dia: number }[] = [];
     dados.forEach((d) => {
-      if (!ehGasto(d.classe) && !ehReceita(d.classe)) return;
+      if (ehInterna(d) || (!ehGasto(d.classe) && !ehReceita(d.classe))) return; // esconde movimentos internos (ex.: gasto marcado "entre contas")
       const r = dvDataReal(d); if (!r) return;
       arr.push({ d, k: r.k, dia: r.d });
     });
