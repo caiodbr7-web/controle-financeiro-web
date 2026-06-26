@@ -80,6 +80,27 @@ export function Conectar({ reload }: { reload: () => void }) {
     }
   }, [corte, carregar, reload]);
 
+  // sincroniza TODOS os itens em paralelo
+  const sincronizarTudo = useCallback(async () => {
+    if (itens.length === 0) return;
+    setBusy(true);
+    setMsg(`Sincronizando 0 de ${itens.length}…`);
+    let ok = 0, erros = 0;
+    await Promise.all(itens.map(async (it) => {
+      try {
+        await syncItem(it.item_id, it.sync_from ?? corte);
+        ok++;
+      } catch {
+        erros++;
+      }
+      setMsg(`Sincronizando ${ok + erros} de ${itens.length}…`);
+    }));
+    await carregar();
+    reload();
+    setMsg(`✓ ${itens.length} conexão(ões) sincronizada(s)${erros ? ` (${erros} com erro)` : ""}.`);
+    setBusy(false);
+  }, [itens, corte, carregar, reload]);
+
   // callback de sucesso do widget: pega o itemId e ja sincroniza
   const onSuccess = useCallback(async (data: { item: { id: string } }) => {
     setToken(null);
@@ -128,6 +149,15 @@ export function Conectar({ reload }: { reload: () => void }) {
 
       {itens.length > 0 && (
         <Panel title="Bancos conectados">
+          <div className="flex justify-end mb-3">
+            <button
+              onClick={sincronizarTudo}
+              disabled={busy}
+              className="bg-accent text-white border-0 rounded-[10px] px-4 py-[9px] text-[13px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
+            >
+              Sincronizar tudo
+            </button>
+          </div>
           <div className="flex flex-col gap-2">
             {itens.map((it) => (
               <div
