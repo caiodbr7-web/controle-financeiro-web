@@ -171,7 +171,7 @@ function bancoCanonico(blob: string): string | null {
   const n = semAcento(blob).toLowerCase();
   if (n.includes("nubank") || n.includes("nu pagamentos") || n.includes("nu financeira")) return "Nubank";
   if (n.includes("itau")) return "Itau";
-  if (n.includes("picpay")) return "PicPay";
+  if (n.includes("picpay") || n.includes("pic pay")) return "PicPay";
   if (n.includes("rico")) return "Rico";
   if (XP.test(n)) return "XP";
   if (n.includes("bradesco")) return "Bradesco";
@@ -191,9 +191,11 @@ function bancoCanonico(blob: string): string | null {
   return null;
 }
 
-function resolverBancoDoItem(connectorName: string | null, accounts: any[]): string {
-  const nomes = accounts.flatMap((a) =>
-    [a?.marketingName, a?.name].filter((x: unknown): x is string => !!x)
+// Banco POR CONTA: agregadores ("MeuPluggy") trazem contas de bancos diferentes
+// numa só conexão — o banco real está no nome de cada conta, não no conector.
+function resolverBancoDaConta(connectorName: string | null, account: any): string {
+  const nomes = [account?.marketingName, account?.name].filter(
+    (x: unknown): x is string => !!x,
   );
   const blob = [connectorName ?? "", ...nomes].join(" ");
   const canon = bancoCanonico(blob);
@@ -210,17 +212,18 @@ function resolverBancoDoItem(connectorName: string | null, accounts: any[]): str
 async function syncTransacoes(admin: any, apiKey: string, userId: string, itemId: string, syncFrom: string | null) {
   const item = await getItem(apiKey, itemId);
   const accounts = await getAccounts(apiKey, itemId);
-  // resolve o banco pelos nomes das contas quando a Pluggy não dá connector.name
-  const connectorName: string = resolverBancoDoItem(item?.connector?.name ?? null, accounts);
+  // banco resolvido POR CONTA (ver resolverBancoDaConta)
+  const connRaw: string | null = item?.connector?.name ?? null;
+  const bancoDaConta = (acc: any) => resolverBancoDaConta(connRaw, acc);
   const from: string = syncFrom ?? dozeMesesAtras();
 
-  const contasRaw = accounts.map((acc) => mapContaRaw(acc, itemId, connectorName, userId));
+  const contasRaw = accounts.map((acc) => mapContaRaw(acc, itemId, bancoDaConta(acc), userId));
   let txRaw: Record<string, unknown>[] = [];
   const porConta: Record<string, number> = {};
   for (const acc of accounts) {
     const txs = await getAllTransactions(apiKey, acc.id, from);
     porConta[acc.name ?? acc.id] = txs.length;
-    txRaw = txRaw.concat(txs.map((t) => mapTransacaoRaw(t, acc, connectorName, itemId, userId)));
+    txRaw = txRaw.concat(txs.map((t) => mapTransacaoRaw(t, acc, bancoDaConta(acc), itemId, userId)));
   }
 
   // dedup dentro do lote (mesmo tx_id não pode repetir no upsert)
@@ -250,7 +253,7 @@ async function syncTransacoes(admin: any, apiKey: string, userId: string, itemId
       item_id: itemId,
       user_id: userId,
       connector_id: item?.connector?.id ?? null,
-      connector_name: connectorName,
+      connector_name: connRaw ?? "Banco", // conexão: conector cru; banco real é por conta
       status: item?.status ?? null,
       sync_from: from,
       last_synced_at: new Date().toISOString(),

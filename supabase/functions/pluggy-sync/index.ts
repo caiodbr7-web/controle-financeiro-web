@@ -32,7 +32,7 @@ import {
   getAllTransactions,
   mapContaRaw,
   mapTransacaoRaw,
-  resolverBancoDoItem,
+  resolverBancoDaConta,
 } from "../_shared/pluggy.ts";
 
 function dozeMesesAtras(): string {
@@ -163,15 +163,17 @@ Deno.serve(async (req) => {
     }
     const itemStatus: string | null = item?.status ?? null;
 
+    const connRaw: string | null = item?.connector?.name ?? null;
     const accounts = await getAccounts(apiKey, itemId);
-    // Nome do banco: a Pluggy nem sempre devolve item.connector.name (cartões,
-    // certos estados do item). Em vez de cair no genérico "Banco" — que vira
-    // "Cartao Banco" na origem — resolvemos pelos nomes/marketingName das contas.
-    const connectorName: string = resolverBancoDoItem(item?.connector?.name ?? null, accounts);
+    // Banco resolvido POR CONTA: conectores agregadores (ex.: "MeuPluggy",
+    // connector_id 200) trazem contas de bancos diferentes numa só conexão. O
+    // banco real está no nome de CADA conta — resolver no nível do item rotularia
+    // tudo com um banco só (e sem nome de conta cairíamos no genérico "Banco").
+    const bancoDaConta = (acc: typeof accounts[number]) => resolverBancoDaConta(connRaw, acc);
 
     // 2) coleta + mapeia para o CRU (sem normalizar nada)
     const contasRaw = accounts.map((acc) =>
-      mapContaRaw(acc, itemId, connectorName, userId)
+      mapContaRaw(acc, itemId, bancoDaConta(acc), userId)
     );
     let txRaw: Record<string, unknown>[] = [];
     const porConta: Record<string, number> = {};
@@ -179,7 +181,7 @@ Deno.serve(async (req) => {
       const txs = await getAllTransactions(apiKey, acc.id, from);
       porConta[acc.name ?? acc.id] = txs.length;
       txRaw = txRaw.concat(
-        txs.map((t) => mapTransacaoRaw(t, acc, connectorName, itemId, userId)),
+        txs.map((t) => mapTransacaoRaw(t, acc, bancoDaConta(acc), itemId, userId)),
       );
     }
 
@@ -251,7 +253,10 @@ Deno.serve(async (req) => {
         item_id: itemId,
         user_id: userId, // service role nao tem auth.uid() -> grava o dono na mao
         connector_id: item?.connector?.id ?? null,
-        connector_name: connectorName,
+        // conexão: guarda o conector cru (a UI re-resolve p/ exibir). Em
+        // agregadores ("MeuPluggy") não há um banco único — o banco real é
+        // por conta, gravado em pluggy_contas_raw/transacoes_raw.
+        connector_name: connRaw ?? "Banco",
         status: item?.status ?? null,
         sync_from: from,
         last_synced_at: new Date().toISOString(),
