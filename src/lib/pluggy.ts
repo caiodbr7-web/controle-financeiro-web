@@ -1,5 +1,5 @@
 import { sb, SUPABASE_URL, SUPABASE_ANON } from "./supabase";
-import type { Investimento, InvestimentoHist } from "../types";
+import type { Investimento, InvestimentoHist, InvestimentoHistTipo } from "../types";
 
 const FN_BASE = `${SUPABASE_URL}/functions/v1`;
 
@@ -167,6 +167,23 @@ export async function listInvestmentHistory(): Promise<InvestimentoHist[]> {
     .order("dia", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as InvestimentoHist[];
+}
+
+/** Histórico diário do patrimônio POR CATEGORIA (tabela pluggy_investments_hist_tipo).
+ *  Alimenta o gráfico stackado de evolução por tipo. Se a tabela ainda não existir
+ *  (migração não aplicada), devolve [] para o front cair na estimativa pela composição
+ *  atual em vez de quebrar. */
+export async function listInvestmentHistoryByTipo(): Promise<InvestimentoHistTipo[]> {
+  const { data, error } = await sb
+    .from("pluggy_investments_hist_tipo")
+    .select("dia,tipo,valor_total,valor_aplicado,posicoes")
+    .order("dia", { ascending: true });
+  if (error) {
+    // tabela/relação inexistente -> degrada graciosamente (front sintetiza a série)
+    if (/relation|does not exist|could not find|schema cache|not exist/i.test(error.message)) return [];
+    throw new Error(error.message);
+  }
+  return (data ?? []) as InvestimentoHistTipo[];
 }
 
 /** Define (ou limpa, com null) a classificação manual de um ativo. */

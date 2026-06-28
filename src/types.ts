@@ -78,6 +78,16 @@ export interface InvestimentoHist {
   posicoes: number | null;
 }
 
+// Retrato diário do patrimônio POR CATEGORIA (tabela public.pluggy_investments_hist_tipo).
+// Uma linha por (dia, tipo efetivo) — alimenta o gráfico stackado de evolução por categoria.
+export interface InvestimentoHistTipo {
+  dia: string;                   // "YYYY-MM-DD"
+  tipo: string;                  // tipo efetivo (tipo_manual ?? tipo ?? 'OUTROS')
+  valor_total: number | null;    // soma dos saldos da categoria no dia
+  valor_aplicado: number | null; // soma dos aportes da categoria no dia
+  posicoes: number | null;       // nº de posições da categoria no dia
+}
+
 export type Visao = "ALL" | "pessoal" | "corporativo";
 export type Modo = "cartao" | "ambos" | "conta";
 export type Aba = "inicio" | "geral" | "mensal" | "diario" | "planejamento" | "classificar" | "lanc" | "adicionar" | "openbanking" | "saldo_evolucao" | "saldo_dados" | "investimentos";

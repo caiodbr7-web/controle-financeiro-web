@@ -167,12 +167,17 @@ Deno.serve(async (req) => {
     // retrato DIÁRIO do patrimônio -> alimenta o gráfico de evolução histórica.
     // Lê a carteira completa do usuário (não só o que veio neste sync) e grava
     // um ponto por dia (upsert em (user_id, dia): re-sincronizar atualiza o dia).
+    // Grava também a quebra POR CATEGORIA (pluggy_investments_hist_tipo), que
+    // alimenta a área stackada de evolução por tipo.
     try {
       const { data: todas } = await sb
         .from("pluggy_investments")
-        .select("saldo, valor_aplicado, lucro")
+        .select("saldo, valor_aplicado, lucro, tipo, tipo_manual")
         .eq("user_id", userId);
       if (todas && todas.length) {
+        const dia = agora.slice(0, 10); // "YYYY-MM-DD" (UTC)
+
+        // total da carteira
         const tot = todas.reduce(
           (a, p: any) => ({
             valor_total: a.valor_total + (p.saldo ?? 0),
@@ -181,11 +186,30 @@ Deno.serve(async (req) => {
           }),
           { valor_total: 0, valor_aplicado: 0, lucro: 0 },
         );
-        const dia = agora.slice(0, 10); // "YYYY-MM-DD" (UTC)
         await sb.from("pluggy_investments_hist").upsert(
           { user_id: userId, dia, ...tot, posicoes: todas.length, atualizado_em: agora },
           { onConflict: "user_id,dia" },
         );
+
+        // quebra por tipo EFETIVO (tipo_manual vence tipo; sem nenhum -> OUTROS)
+        const porTipo = new Map<string, { valor_total: number; valor_aplicado: number; posicoes: number }>();
+        for (const p of todas as any[]) {
+          const k = (p.tipo_manual ?? p.tipo) || "OUTROS";
+          const acc = porTipo.get(k) ?? { valor_total: 0, valor_aplicado: 0, posicoes: 0 };
+          acc.valor_total += p.saldo ?? 0;
+          acc.valor_aplicado += p.valor_aplicado ?? 0;
+          acc.posicoes += 1;
+          porTipo.set(k, acc);
+        }
+        const linhasTipo = [...porTipo.entries()].map(([tipo, v]) => ({
+          user_id: userId, dia, tipo, ...v, atualizado_em: agora,
+        }));
+        if (linhasTipo.length) {
+          // tabela opcional: se a migração ainda não rodou, ignora o erro
+          await sb
+            .from("pluggy_investments_hist_tipo")
+            .upsert(linhasTipo, { onConflict: "user_id,dia,tipo" });
+        }
       }
     } catch { /* histórico é best-effort; não derruba a sincronização */ }
 
