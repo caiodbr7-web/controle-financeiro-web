@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
+import type { Lancamento } from "../../types";
 import { Importar } from "./Importar";
 import { Conectar } from "./Conectar";
+import { ArquivosPanel } from "./Arquivos";
 
 export type MetodoAdd = "arquivo" | "banco";
 
@@ -34,10 +36,12 @@ const METODOS: { id: MetodoAdd; titulo: string; desc: string; icon: ReactNode }[
    Um seletor escolhe o método (arquivo manual ou banco via Open Finance) e
    abaixo renderiza o fluxo completo correspondente. */
 export function Adicionar({
-  reload, metodo, onMetodo,
-}: { reload: () => void; metodo: MetodoAdd; onMetodo: (m: MetodoAdd) => void }) {
+  reload, metodo, onMetodo, allDados,
+}: { reload: () => void; metodo: MetodoAdd; onMetodo: (m: MetodoAdd) => void; allDados: Lancamento[] }) {
   return (
     <div>
+      <ArquivosPanel allDados={allDados} />
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-[18px] max-w-[760px]">
         {METODOS.map((m) => {
           const on = metodo === m.id;

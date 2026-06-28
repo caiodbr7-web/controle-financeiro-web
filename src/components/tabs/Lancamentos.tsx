@@ -12,9 +12,8 @@ import {
 } from "../../lib/lancClasses";
 import { baixarCsv } from "../../lib/csv";
 import { useToast } from "../Toast";
-import { ArquivosPanel } from "./Arquivos";
 
-interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[]; reload: () => void; }
+interface Props { dados: Lancamento[]; months: string[]; reload: () => void; }
 
 const PERIODOS = [
   { v: "all", label: "Tudo" }, { v: "12", label: "12m" }, { v: "6", label: "6m" }, { v: "3", label: "3m" },
@@ -29,7 +28,7 @@ const VISOES = [
 type VisaoLanc = (typeof VISOES)[number]["v"];
 const PAGINA = 200;
 
-export function Lancamentos({ dados, allDados, months }: Props) {
+export function Lancamentos({ dados, months }: Props) {
   const { toast } = useToast();
   const [busca, setBusca] = useState("");
   const [periodo, setPeriodo] = useState("all");
@@ -273,8 +272,6 @@ export function Lancamentos({ dados, allDados, months }: Props) {
 
   return (
     <div>
-      <ArquivosPanel allDados={allDados} />
-
       <div className="flex flex-wrap gap-2 items-center mb-4">
         <input className="input min-w-[180px] flex-1" placeholder="Buscar descrição…" value={busca} onChange={(e) => setBusca(e.target.value)} />
         <Seg size="sm" value={periodo} onChange={setPeriodo} options={PERIODOS} />

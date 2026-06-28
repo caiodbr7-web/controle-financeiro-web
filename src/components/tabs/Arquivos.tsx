@@ -3,7 +3,7 @@ import type { Lancamento } from "../../types";
 import { mesCurto } from "../../lib/finance";
 
 /* Painel compacto e colapsável com o status de faturas/extratos por mês × banco.
-   Vive dentro da aba Lançamentos (deixou de ser aba própria). */
+   Vive no topo da aba Adicionar (ponto de entrada de dados). */
 export function ArquivosPanel({ allDados }: { allDados: Lancamento[] }) {
   const [aberto, setAberto] = useState(false);
 

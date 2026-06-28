@@ -195,20 +195,17 @@ export function mvOrigemOk(origem: string, modo: Modo): boolean {
   return true; // ambos
 }
 
-// limite de parciais: cartão/ambos usam a regra das faturas; conta só exclui o mês atual
-export function dvParcialLimite(allDados: Lancamento[]): string {
+// limite de parciais: só o mês civil ATUAL é parcial; todo mês passado já fechou.
+// Antes a regra olhava a última fatura de cartão e recuava 1 mês — herança da era
+// PDF, quando faturas chegavam atrasadas e ainda podiam mexer no mês anterior. Com
+// Open Finance os dados chegam continuamente e o mês corrente sempre tem cartão,
+// então recuar 1 mês passou a marcar o mês JÁ FECHADO (ex.: maio em 28/jun) como
+// parcial sem motivo — escondendo-o do KPI "automático" e pondo "*" no rótulo.
+// (`allDados` não é mais necessário; mantido na assinatura p/ não mexer nos callers.)
+export function dvParcialLimite(allDados?: Lancamento[]): string {
+  void allDados;
   const h = new Date();
-  const curK = h.getFullYear() + "-" + String(h.getMonth() + 1).padStart(2, "0");
-  let max = "";
-  for (const d of allDados) {
-    if (String(d.origem || "").startsWith("Cartao")) {
-      const c = String(d.competencia).slice(0, 7);
-      // ignora competências futuras (faturas que o Pluggy adianta) — elas não
-      // estendem o horizonte de meses "completos".
-      if (c > max && c <= curK) max = c;
-    }
-  }
-  return max ? dvAddMes(max, -1) : "9999-99";
+  return h.getFullYear() + "-" + String(h.getMonth() + 1).padStart(2, "0");
 }
 export function mvLimiteParcial(allDados: Lancamento[], modo: Modo): string {
   if (modo === "conta") {
