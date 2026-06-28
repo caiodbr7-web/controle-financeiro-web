@@ -20,7 +20,7 @@ export const BRL = (v: number) =>
   "R$ " +
   Math.abs(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export const brlShort = (v: number) => "R$ " + Number(v || 0).toLocaleString("pt-BR");
+export const brlShort = (v: number) => "R$ " + Math.round(Number(v || 0)).toLocaleString("pt-BR");
 
 // reais sem centavos — para os números grandes do painel
 export const BRL0 = (v: number) =>

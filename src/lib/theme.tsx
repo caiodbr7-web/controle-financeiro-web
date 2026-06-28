@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { BRL } from "./finance";
+import { BRL0 } from "./finance";
 
 /* ---------- tema claro/escuro (auto segue o sistema) ---------- */
 
@@ -105,7 +105,7 @@ export function ChartTip({
           <span className="ml-auto font-medium tabular-nums pl-3">
             {pct
               ? Number(p.value).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%"
-              : BRL(Number(p.value)) + (pctOf ? ` (${((Number(p.value) / pctOf) * 100).toFixed(1)}%)` : "")}
+              : BRL0(Number(p.value)) + (pctOf ? ` (${((Number(p.value) / pctOf) * 100).toFixed(1)}%)` : "")}
           </span>
         </div>
       ))}

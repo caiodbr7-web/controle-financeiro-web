@@ -5,7 +5,7 @@ import { useConfirm } from "../Confirm";
 import { useToast } from "../Toast";
 import { sb } from "../../lib/supabase";
 import type { Lancamento } from "../../types";
-import { BRL, CATEGORIAS, dvAddMes, dvLabel, mesComp, valorGasto, valorReceita } from "../../lib/finance";
+import { BRL0, CATEGORIAS, dvAddMes, dvLabel, mesComp, valorGasto, valorReceita } from "../../lib/finance";
 import {
   type Plano, type TipoPlano, TIPOS, mesAtual, horizonte, projetar,
   contribNoMes, fimEfetivo, ehReceitaTipo, mesesEntre,
@@ -54,7 +54,7 @@ const parseValorN = (s: string): number | null => {
 // célula compacta da projeção: reais inteiros
 const fmtCell = (v: number) => (v < 0 ? "-" : "") + Math.abs(Math.round(v)).toLocaleString("pt-BR");
 // célula da visão mês: até 2 casas, "—" quando vazio
-const fmt = (v: number | null | undefined) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 }));
+const fmt = (v: number | null | undefined) => (v == null ? "—" : Math.round(Number(v)).toLocaleString("pt-BR"));
 
 function resumoItem(p: Plano): string {
   const fim = fimEfetivo(p);
@@ -62,14 +62,14 @@ function resumoItem(p: Plano): string {
   switch (p.tipo) {
     case "fixo":
     case "receita":
-      return `${BRL(p.valor)}/mês` + (p.mes_fim ? ` · até ${L(p.mes_fim)}` : " · sem fim");
+      return `${BRL0(p.valor)}/mês` + (p.mes_fim ? ` · até ${L(p.mes_fim)}` : " · sem fim");
     case "pagamento":
       return `pagamento único · ${L(p.mes_inicio)}`;
     case "parcelamento":
-      return `${p.parcelas || 1}× de ${BRL(p.valor)} · termina ${L(fim)}`;
+      return `${p.parcelas || 1}× de ${BRL0(p.valor)} · termina ${L(fim)}`;
     case "meta": {
       const n = mesesEntre(p.mes_inicio, fim || p.mes_inicio) + 1;
-      return `${BRL(p.valor)} até ${L(fim)} · ${BRL(p.valor / Math.max(1, n))}/mês`;
+      return `${BRL0(p.valor)} até ${L(fim)} · ${BRL0(p.valor / Math.max(1, n))}/mês`;
     }
   }
   return "";
@@ -923,10 +923,10 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             document.body
           )}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
-            <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={BRL(prevGer)} sub="recorrentes (plano)" />
-            <Kpi title="Gastos realizados" value={BRL(efetGer)} sub={cartaoParcial(comp) ? "cartão ainda parcial · mês em aberto" : "recorrente + conta + cartão"} color="text-amber" />
-            <Kpi title="Saldo previsto" value={BRL(prevRec - prevGer)} sub="receita − gastos (plano)" color={prevRec - prevGer < 0 ? "text-red" : "text-green"} />
-            <Kpi title="Saldo realizado" value={BRL(efetRec - efetGer)} sub="receita − gastos (real)" color={efetRec - efetGer < 0 ? "text-red" : "text-green"} />
+            <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={BRL0(prevGer)} sub="recorrentes (plano)" />
+            <Kpi title="Gastos realizados" value={BRL0(efetGer)} sub={cartaoParcial(comp) ? "cartão ainda parcial · mês em aberto" : "recorrente + conta + cartão"} color="text-amber" />
+            <Kpi title="Saldo previsto" value={BRL0(prevRec - prevGer)} sub="receita − gastos (plano)" color={prevRec - prevGer < 0 ? "text-red" : "text-green"} />
+            <Kpi title="Saldo realizado" value={BRL0(efetRec - efetGer)} sub="receita − gastos (real)" color={efetRec - efetGer < 0 ? "text-red" : "text-green"} />
           </div>
 
           <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
@@ -1087,10 +1087,10 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
-            <Kpi title="Gasto médio / mês" value={BRL(gastoMedio)} sub={`projeção de ${n} meses`} />
-            <Kpi title="Maior mês" value={BRL(maior.gerais)} sub={maior.label} color="text-amber" />
-            <Kpi title="Em parcelas (período)" value={BRL(comprometidoParc)} sub="parcelamentos no horizonte" color="text-violet" />
-            <Kpi title="Saldo médio / mês" value={BRL(saldoMedio)} sub={saldoMedio < 0 ? "no vermelho" : "sobra prevista"} color={saldoMedio < 0 ? "text-red" : "text-green"} />
+            <Kpi title="Gasto médio / mês" value={BRL0(gastoMedio)} sub={`projeção de ${n} meses`} />
+            <Kpi title="Maior mês" value={BRL0(maior.gerais)} sub={maior.label} color="text-amber" />
+            <Kpi title="Em parcelas (período)" value={BRL0(comprometidoParc)} sub="parcelamentos no horizonte" color="text-violet" />
+            <Kpi title="Saldo médio / mês" value={BRL0(saldoMedio)} sub={saldoMedio < 0 ? "no vermelho" : "sobra prevista"} color={saldoMedio < 0 ? "text-red" : "text-green"} />
           </div>
 
           <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">

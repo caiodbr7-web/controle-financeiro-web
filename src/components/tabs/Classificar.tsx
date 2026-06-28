@@ -3,7 +3,7 @@ import type { Lancamento } from "../../types";
 import { Kpi } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
-import { BRL, ehGasto, normEstab } from "../../lib/finance";
+import { BRL0, ehGasto, normEstab } from "../../lib/finance";
 import { sugerirGrupo, type FonteSugestao, type Regra, type VinculoPlano } from "../../lib/classificador";
 import { useToast } from "../Toast";
 
@@ -205,7 +205,7 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
-        <Kpi title="A classificar" value={BRL(totalPendente)} sub={`${grupos.length} estab. · ${linhasPendentes} lançamentos`} color="text-amber" />
+        <Kpi title="A classificar" value={BRL0(totalPendente)} sub={`${grupos.length} estab. · ${linhasPendentes} lançamentos`} color="text-amber" />
         <Kpi title="Conhecidos" value={conhecidos.length} sub="vínculo/histórico · 1 clique" color="text-green" />
         <Kpi title="Sugeridos" value={sugeridos} sub="motor/banco · confira" color={sugeridos ? "text-accent" : "text-muted"} />
         <div className="bg-card border border-line rounded-[18px] p-4 shadow-card flex flex-col justify-center gap-2 min-w-0">
@@ -299,7 +299,7 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
                   >
                     <div className="text-[13.5px] font-medium truncate group-hover:text-accent transition-colors">{g.ex}</div>
                     <div className="text-[11.5px] text-muted">
-                      {g.n} {g.n === 1 ? "lançamento" : "lançamentos"} · <span className="text-red tabular-nums">{BRL(g.total)}</span>
+                      {g.n} {g.n === 1 ? "lançamento" : "lançamentos"} · <span className="text-red tabular-nums">{BRL0(g.total)}</span>
                       {cat
                         ? (FONTE_BADGE[g.fonte] && <span className={`ml-2 inline-flex items-center rounded-full px-[7px] py-[1px] text-[10.5px] font-semibold ${FONTE_BADGE[g.fonte]!.cls}`}>{FONTE_BADGE[g.fonte]!.label}</span>)
                         : <span className="ml-2 inline-flex items-center rounded-full bg-amber/10 text-amber px-[7px] py-[1px] text-[10.5px] font-semibold">sem sugestão</span>}

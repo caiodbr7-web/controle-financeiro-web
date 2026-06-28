@@ -8,7 +8,7 @@ import type { Aba, Saldo as SaldoRow } from "../../types";
 import { Kpi, Panel, Seg, Select } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
-import { BRL, brlShort } from "../../lib/finance";
+import { BRL0, brlShort } from "../../lib/finance";
 
 /* ============================================================================
    Aba "Saldo" — evolução dos saldos das contas bancárias (Open Finance).
@@ -295,7 +295,7 @@ function SaldoEvolucao({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-[14px] mb-[18px]">
         <Kpi
           title="Saldo total hoje"
-          value={BRL(kpis.totalAtual)}
+          value={BRL0(kpis.totalAtual)}
           sub={`${contas.length} ${contas.length === 1 ? "conta" : "contas"} · ${ancora ? fmtDiaBR(ancora) : "—"}`}
           color={kpis.totalAtual < 0 ? "text-red" : ""}
         />
@@ -303,8 +303,8 @@ function SaldoEvolucao({
           title="Variação no período"
           value={
             kpis.delta >= 0
-              ? <span className="text-green">▲ {BRL(kpis.delta)}</span>
-              : <span className="text-red">▼ {BRL(Math.abs(kpis.delta))}</span>
+              ? <span className="text-green">▲ {BRL0(kpis.delta)}</span>
+              : <span className="text-red">▼ {BRL0(Math.abs(kpis.delta))}</span>
           }
           sub={`${kpis.pct >= 0 ? "+" : ""}${kpis.pct.toFixed(1)}% · desde ${kpis.inicio ? fmtDiaBR(kpis.inicio) : "—"}`}
         />
@@ -385,9 +385,9 @@ function SaldoEvolucao({
                   <td className="whitespace-nowrap">{r.label}</td>
                   {contas.map((c) => {
                     const v = Number(r[c.account_id] ?? 0);
-                    return <td key={c.account_id} className={`num ${v < 0 ? "text-red" : ""}`}>{BRL(v)}</td>;
+                    return <td key={c.account_id} className={`num ${v < 0 ? "text-red" : ""}`}>{BRL0(v)}</td>;
                   })}
-                  <td className={`num font-semibold ${Number(r.Total) < 0 ? "text-red" : ""}`}>{BRL(Number(r.Total))}</td>
+                  <td className={`num font-semibold ${Number(r.Total) < 0 ? "text-red" : ""}`}>{BRL0(Number(r.Total))}</td>
                 </tr>
               ))}
             </tbody>
@@ -419,8 +419,8 @@ const COLS: ColDef[] = [
   { key: "dia", label: "Dia", sortable: true, render: (r) => fmtDiaBR(r.dia) },
   { key: "banco", label: "Banco", sortable: true },
   { key: "conta", label: "Conta", sortable: true },
-  { key: "saldo", label: "Saldo", num: true, sortable: true, render: (r) => <span className={r.saldo < 0 ? "text-red" : ""}>{BRL(r.saldo)}</span> },
-  { key: "saldo_atual_ref", label: "Saldo atual (ref)", num: true, sortable: true, render: (r) => (r.saldo_atual_ref != null ? BRL(r.saldo_atual_ref) : "—") },
+  { key: "saldo", label: "Saldo", num: true, sortable: true, render: (r) => <span className={r.saldo < 0 ? "text-red" : ""}>{BRL0(r.saldo)}</span> },
+  { key: "saldo_atual_ref", label: "Saldo atual (ref)", num: true, sortable: true, render: (r) => (r.saldo_atual_ref != null ? BRL0(r.saldo_atual_ref) : "—") },
   { key: "ancora_ts", label: "Âncora", render: (r) => fmtTs(r.ancora_ts) },
   { key: "tipo", label: "Tipo" },
   { key: "moeda", label: "Moeda" },
@@ -543,7 +543,7 @@ function SaldoDados({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
         <Kpi title="Linhas" value={filtrados.length.toLocaleString("pt-BR")} sub={`${rows.length.toLocaleString("pt-BR")} no total`} />
         <Kpi title="Contas" value={contas.length} sub="bancárias" />
-        <Kpi title="Saldo total hoje" value={BRL(kpis.totalAtual)} color={kpis.totalAtual < 0 ? "text-red" : "text-green"} />
+        <Kpi title="Saldo total hoje" value={BRL0(kpis.totalAtual)} color={kpis.totalAtual < 0 ? "text-red" : "text-green"} />
         <Kpi title="Janela" value={kpis.minD ? fmtDiaBR(kpis.minD) : "—"} sub={kpis.maxD ? `até ${fmtDiaBR(kpis.maxD)}` : ""} />
       </div>
 
