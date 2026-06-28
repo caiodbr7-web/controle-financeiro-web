@@ -7,8 +7,13 @@ import {
 import type { Investimento, InvestimentoHist, InvestimentoHistTipo } from "../../types";
 import { Kpi, Panel, Select, BarRow } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
-import { listInvestments, listInvestmentHistory, listInvestmentHistoryByTipo, syncInvestments, setTipoManual, setLiquidezD1Manual } from "../../lib/pluggy";
-import { BRL0, brlShort, fmtMoeda } from "../../lib/finance";
+import {
+  listInvestments, listInvestmentHistory, listInvestmentHistoryByTipo, syncInvestments,
+  setTipoManual, setLiquidezD1Manual,
+  addManualInvestment, updateManualInvestment, deleteManualInvestment, setInvestmentCotacao, fetchCotacoes,
+} from "../../lib/pluggy";
+import type { ManualInvestmentInput } from "../../lib/pluggy";
+import { BRL, BRL0, brlShort, fmtMoeda } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
 
 /* ============================================================================
@@ -61,6 +66,12 @@ function liquidezD1Auto(i: Investimento): boolean {
 }
 // liquidez D+1 "efetiva": o override manual vence a heurística
 const liquidezD1Ef = (i: Investimento) => i.liquidez_d1_manual ?? liquidezD1Auto(i);
+
+// posição manual com cotação em moeda estrangeira (ex.: VT em US$): a tabela
+// mostra o valor NATIVO (quantidade × preço); `saldo` segue em BRL (convertido).
+const temCotacaoNativa = (i: Investimento) =>
+  !!(i.manual && i.moeda_cotacao && i.moeda_cotacao !== "BRL" && i.preco_unitario != null && i.quantidade != null);
+const valorNativo = (i: Investimento) => (i.quantidade ?? 0) * (i.preco_unitario ?? 0);
 
 // instituição "limpa": "NU FINANCEIRA S.A. - ..." -> "Nubank"; "BANCO AGIBANK S.A" -> "Banco Agibank".
 function limpaInstituicao(s: string): string {
@@ -140,10 +151,12 @@ interface ColDef {
   num?: boolean;
   mono?: boolean;
   sortable?: boolean;
+  noCsv?: boolean; // coluna só-de-UI (ações) que não entra na exportação
   render?: (i: Investimento) => ReactNode;
 }
 
-function toCsv(rows: Investimento[], cols: ColDef[]): string {
+function toCsv(rows: Investimento[], allCols: ColDef[]): string {
+  const cols = allCols.filter((c) => !c.noCsv);
   const esc = (v: unknown) => {
     const s = v === null || v === undefined ? "" : String(v);
     return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -155,6 +168,7 @@ function toCsv(rows: Investimento[], cols: ColDef[]): string {
         esc(
           c.key === "tipo_manual" ? labelTipo(tipoEf(i)) :
           c.key === "liquidez_d1_manual" ? (liquidezD1Ef(i) ? "Sim" : "Não") :
+          c.key === "saldo" && temCotacaoNativa(i) ? `${valorNativo(i)} ${i.moeda_cotacao}` :
           i[c.key],
         ),
       )
@@ -165,6 +179,149 @@ function toCsv(rows: Investimento[], cols: ColDef[]): string {
 
 const MAX = 2000;
 
+// rótulo + campo de formulário (modal manual)
+function Campo({ label, children, full }: { label: string; children: ReactNode; full?: boolean }) {
+  return (
+    <label className={`flex flex-col gap-1 ${full ? "sm:col-span-2" : ""}`}>
+      <span className="text-[12px] text-muted font-medium">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const inputCls = "input w-full";
+const selCls = "select-chev bg-card text-txt border border-line rounded-[10px] pl-3 py-[8px] text-[13.5px] cursor-pointer outline-none focus:border-muted transition-colors w-full";
+
+// Modal de criar/editar uma posição MANUAL (fora do Open Finance). Com `ticker`,
+// o valor atual passa a ser cotado pelo mercado (ex.: VT em US$); sem ticker, o
+// usuário informa o valor atual em R$.
+function ManualForm({ mode, inicial, onClose, onSaved }: {
+  mode: "add" | "edit";
+  inicial?: Investimento | null;
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+}) {
+  const [nome, setNome] = useState(inicial?.nome ?? "");
+  const [banco, setBanco] = useState(inicial?.banco ?? "");
+  const [classe, setClasse] = useState(inicial?.tipo_manual ?? "");
+  const [ticker, setTicker] = useState(inicial?.ticker ?? "");
+  const [moeda, setMoeda] = useState(inicial?.moeda_cotacao ?? "USD");
+  const [qtd, setQtd] = useState(inicial?.quantidade != null ? String(inicial.quantidade) : "");
+  const [preco, setPreco] = useState(inicial?.preco_unitario != null ? String(inicial.preco_unitario) : "");
+  const [valorAtual, setValorAtual] = useState(inicial && !inicial.ticker && inicial.saldo != null ? String(inicial.saldo) : "");
+  const [aplicado, setAplicado] = useState(inicial?.valor_aplicado != null ? String(inicial.valor_aplicado) : "");
+  const [salvando, setSalvando] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  const temTicker = ticker.trim() !== "";
+  const num = (s: string) => { const n = parseFloat(s.replace(",", ".")); return Number.isFinite(n) ? n : null; };
+
+  async function salvar() {
+    if (!nome.trim()) { setErr("Informe um nome."); return; }
+    setSalvando(true); setErr("");
+    try {
+      const mc = temTicker && moeda !== "BRL" ? moeda : null;
+      const precoNum = num(preco), qtdNum = num(qtd);
+      // saldo (BRL): sem ticker = valor atual digitado; ticker em BRL com preço = qtd*preço;
+      // ticker em moeda estrangeira = fica p/ a cotação calcular (mantém o anterior por ora).
+      let saldo: number | null;
+      if (!temTicker) saldo = num(valorAtual);
+      else if (!mc && precoNum != null && qtdNum != null) saldo = precoNum * qtdNum;
+      else saldo = inicial?.saldo ?? null;
+      const input: ManualInvestmentInput = {
+        nome: nome.trim(),
+        banco: banco.trim() || null,
+        tipo_manual: classe || null,
+        ticker: temTicker ? ticker.trim().toUpperCase() : null,
+        moeda_cotacao: mc,
+        quantidade: temTicker ? qtdNum : null,
+        preco_unitario: temTicker ? precoNum : null,
+        valor_aplicado: num(aplicado),
+        saldo,
+      };
+      if (mode === "add") await addManualInvestment(input);
+      else await updateManualInvestment(inicial!.investment_id, input);
+      await onSaved();
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 backdrop-blur-[6px] flex items-center justify-center z-50 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-card border border-line rounded-[20px] max-w-[560px] w-full max-h-[90vh] flex flex-col shadow-[0_20px_60px_rgba(0,0,0,.25)] fade-in">
+        <div className="flex justify-between items-start gap-3 p-5 border-b border-line">
+          <div>
+            <h3 className="text-[16px] font-semibold tracking-tight">{mode === "add" ? "Adicionar investimento manual" : "Editar investimento manual"}</h3>
+            <div className="text-muted text-[12px] mt-[2px]">Fora do Open Finance — ex.: ETF <b>VT</b> numa corretora no exterior.</div>
+          </div>
+          <button onClick={onClose} aria-label="Fechar" className="w-[30px] h-[30px] rounded-full bg-fill text-muted hover:text-txt border-0 cursor-pointer flex items-center justify-center text-[13px] shrink-0 transition-colors">✕</button>
+        </div>
+
+        <div className="p-5 overflow-auto scroll-thin grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Campo label="Nome*" full><input className={inputCls} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Vanguard Total World (VT)" autoFocus /></Campo>
+          <Campo label="Instituição"><input className={inputCls} value={banco} onChange={(e) => setBanco(e.target.value)} placeholder="Avenue / Vanguard" /></Campo>
+          <Campo label="Classe">
+            <select className={selCls} value={classe} onChange={(e) => setClasse(e.target.value)}>
+              <option value="">(nenhuma)</option>
+              {CLASSE_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Ticker (cotação ao vivo)"><input className={inputCls} value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="VT" /></Campo>
+          {temTicker ? (
+            <>
+              <Campo label="Moeda do ticker">
+                <select className={selCls} value={moeda} onChange={(e) => setMoeda(e.target.value)}>
+                  <option value="USD">USD (US$)</option>
+                  <option value="BRL">BRL (R$)</option>
+                </select>
+              </Campo>
+              <Campo label="Quantidade (cotas)"><input className={inputCls} inputMode="decimal" value={qtd} onChange={(e) => setQtd(e.target.value)} placeholder="10" /></Campo>
+              <Campo label={`Preço unitário ${moeda !== "BRL" ? `(${moeda}, opcional)` : "(opcional)"}`}>
+                <input className={inputCls} inputMode="decimal" value={preco} onChange={(e) => setPreco(e.target.value)} placeholder="cotado automaticamente" />
+              </Campo>
+            </>
+          ) : (
+            <Campo label="Valor atual (R$)"><input className={inputCls} inputMode="decimal" value={valorAtual} onChange={(e) => setValorAtual(e.target.value)} placeholder="10000" /></Campo>
+          )}
+          <Campo label="Valor aplicado (R$, opcional)"><input className={inputCls} inputMode="decimal" value={aplicado} onChange={(e) => setAplicado(e.target.value)} placeholder="quanto custou em R$" /></Campo>
+
+          {temTicker && (
+            <div className="sm:col-span-2 text-[11.5px] text-muted leading-relaxed">
+              Com ticker, o <b>valor atual é cotado pelo mercado</b> (Stooq, último fechamento)
+              {moeda !== "BRL" && " e convertido para R$ pelo câmbio do dia"} ao salvar e em “Atualizar cotações”.
+            </div>
+          )}
+        </div>
+
+        {err && <div className="text-[13px] text-red bg-fill rounded-[10px] px-3 py-2 mx-5 mb-1">{err}</div>}
+        <div className="flex justify-end gap-2 p-5 border-t border-line">
+          <button className="btn-ghost" onClick={onClose} disabled={salvando}>Cancelar</button>
+          <button
+            onClick={salvar}
+            disabled={salvando}
+            className="bg-accent text-white border-0 rounded-[10px] px-4 py-[9px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
+          >
+            {salvando ? "Salvando…" : "Salvar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Investimentos() {
   const cc = useChart();
   const [rows, setRows] = useState<Investimento[]>([]);
@@ -174,12 +331,50 @@ export function Investimentos() {
   const [erro, setErro] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cotBusy, setCotBusy] = useState(false);
+  const [fx, setFx] = useState<number | null>(null);     // câmbio USD->BRL mais recente
+  const [modal, setModal] = useState<{ mode: "add" | "edit"; inv?: Investimento } | null>(null);
 
   const [busca, setBusca] = useState("");
   const [fTipo, setFTipo] = useState("");
   const [fBanco, setFBanco] = useState("");
   const [sortCol, setSortCol] = useState<keyof Investimento>("saldo");
   const [sortDir, setSortDir] = useState(-1);
+
+  // Recalcula o valor atual das posições manuais com `ticker` pela cotação de
+  // mercado (Stooq) + câmbio USD->BRL. Grava `saldo` em BRL (convertido) e mostra
+  // o valor nativo (US$) na linha. Silencioso no carregamento; com aviso no botão.
+  const refreshCotacoes = useCallback(async (lista: Investimento[], opts?: { silent?: boolean }) => {
+    const comTicker = lista.filter((i) => i.manual && i.ticker);
+    const tickers = [...new Set(comTicker.map((i) => i.ticker!.toUpperCase()))];
+    if (!tickers.length) return;
+    setCotBusy(true);
+    try {
+      const { usdbrl, quotes } = await fetchCotacoes(tickers);
+      if (usdbrl != null) setFx(usdbrl);
+      const agora = new Date().toISOString();
+      const patches = new Map<string, Partial<Investimento>>();
+      const persist: Promise<void>[] = [];
+      for (const i of comTicker) {
+        const q = quotes[i.ticker!.toUpperCase()];
+        if (!q) continue;
+        const nativo = (i.quantidade ?? 0) * q.price;
+        const estrangeira = !!(i.moeda_cotacao && i.moeda_cotacao !== "BRL");
+        const taxa = i.moeda_cotacao === "USD" ? usdbrl : 1;     // só USD tem câmbio do Stooq
+        const saldo = estrangeira ? (taxa != null ? nativo * taxa : i.saldo ?? null) : nativo;
+        const lucro = saldo != null && i.valor_aplicado != null ? saldo - i.valor_aplicado : i.lucro ?? null;
+        patches.set(i.investment_id, { preco_unitario: q.price, preco_em: agora, saldo, lucro });
+        persist.push(setInvestmentCotacao(i.investment_id, { saldo, preco_unitario: q.price, preco_em: agora, lucro }).catch(() => {}));
+      }
+      if (patches.size) setRows((cur) => cur.map((i) => (patches.has(i.investment_id) ? { ...i, ...patches.get(i.investment_id) } : i)));
+      await Promise.all(persist);
+      if (!opts?.silent) setMsg(`✓ Cotações atualizadas${usdbrl ? ` · USD R$ ${usdbrl.toFixed(2)}` : ""}.`);
+    } catch (e) {
+      if (!opts?.silent) setMsg("Não foi possível atualizar cotações: " + (e as Error).message);
+    } finally {
+      setCotBusy(false);
+    }
+  }, []);
 
   const carregar = useCallback(async () => {
     setStatus("carregando…");
@@ -193,14 +388,26 @@ export function Investimentos() {
       setRows(inv);
       setHist(h);
       setHistTipo(ht);
+      void refreshCotacoes(inv, { silent: true }); // atualiza cotações em 2º plano
     } catch (e) {
       setErro((e as Error).message);
     } finally {
       setStatus("");
     }
-  }, []);
+  }, [refreshCotacoes]);
 
   useEffect(() => { carregar(); }, [carregar]);
+
+  // exclui uma posição manual (com confirmação)
+  const removerManual = useCallback(async (i: Investimento) => {
+    if (!window.confirm(`Excluir "${i.nome ?? "este investimento"}"? Esta ação não pode ser desfeita.`)) return;
+    try {
+      await deleteManualInvestment(i.investment_id);
+      setRows((rs) => rs.filter((r) => r.investment_id !== i.investment_id));
+    } catch (e) {
+      setMsg("Erro ao excluir: " + (e as Error).message);
+    }
+  }, []);
 
   const sincronizar = useCallback(async () => {
     setBusy(true);
@@ -402,8 +609,16 @@ export function Investimentos() {
   }
 
   const COLS: ColDef[] = [
-    { key: "nome", label: "Investimento", sortable: true, render: (i) => <span title={i.nome ?? ""}>{cell(i.nome)}</span> },
-    { key: "tipo", label: "Tipo (Pluggy)", sortable: true, render: (i) => labelTipo(i.tipo) },
+    {
+      key: "nome", label: "Investimento", sortable: true, render: (i) => (
+        <span title={i.nome ?? ""} className="inline-flex items-center gap-[6px] min-w-0">
+          {i.manual && <span className="text-[10px] px-[5px] py-[1px] rounded-[5px] bg-violet/10 text-violet font-semibold shrink-0">manual</span>}
+          <span className="truncate">{cell(i.nome)}</span>
+          {i.ticker && <span className="text-muted text-[11px] shrink-0">· {i.ticker}</span>}
+        </span>
+      ),
+    },
+    { key: "tipo", label: "Tipo (Pluggy)", sortable: true, render: (i) => (i.manual ? <span className="text-muted">Manual</span> : labelTipo(i.tipo)) },
     {
       key: "tipo_manual", label: "Classe (sua)", render: (i) => (
         <select
@@ -420,7 +635,19 @@ export function Investimentos() {
     { key: "banco", label: "Instituição", sortable: true, render: (i) => instDe(i) },
     { key: "emissor", label: "Emissor (Pluggy)", render: (i) => cell(i.emissor) },
     { key: "valor_aplicado", label: "Aplicado", num: true, sortable: true, render: (i) => (i.valor_aplicado != null ? fmtMoeda(i.valor_aplicado, moedaDe(i)) : "—") },
-    { key: "saldo", label: "Valor atual", num: true, sortable: true, render: (i) => (i.saldo != null ? fmtMoeda(i.saldo, moedaDe(i)) : "—") },
+    {
+      key: "saldo", label: "Valor atual", num: true, sortable: true, render: (i) => {
+        if (temCotacaoNativa(i)) {
+          return (
+            <span title={i.saldo != null ? `≈ ${BRL(i.saldo)}` : ""}>
+              {fmtMoeda(valorNativo(i), i.moeda_cotacao)}
+              {i.saldo != null && <span className="block text-muted text-[10.5px] leading-tight">≈ {BRL0(i.saldo)}</span>}
+            </span>
+          );
+        }
+        return i.saldo != null ? fmtMoeda(i.saldo, moedaDe(i)) : "—";
+      },
+    },
     { key: "lucro", label: "Lucro", num: true, sortable: true, render: (i) => (i.lucro != null ? <span className={i.lucro < 0 ? "text-red" : "text-green"}>{fmtMoeda(i.lucro, moedaDe(i))}</span> : "—") },
     {
       key: "liquidez_d1_manual", label: "Liquidez D+1", render: (i) => (
@@ -439,6 +666,14 @@ export function Investimentos() {
     { key: "taxa", label: "Taxa", render: (i) => cell(i.taxa) },
     { key: "vencimento", label: "Vencimento", sortable: true, render: (i) => fmtVenc(i.vencimento) },
     { key: "quantidade", label: "Qtd.", num: true, render: (i) => (i.quantidade != null ? i.quantidade.toLocaleString("pt-BR") : "—") },
+    {
+      key: "manual", label: "", noCsv: true, render: (i) => (i.manual ? (
+        <span className="inline-flex gap-1 whitespace-nowrap">
+          <button onClick={() => setModal({ mode: "edit", inv: i })} title="Editar" className="w-[26px] h-[26px] rounded-[7px] bg-fill text-muted hover:text-txt border-0 cursor-pointer text-[12px] transition-colors">✎</button>
+          <button onClick={() => removerManual(i)} title="Excluir" className="w-[26px] h-[26px] rounded-[7px] bg-fill text-muted hover:text-red border-0 cursor-pointer text-[12px] transition-colors">🗑</button>
+        </span>
+      ) : <span className="text-muted/40">—</span>),
+    },
   ];
 
   function th(c: ColDef) {
@@ -471,6 +706,16 @@ export function Investimentos() {
   };
 
   const limpar = () => { setBusca(""); setFTipo(""); setFBanco(""); };
+  const temTickers = rows.some((i) => i.manual && i.ticker);
+
+  const btnAddManual = (
+    <button
+      onClick={() => setModal({ mode: "add" })}
+      className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors"
+    >
+      + Adicionar manual
+    </button>
+  );
 
   const btnSync = (
     <button
@@ -499,11 +744,14 @@ export function Investimentos() {
         <p className="text-[13.5px] text-muted leading-relaxed max-w-[560px] mx-auto">
           Esta aba mostra o seu patrimônio investido (renda fixa, fundos, ações, ETFs,
           previdência…) puxado do Open Finance via Pluggy. Conecte um banco/corretora na
-          aba <strong>Conectar</strong> e clique em <strong>Sincronizar investimentos</strong>.
+          aba <strong>Conectar</strong> e clique em <strong>Sincronizar investimentos</strong>,
+          ou adicione uma posição <strong>manual</strong> (ex.: o ETF <strong>VT</strong> numa
+          corretora no exterior).
         </p>
         {erro && <div className="text-[13px] text-red bg-fill rounded-[10px] px-3 py-2 mt-4 max-w-[560px] mx-auto">Erro: {erro}</div>}
         {msg && <div className="text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2 mt-3 max-w-[560px] mx-auto">{msg}</div>}
-        <div className="mt-4">{btnSync}</div>
+        <div className="mt-4 flex gap-2 justify-center flex-wrap">{btnAddManual}{btnSync}</div>
+        {modal && <ManualForm mode={modal.mode} inicial={modal.inv} onClose={() => setModal(null)} onSaved={carregar} />}
       </div>
     );
   }
@@ -624,6 +872,17 @@ export function Investimentos() {
         <button className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors disabled:opacity-50" onClick={() => baixarCsv(COLS)} disabled={!filtrados.length}>
           Exportar CSV
         </button>
+        {temTickers && (
+          <button
+            onClick={() => refreshCotacoes(rows)}
+            disabled={cotBusy}
+            className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors disabled:opacity-50"
+          >
+            {cotBusy ? "Atualizando cotações…" : "Atualizar cotações"}
+          </button>
+        )}
+        {fx != null && temTickers && <span className="text-muted text-[12px] tabular-nums">USD R$ {fx.toFixed(2)}</span>}
+        {btnAddManual}
         {btnSync}
       </div>
 
@@ -632,7 +891,7 @@ export function Investimentos() {
 
       <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
         <div className="max-h-[620px] overflow-auto scroll-thin">
-          <table className="tbl min-w-[1240px] text-[12.5px]">
+          <table className="tbl min-w-[1320px] text-[12.5px]">
             <thead><tr>{COLS.map(th)}</tr></thead>
             <tbody>
               {filtrados.slice(0, MAX).map((i) => (
@@ -649,6 +908,8 @@ export function Investimentos() {
         </div>
       </div>
       {filtrados.length > MAX && <div className="text-muted text-[12.5px] mt-2">Mostrando {MAX.toLocaleString("pt-BR")} de {filtrados.length.toLocaleString("pt-BR")} posições. Refine os filtros.</div>}
+
+      {modal && <ManualForm mode={modal.mode} inicial={modal.inv} onClose={() => setModal(null)} onSaved={carregar} />}
     </div>
   );
 }

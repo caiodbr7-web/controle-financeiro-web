@@ -147,13 +147,15 @@ export async function syncInvestments(itemId?: string): Promise<InvestSyncResult
   return data as InvestSyncResult;
 }
 
+// colunas lidas/retornadas para uma posição de investimento (fonte única)
+const INV_COLS =
+  "investment_id,item_id,banco,tipo,subtipo,nome,emissor,saldo,valor_aplicado,lucro,quantidade,moeda,vencimento,taxa,status,tipo_manual,liquidez_d1_manual,manual,ticker,moeda_cotacao,preco_unitario,preco_em,atualizado_em";
+
 /** Lista as posicoes de investimento ja sincronizadas (tabela pluggy_investments). */
 export async function listInvestments(): Promise<Investimento[]> {
   const { data, error } = await sb
     .from("pluggy_investments")
-    .select(
-      "investment_id,item_id,banco,tipo,subtipo,nome,emissor,saldo,valor_aplicado,lucro,quantidade,moeda,vencimento,taxa,status,tipo_manual,liquidez_d1_manual,atualizado_em",
-    )
+    .select(INV_COLS)
     .order("saldo", { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []) as Investimento[];
@@ -202,4 +204,102 @@ export async function setLiquidezD1Manual(investmentId: string, valor: boolean |
     .update({ liquidez_d1_manual: valor })
     .eq("investment_id", investmentId);
   if (error) throw new Error(error.message);
+}
+
+/* ====================== Posições MANUAIS (fora do Open Finance) ============== */
+
+export interface ManualInvestmentInput {
+  nome: string;
+  banco?: string | null;          // instituição
+  tipo_manual?: string | null;    // classe (FIXED_INCOME, ETF_US, ...)
+  ticker?: string | null;         // símbolo p/ cotação ao vivo (ex.: 'VT')
+  moeda_cotacao?: string | null;  // moeda do ticker (ex.: 'USD'); null = BRL
+  quantidade?: number | null;
+  preco_unitario?: number | null; // preço unitário (na moeda_cotacao); opcional
+  valor_aplicado?: number | null; // em BRL
+  saldo?: number | null;          // valor atual em BRL (calculado para ticker)
+}
+
+// id estável para uma linha manual (sem id da Pluggy)
+function genManualId(): string {
+  const rnd = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return `manual-${rnd}`;
+}
+
+// campos que o usuário edita numa posição manual (não toca em colunas da Pluggy)
+function manualPayload(inp: ManualInvestmentInput) {
+  const saldo = inp.saldo ?? null;
+  const aplicado = inp.valor_aplicado ?? null;
+  return {
+    banco: inp.banco ?? null,
+    nome: inp.nome,
+    tipo_manual: inp.tipo_manual ?? null,
+    ticker: inp.ticker?.trim() ? inp.ticker.trim().toUpperCase() : null,
+    moeda_cotacao: inp.moeda_cotacao ?? null,
+    quantidade: inp.quantidade ?? null,
+    preco_unitario: inp.preco_unitario ?? null,
+    valor_aplicado: aplicado,
+    saldo,
+    lucro: saldo != null && aplicado != null ? saldo - aplicado : null,
+  };
+}
+
+/** Cria uma posição manual (saldo/valor_aplicado em BRL). */
+export async function addManualInvestment(inp: ManualInvestmentInput): Promise<Investimento> {
+  const { data, error } = await sb
+    .from("pluggy_investments")
+    .insert({ investment_id: genManualId(), manual: true, item_id: null, tipo: null, moeda: "BRL", ...manualPayload(inp) })
+    .select(INV_COLS)
+    .single();
+  if (error) throw new Error(error.message);
+  return data as Investimento;
+}
+
+/** Atualiza uma posição manual existente. */
+export async function updateManualInvestment(investmentId: string, inp: ManualInvestmentInput): Promise<void> {
+  const { error } = await sb
+    .from("pluggy_investments")
+    .update(manualPayload(inp))
+    .eq("investment_id", investmentId)
+    .eq("manual", true);
+  if (error) throw new Error(error.message);
+}
+
+/** Remove uma posição manual (não permite apagar linhas vindas da Pluggy). */
+export async function deleteManualInvestment(investmentId: string): Promise<void> {
+  const { error } = await sb
+    .from("pluggy_investments")
+    .delete()
+    .eq("investment_id", investmentId)
+    .eq("manual", true);
+  if (error) throw new Error(error.message);
+}
+
+/** Persiste o preço/saldo recalculado de uma posição (após buscar a cotação). */
+export async function setInvestmentCotacao(
+  investmentId: string,
+  patch: { saldo: number | null; preco_unitario: number | null; preco_em: string; lucro: number | null },
+): Promise<void> {
+  const { error } = await sb
+    .from("pluggy_investments")
+    .update(patch)
+    .eq("investment_id", investmentId);
+  if (error) throw new Error(error.message);
+}
+
+export interface CotacaoResp {
+  usdbrl: number | null;
+  quotes: Record<string, { price: number; currency: string }>;
+}
+
+/** Busca cotações de tickers + câmbio USD->BRL (Edge Function `cotacao`/Stooq). */
+export async function fetchCotacoes(tickers: string[]): Promise<CotacaoResp> {
+  const r = await fetch(`${FN_BASE}/cotacao`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ tickers }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data?.error || "Falha ao buscar cotações");
+  return { usdbrl: data.usdbrl ?? null, quotes: data.quotes ?? {} };
 }
