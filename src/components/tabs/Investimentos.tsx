@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
-  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, PieChart, Pie, Cell,
 } from "recharts";
-import type { Investimento, InvestimentoHist } from "../../types";
+import type { Investimento, InvestimentoHist, InvestimentoHistTipo } from "../../types";
 import { Kpi, Panel, Select, BarRow } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
-import { listInvestments, listInvestmentHistory, syncInvestments, setTipoManual } from "../../lib/pluggy";
+import { listInvestments, listInvestmentHistory, listInvestmentHistoryByTipo, syncInvestments, setTipoManual } from "../../lib/pluggy";
 import { BRL0, brlShort, fmtMoeda } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
 
@@ -89,6 +89,32 @@ const fmtDiaBR = (d: string) => {
 };
 const moedaDe = (i: Investimento) => i.moeda || "BRL";
 
+// tooltip da área stackada: categorias (maior primeiro) + total do dia
+function StackTip({ active, payload, label }: { active?: boolean; payload?: any[]; label?: any }) {
+  if (!active || !payload || !payload.length) return null;
+  const rows = payload
+    .filter((p) => p && Number(p.value) > 0)
+    .sort((a, b) => Number(b.value) - Number(a.value));
+  if (!rows.length) return null;
+  const total = rows.reduce((s, p) => s + Number(p.value), 0);
+  return (
+    <div className="rounded-[12px] border border-line bg-card/95 backdrop-blur-[8px] px-3 py-2 shadow-pop text-[12px] min-w-[180px]">
+      <div className="text-muted mb-[3px]">{label != null ? fmtDiaBR(String(label)) : ""}</div>
+      {rows.map((p, i) => (
+        <div key={i} className="flex items-center gap-2 py-[1.5px]">
+          <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: p.color || p.fill || "#9ca3af" }} />
+          <span className="text-muted truncate max-w-[150px]">{p.name}</span>
+          <span className="ml-auto font-medium tabular-nums pl-3">{BRL0(Number(p.value))}</span>
+        </div>
+      ))}
+      <div className="flex items-center gap-2 py-[1.5px] mt-[3px] pt-[5px] border-t border-line">
+        <span className="text-txt font-medium">Total</span>
+        <span className="ml-auto font-semibold tabular-nums pl-3">{BRL0(total)}</span>
+      </div>
+    </div>
+  );
+}
+
 interface ColDef {
   key: keyof Investimento;
   label: string;
@@ -114,6 +140,7 @@ export function Investimentos() {
   const cc = useChart();
   const [rows, setRows] = useState<Investimento[]>([]);
   const [hist, setHist] = useState<InvestimentoHist[]>([]);
+  const [histTipo, setHistTipo] = useState<InvestimentoHistTipo[]>([]);
   const [status, setStatus] = useState("carregando…");
   const [erro, setErro] = useState("");
   const [msg, setMsg] = useState("");
@@ -129,9 +156,14 @@ export function Investimentos() {
     setStatus("carregando…");
     setErro("");
     try {
-      const [inv, h] = await Promise.all([listInvestments(), listInvestmentHistory()]);
+      const [inv, h, ht] = await Promise.all([
+        listInvestments(),
+        listInvestmentHistory(),
+        listInvestmentHistoryByTipo().catch(() => [] as InvestimentoHistTipo[]),
+      ]);
       setRows(inv);
       setHist(h);
+      setHistTipo(ht);
     } catch (e) {
       setErro((e as Error).message);
     } finally {
@@ -225,6 +257,64 @@ export function Investimentos() {
     })),
     [hist]
   );
+
+  // cor estável por categoria (mesma do gráfico de composição -> serve de legenda)
+  const corPorTipo = useMemo(() => {
+    const m = new Map<string, string>();
+    porTipo.forEach((t) => m.set(t.tipo, t.cor));
+    return m;
+  }, [porTipo]);
+
+  // série STACKADA de evolução por categoria (dia-a-dia).
+  //  - preferimos o histórico REAL por tipo (pluggy_investments_hist_tipo);
+  //  - sem ele (migração não rodou / poucos dias), ESTIMAMOS distribuindo o total
+  //    diário pela composição atual — o total bate, a quebra é aproximada.
+  const stack = useMemo(() => {
+    const round = (n: number) => Math.round(n * 100) / 100;
+    const baseCats = porTipo.map((t) => ({ tipo: t.tipo, label: t.label, cor: t.cor }));
+
+    // 1) histórico real por categoria
+    const diasReais = [...new Set(histTipo.map((r) => r.dia))].sort();
+    if (diasReais.length >= 2) {
+      const tiposReais = new Set(histTipo.map((r) => r.tipo));
+      // ordem: categorias da composição atual (na sua ordem) + as demais do histórico
+      const extras = [...tiposReais].filter((t) => !baseCats.some((c) => c.tipo === t));
+      const cats = [
+        ...baseCats.filter((c) => tiposReais.has(c.tipo)),
+        ...extras.map((t, i) => ({
+          tipo: t,
+          label: labelTipo(t),
+          cor: corPorTipo.get(t) ?? PALETA[(baseCats.length + i) % PALETA.length],
+        })),
+      ];
+      const byDia = new Map<string, Record<string, number>>();
+      for (const r of histTipo) {
+        const row = byDia.get(r.dia) ?? {};
+        row[r.tipo] = round(r.valor_total ?? 0);
+        byDia.set(r.dia, row);
+      }
+      const data = diasReais.map((dia) => {
+        const vals = byDia.get(dia) ?? {};
+        const row: Record<string, number | string> = { dia };
+        for (const c of cats) row[c.tipo] = vals[c.tipo] ?? 0;
+        return row;
+      });
+      return { data, cats, sintetico: false };
+    }
+
+    // 2) estimativa pela composição atual (total diário x fração de cada tipo)
+    if (serie.length >= 2 && kpis.atual > 0 && baseCats.length) {
+      const fracDe = new Map(baseCats.map((c) => [c.tipo, (porTipo.find((p) => p.tipo === c.tipo)?.total ?? 0) / kpis.atual]));
+      const data = serie.map((s) => {
+        const row: Record<string, number | string> = { dia: s.dia };
+        for (const c of baseCats) row[c.tipo] = round(s["Patrimônio"] * (fracDe.get(c.tipo) ?? 0));
+        return row;
+      });
+      return { data, cats: baseCats, sintetico: true };
+    }
+
+    return { data: [] as Record<string, number | string>[], cats: baseCats, sintetico: false };
+  }, [histTipo, serie, porTipo, corPorTipo, kpis.atual]);
 
   function baixarCsv(cols: ColDef[]) {
     const blob = new Blob(["﻿" + toCsv(filtrados, cols)], { type: "text/csv;charset=utf-8;" });
@@ -351,48 +441,71 @@ export function Investimentos() {
         <Kpi title="Instituições" value={kpis.instituicoes} sub="via Open Finance" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-[14px]">
-        <Panel title="Evolução do patrimônio" sub="(valor atual × aplicado, por dia)">
-          {serie.length >= 2 ? (
-            <div className="h-[260px] md:h-[300px] min-w-0 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={serie} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
-                  <defs>
-                    <linearGradient id="gradInvest" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={cc.roxoLinha("0.34")} stopOpacity={1} />
-                      <stop offset="100%" stopColor={cc.roxoLinha("0.02")} stopOpacity={1} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke={cc.grid} vertical={false} />
-                  <XAxis dataKey="dia" tickFormatter={(d) => fmtDiaBR(String(d))} tick={cc.tickSm} minTickGap={28} axisLine={false} tickLine={false} />
-                  <YAxis tick={cc.tickSm} tickFormatter={(v) => brlShort(v)} width={64} axisLine={false} tickLine={false} />
-                  <Tooltip content={(p: any) => <ChartTip {...p} keepZeros label={p?.label ? fmtDiaBR(p.label) : p?.label} />} />
-                  <Area type="monotone" dataKey="Patrimônio" stroke={cc.roxoLinha("1")} strokeWidth={2.2} fill="url(#gradInvest)" dot={false} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="Aplicado" stroke={cc.tick.fill} strokeWidth={1.6} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-[14px] items-start">
+        <Panel
+          title="Evolução por categoria"
+          sub={stack.sintetico ? "(estimativa pela composição atual, por dia)" : "(valor por categoria, por dia)"}
+          className="lg:col-span-2"
+        >
+          {stack.data.length >= 2 && stack.cats.length > 0 ? (
+            <>
+              <div className="h-[300px] md:h-[340px] min-w-0 mt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={stack.data} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
+                    <CartesianGrid stroke={cc.grid} vertical={false} />
+                    <XAxis dataKey="dia" tickFormatter={(d) => fmtDiaBR(String(d))} tick={cc.tickSm} minTickGap={28} axisLine={false} tickLine={false} />
+                    <YAxis tick={cc.tickSm} tickFormatter={(v) => brlShort(v)} width={64} axisLine={false} tickLine={false} />
+                    <Tooltip content={(p: any) => <StackTip {...p} />} />
+                    {stack.cats.map((c) => (
+                      <Area
+                        key={c.tipo}
+                        type="monotone"
+                        dataKey={c.tipo}
+                        name={c.label}
+                        stackId="patrimonio"
+                        stroke={c.cor}
+                        strokeWidth={0.8}
+                        fill={c.cor}
+                        fillOpacity={0.88}
+                        isAnimationActive={false}
+                      />
+                    ))}
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              {stack.sintetico && (
+                <p className="text-[11.5px] text-muted leading-relaxed mt-2">
+                  Estimativa: o total diário é distribuído pela composição atual da carteira. A quebra
+                  real por categoria passa a ser registrada a cada sincronização — em dois dias ela
+                  substitui esta visão automaticamente.
+                </p>
+              )}
+            </>
           ) : (
             <p className="text-[13px] text-muted leading-relaxed mt-1">
               O histórico começa a ser registrado a cada sincronização. Assim que houver
-              pelo menos <strong>dois dias</strong> sincronizados, a evolução aparece aqui.
+              pelo menos <strong>dois dias</strong> sincronizados, a evolução por categoria aparece aqui.
               {serie.length === 1 && " (1 ponto registrado até agora.)"}
             </p>
           )}
         </Panel>
 
-        <Panel title="Composição por tipo" sub="(valor atual)">
+        <Panel title="Composição por tipo" sub="(valor atual)" className="lg:col-span-1">
           {porTipo.length > 0 ? (
-            <div className="flex flex-col sm:flex-row items-center gap-3 mt-1">
-              <div className="h-[220px] w-full sm:w-[220px] shrink-0">
+            <div className="flex flex-col gap-4 mt-1">
+              <div className="relative h-[200px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={porTipo} dataKey="total" nameKey="label" cx="50%" cy="50%" innerRadius={52} outerRadius={86} paddingAngle={1.5} stroke={cc.cardStroke} strokeWidth={2} isAnimationActive={false}>
+                    <Pie data={porTipo} dataKey="total" nameKey="label" cx="50%" cy="50%" innerRadius={62} outerRadius={92} paddingAngle={1.5} stroke={cc.cardStroke} strokeWidth={2} isAnimationActive={false}>
                       {porTipo.map((t) => <Cell key={t.tipo} fill={t.cor} />)}
                     </Pie>
                     <Tooltip content={(p: any) => <ChartTip {...p} pctOf={kpis.atual} />} />
                   </PieChart>
                 </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-[11px] text-muted">Total</span>
+                  <span className="text-[17px] font-semibold tracking-tight tabular-nums">{BRL0(kpis.atual)}</span>
+                </div>
               </div>
               <div className="flex flex-col gap-2 w-full min-w-0">
                 {porTipo.map((t) => (
