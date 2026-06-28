@@ -406,29 +406,6 @@ export function Investimentos() {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2 items-center mb-4">
-        <input className="input min-w-[220px] flex-1" placeholder="Buscar (nome, emissor, instituição)…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        <Select value={fTipo} onChange={setFTipo}>
-          <option value="">Todos os tipos</option>
-          {tipos.map((t) => <option key={t} value={t}>{labelTipo(t)}</option>)}
-        </Select>
-        <Select value={fBanco} onChange={setFBanco}>
-          <option value="">Todas as instituições</option>
-          {instituicoes.map((b) => <option key={b}>{b}</option>)}
-        </Select>
-        <button className="btn-ghost" onClick={limpar}>Limpar</button>
-        <button className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors" onClick={carregar}>
-          Atualizar
-        </button>
-        <button className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors disabled:opacity-50" onClick={() => baixarCsv(COLS)} disabled={!filtrados.length}>
-          Exportar CSV
-        </button>
-        {btnSync}
-      </div>
-
-      {erro && <div className="text-[13px] text-red bg-fill rounded-[10px] px-3 py-2 mb-3">Erro: {erro}</div>}
-      {msg && <div className="text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2 mb-3">{msg}</div>}
-
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-[14px] mb-[18px]">
         <Kpi title="Valor investido hoje" value={BRL0(kpis.atual)} sub="soma das posições" color="text-violet" />
         <Kpi title="Total aplicado" value={BRL0(kpis.aplicado)} sub="montante aportado" />
@@ -525,6 +502,29 @@ export function Investimentos() {
           )}
         </Panel>
       </div>
+
+      <div className="flex flex-wrap gap-2 items-center mb-4">
+        <input className="input min-w-[220px] flex-1" placeholder="Buscar (nome, emissor, instituição)…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        <Select value={fTipo} onChange={setFTipo}>
+          <option value="">Todos os tipos</option>
+          {tipos.map((t) => <option key={t} value={t}>{labelTipo(t)}</option>)}
+        </Select>
+        <Select value={fBanco} onChange={setFBanco}>
+          <option value="">Todas as instituições</option>
+          {instituicoes.map((b) => <option key={b}>{b}</option>)}
+        </Select>
+        <button className="btn-ghost" onClick={limpar}>Limpar</button>
+        <button className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors" onClick={carregar}>
+          Atualizar
+        </button>
+        <button className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors disabled:opacity-50" onClick={() => baixarCsv(COLS)} disabled={!filtrados.length}>
+          Exportar CSV
+        </button>
+        {btnSync}
+      </div>
+
+      {erro && <div className="text-[13px] text-red bg-fill rounded-[10px] px-3 py-2 mb-3">Erro: {erro}</div>}
+      {msg && <div className="text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2 mb-3">{msg}</div>}
 
       <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
         <div className="max-h-[620px] overflow-auto scroll-thin">
