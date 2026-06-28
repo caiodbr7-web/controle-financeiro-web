@@ -6,7 +6,7 @@ import type { Lancamento } from "../../types";
 import { Panel, Kpi, Seg, Select, Toolbar } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import {
-  BRL, brlShort, ehGasto, ehReceita, ehTransfer, corChave, ordemChave,
+  BRL0, brlShort, ehGasto, ehReceita, ehTransfer, corChave, ordemChave,
   dvLabel, dvParcialLimite, mesComp, valorGasto, valorReceita, valorAporte, valorReceitaInvest,
 } from "../../lib/finance";
 
@@ -135,10 +135,10 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
 
       {kpis && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
-          <Kpi title="Receitas" value={BRL(kpis.cur.rec)} sub={`${kpis.label} · média 3m ${BRL(kpis.av.rec)}`} color="text-green" />
-          <Kpi title="Despesas" value={BRL(kpis.cur.gas)} sub={`${kpis.label} · média 3m ${BRL(kpis.av.gas)}`} color="text-red" />
-          <Kpi title="Saldo" value={BRL(kpis.cur.saldo)} sub={`receitas − despesas · média 3m ${BRL(kpis.av.saldo)}`} color={kpis.cur.saldo >= 0 ? "text-green" : "text-red"} />
-          <Kpi title="Transf. / Pagtos" value={BRL(kpis.cur.tr)} sub="não é consumo (líquido)" color="text-violet" />
+          <Kpi title="Receitas" value={BRL0(kpis.cur.rec)} sub={`${kpis.label} · média 3m ${BRL0(kpis.av.rec)}`} color="text-green" />
+          <Kpi title="Despesas" value={BRL0(kpis.cur.gas)} sub={`${kpis.label} · média 3m ${BRL0(kpis.av.gas)}`} color="text-red" />
+          <Kpi title="Saldo" value={BRL0(kpis.cur.saldo)} sub={`receitas − despesas · média 3m ${BRL0(kpis.av.saldo)}`} color={kpis.cur.saldo >= 0 ? "text-green" : "text-red"} />
+          <Kpi title="Transf. / Pagtos" value={BRL0(kpis.cur.tr)} sub="não é consumo (líquido)" color="text-violet" />
         </div>
       )}
 
@@ -151,8 +151,8 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
       {/* investimentos do mês de referência — só aparece quando há aporte/renda classificados */}
       {kpis && kpis.temInvest && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
-          <Kpi title="Investido no mês" value={BRL(kpis.cur.inv)} sub={`${kpis.label} · aportes (Σ Aporte)`} color="text-violet" />
-          <Kpi title="Renda de investimentos" value={BRL(kpis.cur.recInv)} sub={`${kpis.label} · rendimentos/dividendos`} color="text-green" />
+          <Kpi title="Investido no mês" value={BRL0(kpis.cur.inv)} sub={`${kpis.label} · aportes (Σ Aporte)`} color="text-violet" />
+          <Kpi title="Renda de investimentos" value={BRL0(kpis.cur.recInv)} sub={`${kpis.label} · rendimentos/dividendos`} color="text-green" />
         </div>
       )}
 
@@ -208,12 +208,12 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
               {aggs.map((a) => (
                 <tr key={a.m}>
                   <td>{rotulo(a.m)}</td>
-                  <td className="num text-green">{BRL(a.rec)}</td>
-                  <td className="num text-red">{BRL(a.gas)}</td>
-                  <td className={`num ${a.saldo >= 0 ? "text-green" : "text-red"}`}>{BRL(a.saldo)}</td>
-                  <td className="num text-violet">{a.inv ? BRL(a.inv) : "—"}</td>
-                  <td className="num text-green">{a.recInv ? BRL(a.recInv) : "—"}</td>
-                  <td className="num">{BRL(a.tr)}</td>
+                  <td className="num text-green">{BRL0(a.rec)}</td>
+                  <td className="num text-red">{BRL0(a.gas)}</td>
+                  <td className={`num ${a.saldo >= 0 ? "text-green" : "text-red"}`}>{BRL0(a.saldo)}</td>
+                  <td className="num text-violet">{a.inv ? BRL0(a.inv) : "—"}</td>
+                  <td className="num text-green">{a.recInv ? BRL0(a.recInv) : "—"}</td>
+                  <td className="num">{BRL0(a.tr)}</td>
                 </tr>
               ))}
             </tbody>

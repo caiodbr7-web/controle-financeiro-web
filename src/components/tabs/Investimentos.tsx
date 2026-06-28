@@ -8,7 +8,7 @@ import type { Investimento, InvestimentoHist } from "../../types";
 import { Kpi, Panel, Select, BarRow } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import { listInvestments, listInvestmentHistory, syncInvestments, setTipoManual } from "../../lib/pluggy";
-import { BRL, brlShort, fmtMoeda } from "../../lib/finance";
+import { BRL0, brlShort, fmtMoeda } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
 
 /* ============================================================================
@@ -340,11 +340,11 @@ export function Investimentos() {
       {msg && <div className="text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2 mb-3">{msg}</div>}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-[14px] mb-[18px]">
-        <Kpi title="Valor investido hoje" value={BRL(kpis.atual)} sub="soma das posições" color="text-violet" />
-        <Kpi title="Total aplicado" value={BRL(kpis.aplicado)} sub="montante aportado" />
+        <Kpi title="Valor investido hoje" value={BRL0(kpis.atual)} sub="soma das posições" color="text-violet" />
+        <Kpi title="Total aplicado" value={BRL0(kpis.aplicado)} sub="montante aportado" />
         <Kpi
           title="Lucro acumulado"
-          value={<span className={kpis.lucro < 0 ? "text-red" : "text-green"}>{BRL(kpis.lucro)}</span>}
+          value={<span className={kpis.lucro < 0 ? "text-red" : "text-green"}>{BRL0(kpis.lucro)}</span>}
           sub={`${kpis.pct >= 0 ? "+" : ""}${kpis.pct.toFixed(1)}% sobre o aplicado`}
         />
         <Kpi title="Posições" value={filtrados.length.toLocaleString("pt-BR")} sub={`${rows.length.toLocaleString("pt-BR")} no total`} />
@@ -402,7 +402,7 @@ export function Investimentos() {
                     value={t.total}
                     max={porTipo[0].total}
                     color={t.cor}
-                    right={`${BRL(t.total)} · ${kpis.atual > 0 ? ((t.total / kpis.atual) * 100).toFixed(0) : 0}%`}
+                    right={`${BRL0(t.total)} · ${kpis.atual > 0 ? ((t.total / kpis.atual) * 100).toFixed(0) : 0}%`}
                   />
                 ))}
               </div>

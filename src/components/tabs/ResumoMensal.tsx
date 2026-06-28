@@ -4,7 +4,7 @@ import type { Lancamento } from "../../types";
 import { Panel, Kpi, Select, Toolbar } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import {
-  BRL, brlShort, ehTransfer, catKey, corChave, corCategoria,
+  BRL0, brlShort, ehTransfer, catKey, corChave, corCategoria,
   deltaTxt, dvLabel, dvParcialLimite, mesComp, valorGasto, valorReceita, valorAporte, valorReceitaInvest,
 } from "../../lib/finance";
 
@@ -135,17 +135,17 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
       </Toolbar>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
-        <Kpi title="Receitas" value={BRL(a.rec)} sub={deltaTxt(a.rec, pa?.rec)} color="text-green" />
-        <Kpi title="Despesas" value={BRL(a.gas)} sub={deltaTxt(a.gas, pa?.gas)} color="text-red" />
-        <Kpi title="Saldo" value={BRL(a.saldo)} sub={deltaTxt(a.saldo, pa?.saldo)} color={a.saldo >= 0 ? "text-green" : "text-red"} />
-        <Kpi title="Transf. / Pagtos" value={BRL(a.tr)} sub={deltaTxt(a.tr, pa?.tr)} color="text-violet" />
+        <Kpi title="Receitas" value={BRL0(a.rec)} sub={deltaTxt(a.rec, pa?.rec)} color="text-green" />
+        <Kpi title="Despesas" value={BRL0(a.gas)} sub={deltaTxt(a.gas, pa?.gas)} color="text-red" />
+        <Kpi title="Saldo" value={BRL0(a.saldo)} sub={deltaTxt(a.saldo, pa?.saldo)} color={a.saldo >= 0 ? "text-green" : "text-red"} />
+        <Kpi title="Transf. / Pagtos" value={BRL0(a.tr)} sub={deltaTxt(a.tr, pa?.tr)} color="text-violet" />
       </div>
 
       {/* investimentos do mês — só aparece quando há aporte/renda classificados */}
       {(a.inv > 0 || a.recInv > 0 || (pa && (pa.inv > 0 || pa.recInv > 0))) && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
-          <Kpi title="Investido no mês" value={BRL(a.inv)} sub={`${deltaTxt(a.inv, pa?.inv)} · Σ Aporte`} color="text-violet" />
-          <Kpi title="Renda de investimentos" value={BRL(a.recInv)} sub={`${deltaTxt(a.recInv, pa?.recInv)} · rendimentos/dividendos`} color="text-green" />
+          <Kpi title="Investido no mês" value={BRL0(a.inv)} sub={`${deltaTxt(a.inv, pa?.inv)} · Σ Aporte`} color="text-violet" />
+          <Kpi title="Renda de investimentos" value={BRL0(a.recInv)} sub={`${deltaTxt(a.recInv, pa?.recInv)} · rendimentos/dividendos`} color="text-green" />
         </div>
       )}
 
@@ -198,7 +198,7 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
               <div key={c.cat} className="flex items-center gap-2 py-[3px] text-[13.5px]">
                 <span className="w-[10px] h-[10px] rounded-full shrink-0" style={{ background: corCategoria(c.cat) }} />
                 <span>{c.cat}</span>
-                <span className="ml-auto font-medium text-red tabular-nums">{BRL(c.valor)}</span>
+                <span className="ml-auto font-medium text-red tabular-nums">{BRL0(c.valor)}</span>
                 <span className="text-muted text-[11.5px] w-[42px] text-right tabular-nums">{totalGasto ? ((c.valor / totalGasto) * 100).toFixed(0) : 0}%</span>
               </div>
             ))}
@@ -215,13 +215,13 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
                     <div className="flex items-center gap-2">
                       <span className="w-[10px] h-[10px] rounded-full shrink-0" style={{ background: corCategoria(o.cat) }} />
                       <span>{o.cat}</span>
-                      <span className="ml-auto text-red font-medium tabular-nums">▲ {BRL(o.delta)}</span>
+                      <span className="ml-auto text-red font-medium tabular-nums">▲ {BRL0(o.delta)}</span>
                     </div>
-                    <div className="text-muted text-[11.5px] ml-[16px]">{BRL(o.atual)} vs média {BRL(o.avg)}</div>
+                    <div className="text-muted text-[11.5px] ml-[16px]">{BRL0(o.atual)} vs média {BRL0(o.avg)}</div>
                   </div>
                 ))}
                 <div className="mt-2 p-2 rounded-[10px] bg-green/10 text-green text-[12.5px]">
-                  Voltando à média, sobrariam <b>{BRL(insights.economia)}</b> este mês.
+                  Voltando à média, sobrariam <b>{BRL0(insights.economia)}</b> este mês.
                 </div>
               </>
             )}
@@ -305,7 +305,7 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
                 {recData.rows.map((r) => (
                   <tr key={r.k}>
                     <td>{r.k}</td>
-                    <td className="num text-green">{BRL(r.v)}</td>
+                    <td className="num text-green">{BRL0(r.v)}</td>
                     <td className="num">{recData.tot ? ((r.v / recData.tot) * 100).toFixed(1) : 0}%</td>
                   </tr>
                 ))}

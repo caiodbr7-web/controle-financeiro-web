@@ -7,7 +7,7 @@ import type { Lancamento, Modo } from "../../types";
 import { Panel, Kpi, Seg } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import {
-  BRL, brlShort, dvSeries, dvDiasNoMes, dvLabel, dvGasto, mesComp,
+  BRL0, brlShort, dvSeries, dvDiasNoMes, dvLabel, dvGasto, mesComp,
   mvLimiteParcial, mvSeriesMensal, mvOrigemOk, MODOS, deltaTxt,
 } from "../../lib/finance";
 
@@ -88,10 +88,10 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
   }, [dados, allDados, months, modo, mesesSel]);
 
   const stats = [
-    { t: "Gasto médio / dia", v: BRL(calc.mediaDia), s: `${meta.rotulo.toLowerCase()} · ${calc.show.length} ${calc.show.length === 1 ? "mês" : "meses"}`, c: "" },
-    { t: "% no cartão", v: `${calc.pctCard.toFixed(0)}%`, s: `${BRL(calc.cardTot)} do total`, c: "text-accent" },
-    { t: "% em conta", v: `${calc.pctConta.toFixed(0)}%`, s: `${BRL(calc.contaTot)} · Pix, boleto, débito`, c: "text-violet" },
-    { t: "Gasto médio / mês", v: BRL(calc.mediaMes), s: `${meta.rotulo.toLowerCase()} · meses completos`, c: "text-amber" },
+    { t: "Gasto médio / dia", v: BRL0(calc.mediaDia), s: `${meta.rotulo.toLowerCase()} · ${calc.show.length} ${calc.show.length === 1 ? "mês" : "meses"}`, c: "" },
+    { t: "% no cartão", v: `${calc.pctCard.toFixed(0)}%`, s: `${BRL0(calc.cardTot)} do total`, c: "text-accent" },
+    { t: "% em conta", v: `${calc.pctConta.toFixed(0)}%`, s: `${BRL0(calc.contaTot)} · Pix, boleto, débito`, c: "text-violet" },
+    { t: "Gasto médio / mês", v: BRL0(calc.mediaMes), s: `${meta.rotulo.toLowerCase()} · meses completos`, c: "text-amber" },
   ];
 
   return (
@@ -143,8 +143,8 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
         sub="(só meses completos · média móvel de 3 meses)"
       >
         <div className="grid grid-cols-2 md:grid-cols-3 gap-[14px] mt-3 mb-2">
-          <Kpi title="Patamar (média 3m)" value={BRL(mensal.patamar)} sub="média dos últimos 3 meses completos" color="text-accent" />
-          <Kpi title={`Último mês · ${mensal.ultLabel}`} value={BRL(mensal.ultVal)} sub={mensal.baseAnt != null ? deltaTxt(mensal.ultVal, mensal.baseAnt) + " vs média 3m" : "—"} />
+          <Kpi title="Patamar (média 3m)" value={BRL0(mensal.patamar)} sub="média dos últimos 3 meses completos" color="text-accent" />
+          <Kpi title={`Último mês · ${mensal.ultLabel}`} value={BRL0(mensal.ultVal)} sub={mensal.baseAnt != null ? deltaTxt(mensal.ultVal, mensal.baseAnt) + " vs média 3m" : "—"} />
           <Kpi title="Meses exibidos" value={mensal.data.length} sub="só meses completos" />
         </div>
         <div className="h-[clamp(260px,38vh,380px)]">
@@ -181,10 +181,10 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
                 return (
                   <tr key={r.mes}>
                     <td>{r.mes}</td>
-                    <td className="num text-red">{BRL(r.gasto)}</td>
-                    <td className="num">{a != null ? BRL(a) : "—"}</td>
+                    <td className="num text-red">{BRL0(r.gasto)}</td>
+                    <td className="num">{a != null ? BRL0(a) : "—"}</td>
                     <td className="num">
-                      {d == null ? "—" : d <= 0 ? <span className="text-green">▼ {BRL(Math.abs(d))}</span> : <span className="text-red">▲ {BRL(d)}</span>}
+                      {d == null ? "—" : d <= 0 ? <span className="text-green">▼ {BRL0(Math.abs(d))}</span> : <span className="text-red">▲ {BRL0(d)}</span>}
                     </td>
                   </tr>
                 );

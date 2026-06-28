@@ -3,7 +3,7 @@ import type { Lancamento } from "../../types";
 import { Kpi, Select, Seg } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
-import { BRL, fmtMoeda, dicaMoedaOrigem, mesCurto, catKey, dataCompleta, dataOrdKey, ehGasto, ehReceita } from "../../lib/finance";
+import { BRL0, fmtMoeda, dicaMoedaOrigem, mesCurto, catKey, dataCompleta, dataOrdKey, ehGasto, ehReceita } from "../../lib/finance";
 import {
   CLASSES,
   ehInterna,
@@ -300,9 +300,9 @@ export function Lancamentos({ dados, months }: Props) {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
-        <Kpi title="Gastos" value={BRL(totals.gasto)} color="text-red" />
-        <Kpi title="Receitas" value={BRL(totals.receita)} color="text-green" />
-        <Kpi title="Saldo" value={BRL(totals.saldo)} color={totals.saldo < 0 ? "text-red" : "text-green"} />
+        <Kpi title="Gastos" value={BRL0(totals.gasto)} color="text-red" />
+        <Kpi title="Receitas" value={BRL0(totals.receita)} color="text-green" />
+        <Kpi title="Saldo" value={BRL0(totals.saldo)} color={totals.saldo < 0 ? "text-red" : "text-green"} />
         <Kpi title="Lançamentos" value={rows.length.toLocaleString("pt-BR")} />
       </div>
 
@@ -310,14 +310,14 @@ export function Lancamentos({ dados, months }: Props) {
       <div className="grid grid-cols-2 md:grid-cols-3 gap-[14px] mb-[18px]">
         <Kpi
           title="Aportes (investido)"
-          value={BRL(auditoria.aporte)}
+          value={BRL0(auditoria.aporte)}
           sub={visao === "aporte" ? "filtrando ✓" : "ver Aportes"}
           color="text-violet"
           onClick={() => setVisao((v) => (v === "aporte" ? "all" : "aporte"))}
         />
         <Kpi
           title="Renda de investimentos"
-          value={BRL(auditoria.rinvest)}
+          value={BRL0(auditoria.rinvest)}
           sub={visao === "rinvest" ? "filtrando ✓" : "ver Renda invest."}
           color="text-accent"
           onClick={() => setVisao((v) => (v === "rinvest" ? "all" : "rinvest"))}

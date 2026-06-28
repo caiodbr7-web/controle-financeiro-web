@@ -5,7 +5,7 @@ import { Panel, BarRow, Select, Seg } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
-  BRL, BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dataCompleta,
+  BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dataCompleta,
   dvDiasNoMes, dvLabel, MES_ABREV, mesCurto, mesComp, diaDoMov, normEstab,
   valorAporte, valorReceitaInvest,
 } from "../../lib/finance";
@@ -310,7 +310,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
               <span className={`inline-flex items-center gap-1 rounded-full px-[10px] py-[3px] text-[12px] font-semibold ${
                 calc.delta <= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"
               }`}>
-                {calc.delta <= 0 ? "▼" : "▲"} {BRL(Math.abs(calc.delta))} {calc.delta <= 0 ? "abaixo" : "acima"} da média{calc.isAtual ? " (no mesmo dia)" : ""}
+                {calc.delta <= 0 ? "▼" : "▲"} {BRL0(Math.abs(calc.delta))} {calc.delta <= 0 ? "abaixo" : "acima"} da média{calc.isAtual ? " (no mesmo dia)" : ""}
               </span>
             )}
             {calc.delta != null && !calc.comparavel && (
@@ -361,7 +361,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             {pend.classGrupos > 0 && (
               <ActionRow
                 label={`Classificar ${pend.classGrupos} ${pend.classGrupos === 1 ? "estabelecimento" : "estabelecimentos"}`}
-                detail={`${pend.classN} lançamentos · ${BRL(pend.classTotal)}`}
+                detail={`${pend.classN} lançamentos · ${BRL0(pend.classTotal)}`}
                 onClick={() => go("classificar")}
               />
             )}
@@ -403,7 +403,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                   value={c.val}
                   max={topCats.rows[0].val}
                   color={corCategoria(c.cat)}
-                  right={`${BRL(c.val)} · ${topCats.total ? Math.round((c.val / topCats.total) * 100) : 0}%`}
+                  right={`${BRL0(c.val)} · ${topCats.total ? Math.round((c.val / topCats.total) * 100) : 0}%`}
                   onClick={() => openModal(`${c.cat} · ${dvLabel(calc.selKey)}`, c.itens)}
                 />
               ))}
@@ -414,10 +414,10 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
           {(investMes.inv > 0 || investMes.recInv > 0) && (
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 pt-3 border-t border-line text-[12px]">
               {investMes.inv > 0 && (
-                <span className="text-muted">Investido no mês <b className="text-violet">{BRL(investMes.inv)}</b></span>
+                <span className="text-muted">Investido no mês <b className="text-violet">{BRL0(investMes.inv)}</b></span>
               )}
               {investMes.recInv > 0 && (
-                <span className="text-muted">Renda de investimentos <b className="text-green">{BRL(investMes.recInv)}</b></span>
+                <span className="text-muted">Renda de investimentos <b className="text-green">{BRL0(investMes.recInv)}</b></span>
               )}
             </div>
           )}
@@ -441,7 +441,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                   <div className="text-[11.5px] text-muted truncate">{dataCompleta(d)} · {catKey(d)} · {d.origem}</div>
                 </div>
                 <div className={`tabular-nums text-[13px] font-medium shrink-0 ${ehReceita(d.classe) || d.valor > 0 ? "text-green" : ""}`}>
-                  {BRL(d.valor)}
+                  {BRL0(d.valor)}
                 </div>
               </div>
             ))}
