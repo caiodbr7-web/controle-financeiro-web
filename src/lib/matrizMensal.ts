@@ -45,6 +45,17 @@ export function recCat(d: Lancamento): string {
   return d.categoria_manual || d.categoria_auto || d.subtipo || d.detalhe || "Outros";
 }
 
+// Receita exibida em apenas 2 grupos: "Salario" (fontes recorrentes) e "Outros".
+// As categorias abaixo (entre contas proprias, transfers, salario) viram "Salario";
+// qualquer outra receita cai em "Outros".
+const RECEITA_SALARIO = new Set(["salario", "entre contas proprias", "transfers"]);
+function normReceita(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").trim();
+}
+export function grupoReceita(d: Lancamento): string {
+  return RECEITA_SALARIO.has(normReceita(recCat(d))) ? "Salário" : "Outros";
+}
+
 // meses unicos com dados (competencia "YYYY-MM"), ordenados asc.
 export function mesesDisponiveis(dados: Lancamento[]): string[] {
   return [...new Set(dados.map(mesComp))].filter((k) => /^\d{4}-\d{2}$/.test(k)).sort();
@@ -123,10 +134,13 @@ export function construirMatriz(dados: Lancamento[], opts: MatrizOpts): MatrizMe
     if (v === 0) continue;
     valoresGasto[catKey(d)][mk] += v;
   }
-  const linhasGasto = catGasto.map((c) => finalizaLinha({
-    key: "gasto:" + c, label: c, secao: "gasto", catRaw: c, cor: corCategoria(c),
-    ehTotal: false, valores: valoresGasto[c], total: 0, delta: 0, deltaPct: null,
-  }, meses));
+  const linhasGasto = catGasto
+    .map((c) => finalizaLinha({
+      key: "gasto:" + c, label: c, secao: "gasto", catRaw: c, cor: corCategoria(c),
+      ehTotal: false, valores: valoresGasto[c], total: 0, delta: 0, deltaPct: null,
+    }, meses))
+    // omite categorias sem nenhum valor nos meses visiveis (linhas 100% zeradas).
+    .filter((ln) => meses.some((m) => (ln.valores[m] || 0) !== 0));
   const totalGasto = totalDaSecao("gasto", "Total Gastos", linhasGasto, meses);
   const escGasto = escalas(linhasGasto, meses);
   const secaoGasto: SecaoInfo = {
@@ -134,20 +148,22 @@ export function construirMatriz(dados: Lancamento[], opts: MatrizOpts): MatrizMe
     maxAbs: escGasto.maxAbs, maxDeltaAbs: escGasto.maxDeltaAbs, bomQuandoSobe: false,
   };
 
-  // ---- RECEITA: categorias presentes (recCat), ordenadas por total desc ----
+  // ---- RECEITA: agrupada em 2 baldes (grupoReceita): "Salário" e "Outros" ----
   const valoresRec: Record<string, Record<string, number>> = {};
   for (const d of dados) {
     const mk = mesComp(d);
     if (!mesesSet.has(mk)) continue;
     if (valorReceita(d) <= 0) continue;
-    const c = recCat(d);
+    const c = grupoReceita(d);
     (valoresRec[c] = valoresRec[c] || zerados(meses))[mk] += valorReceita(d);
   }
   let linhasRec = Object.keys(valoresRec).map((c) => finalizaLinha({
     key: "receita:" + c, label: c, secao: "receita", catRaw: c, cor: corCategoria(c),
     ehTotal: false, valores: valoresRec[c], total: 0, delta: 0, deltaPct: null,
   }, meses));
-  linhasRec = linhasRec.sort((a, b) => b.total - a.total);
+  // ordem fixa: "Salário" antes de "Outros"; empate desfeito por total desc.
+  linhasRec = linhasRec.sort((a, b) =>
+    (a.label === "Salário" ? 0 : 1) - (b.label === "Salário" ? 0 : 1) || b.total - a.total);
   const totalRec = totalDaSecao("receita", "Total Receita", linhasRec, meses);
   const escRec = escalas(linhasRec, meses);
   const secaoRec: SecaoInfo = {
@@ -208,7 +224,7 @@ export function lancamentosDaCelula(
       return valorGasto(d) !== 0 && (catRaw == null || catKey(d) === catRaw);
     }
     if (secao === "receita") {
-      return valorReceita(d) > 0 && (catRaw == null || recCat(d) === catRaw);
+      return valorReceita(d) > 0 && (catRaw == null || grupoReceita(d) === catRaw);
     }
     if (secao === "investido") {
       if (catRaw === "aporte") return valorAporte(d) > 0;

@@ -117,7 +117,7 @@ export function MatrizMensal({ dados, matriz, openModal }: Props) {
   // <th> clicável de ordenação
   const Th = ({ col, label, title }: { col: string; label: string; title: string }) => (
     <th
-      className={`num cursor-pointer select-none whitespace-nowrap hover:text-txt transition-colors ${sort.col === col ? "text-txt" : ""}`}
+      className={`num cursor-pointer select-none whitespace-nowrap hover:text-txt transition-colors sticky top-0 z-20 bg-card ${sort.col === col ? "text-txt" : ""}`}
       title={title}
       onClick={() => clicaCol(col)}
     >
@@ -126,12 +126,12 @@ export function MatrizMensal({ dados, matriz, openModal }: Props) {
   );
 
   return (
-    <div className="overflow-x-auto scroll-thin">
+    <div className="overflow-auto scroll-thin max-h-[calc(100vh-180px)]">
       <table className="tbl">
         <thead>
           <tr>
             <th
-              className={`cursor-pointer select-none hover:text-txt transition-colors ${sort.col === "label" ? "text-txt" : ""}`}
+              className={`cursor-pointer select-none hover:text-txt transition-colors sticky top-0 z-20 bg-card ${sort.col === "label" ? "text-txt" : ""}`}
               title="ordenar por nome"
               onClick={() => clicaCol("label")}
             >
