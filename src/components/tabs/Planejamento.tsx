@@ -1077,12 +1077,6 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
               </table>
             </div>
           </div>
-          <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (duplo clique). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦, 💳 e 💰, <b>clique</b> para digitar o valor (não sobrescreve o que já está lá) e <b>passe o mouse</b> em cima para abrir um pop-up com a <b>média móvel dos meses fechados</b> — clique em <b>Usar</b> ali para aplicá-la. Clique no nome de um grupo (<b>🔁 Gastos recorrentes</b>, <b>📦 Outros gastos</b>) para <b>minimizar</b> — os itens somem e fica só o total na linha-cabeçalho. O <b>Σ Gastos gerais</b> é a soma das quatro linhas acima: <b>🔁 recorrentes + 📦 outros + 🏦 conta (gerais) + 💳 cartão</b>.
-            {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
-            {!temOrcConta && <> <span className="text-amber">{MSG_MIGRACAO_CONTA}</span></>}
-            {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
-          </div>
         </>
       ) : (
         <>
@@ -1195,11 +1189,6 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
               </table>
             </div>
           </div>
-          <div className="text-muted text-[12px] mt-2 leading-relaxed">
-            Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). <b>Mesma estrutura da visão Mês</b>: <b>🔁 Gastos recorrentes</b> e <b>📦 Outros gastos</b> trazem o total no próprio cabeçalho — clique no nome para <b>minimizar</b> e esconder os itens; depois vêm <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos quatro, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>duplo clique</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
-            {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
-            {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
-          </div>
         </>
       )}
 
@@ -1274,6 +1263,22 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             : <><b>Pagamento futuro:</b> lança o valor uma única vez no mês escolhido.</>}
         </div>
       </Panel>
+
+      {/* legenda explicativa — por último, abaixo do formulário */}
+      {view === "mes" ? (
+        <div className="text-muted text-[12px] mt-2 leading-relaxed">
+          <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (duplo clique). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦, 💳 e 💰, <b>clique</b> para digitar o valor (não sobrescreve o que já está lá) e <b>passe o mouse</b> em cima para abrir um pop-up com a <b>média móvel dos meses fechados</b> — clique em <b>Usar</b> ali para aplicá-la. Clique no nome de um grupo (<b>🔁 Gastos recorrentes</b>, <b>📦 Outros gastos</b>) para <b>minimizar</b> — os itens somem e fica só o total na linha-cabeçalho. O <b>Σ Gastos gerais</b> é a soma das quatro linhas acima: <b>🔁 recorrentes + 📦 outros + 🏦 conta (gerais) + 💳 cartão</b>.
+          {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
+          {!temOrcConta && <> <span className="text-amber">{MSG_MIGRACAO_CONTA}</span></>}
+          {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
+        </div>
+      ) : (
+        <div className="text-muted text-[12px] mt-2 leading-relaxed">
+          Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). <b>Mesma estrutura da visão Mês</b>: <b>🔁 Gastos recorrentes</b> e <b>📦 Outros gastos</b> trazem o total no próprio cabeçalho — clique no nome para <b>minimizar</b> e esconder os itens; depois vêm <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos quatro, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>duplo clique</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
+          {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
+          {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
+        </div>
+      )}
     </div>
   );
 }
