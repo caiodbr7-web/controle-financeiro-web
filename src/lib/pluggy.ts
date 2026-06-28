@@ -186,6 +186,38 @@ export async function listInvestmentHistoryByTipo(): Promise<InvestimentoHistTip
   return (data ?? []) as InvestimentoHistTipo[];
 }
 
+// Saldo ATUAL de uma conta bancária (caixa líquido), vindo do Open Banking.
+export interface SaldoConta {
+  account_id: string;
+  banco: string | null;
+  conta_nome: string | null;
+  saldo: number;   // saldo do último dia disponível
+  dia: string;     // "YYYY-MM-DD"
+  moeda: string;
+}
+
+/** Saldo ATUAL de cada conta bancária (tabela public.pluggy_saldos) — o "caixa":
+ *  dinheiro líquido em conta, somado ao patrimônio na aba Investimentos.
+ *  Pega o retrato mais recente de cada conta (dedupe por account_id sobre os
+ *  dias mais recentes). Tabela inexistente -> [] (degrada sem quebrar). */
+export async function listSaldoCaixa(): Promise<SaldoConta[]> {
+  const { data, error } = await sb
+    .from("pluggy_saldos")
+    .select("account_id,banco,conta_nome,saldo,dia,moeda")
+    .order("dia", { ascending: false })
+    .limit(500);
+  if (error) {
+    if (/relation|does not exist|could not find|schema cache|not exist/i.test(error.message)) return [];
+    throw new Error(error.message);
+  }
+  // ordenado por dia desc -> a 1ª linha de cada conta é o saldo mais recente
+  const ultimo = new Map<string, SaldoConta>();
+  for (const r of (data ?? []) as SaldoConta[]) {
+    if (!ultimo.has(r.account_id)) ultimo.set(r.account_id, r);
+  }
+  return [...ultimo.values()];
+}
+
 /** Define (ou limpa, com null) a classificação manual de um ativo. */
 export async function setTipoManual(investmentId: string, tipoManual: string | null): Promise<void> {
   const { error } = await sb

@@ -17,7 +17,6 @@ import { Classificar } from "./components/tabs/Classificar";
 import { Planejamento } from "./components/tabs/Planejamento";
 import { Adicionar, type MetodoAdd } from "./components/tabs/Adicionar";
 import { OpenBanking } from "./components/tabs/OpenBanking";
-import { Saldo } from "./components/tabs/Saldo";
 import { Investimentos } from "./components/tabs/Investimentos";
 
 type SubAba = { id: Aba; label: string };
@@ -30,22 +29,15 @@ const SUB_IMPORT: SubAba[] = [
   { id: "lanc", label: "Lançamentos" },
   { id: "openbanking", label: "Open Banking" },
 ];
-/* sub-abas da aba Saldo (saldos das contas via Open Finance) */
-const SUB_SALDO: SubAba[] = [
-  { id: "saldo_evolucao", label: "Evolução" },
-  { id: "saldo_dados", label: "Dados" },
-];
-
 /* navegação agrupada: Análise · Planejar · Importação.
    As abas com `subs` agrupam sub-abas internas (renderizadas no conteúdo). */
-type TopAba = SubAba | { grupo: "saldo" | "importacao"; label: string; subs: SubAba[] };
+type TopAba = SubAba | { grupo: "importacao"; label: string; subs: SubAba[] };
 const GRUPOS: TopAba[][] = [
   [
     { id: "inicio", label: "Início" },
     { id: "geral", label: "Visão Geral" },
     { id: "mensal", label: "Mensal" },
     { id: "diario", label: "Diário" },
-    { grupo: "saldo", label: "Saldo", subs: SUB_SALDO },
     { id: "investimentos", label: "Investimentos" },
   ],
   [{ id: "planejamento", label: "Planejamento" }],
@@ -104,10 +96,8 @@ export default function App() {
 
   // lembra a última sub-aba visitada de cada grupo com sub-abas
   const lastImport = useRef<Aba>("adicionar");
-  const lastSaldo = useRef<Aba>("saldo_evolucao");
   const navTo = useCallback((id: Aba) => {
     if (SUB_IMPORT.some((s) => s.id === id)) lastImport.current = id;
-    else if (SUB_SALDO.some((s) => s.id === id)) lastSaldo.current = id;
     setAba(id);
   }, []);
 
@@ -155,9 +145,7 @@ export default function App() {
     { id: "geral", label: "Visão Geral", grupo: "Análise", keywords: "evolucao mensal receitas despesas", run: () => navTo("geral") },
     { id: "mensal", label: "Resumo Mensal", grupo: "Análise", keywords: "categorias rosca pizza", run: () => navTo("mensal") },
     { id: "diario", label: "Evolução Diária", grupo: "Análise", keywords: "acumulado dia", run: () => navTo("diario") },
-    { id: "saldo_evolucao", label: "Saldo · Evolução", grupo: "Análise", keywords: "saldo contas banco grafico open finance patrimonio", run: () => navTo("saldo_evolucao") },
-    { id: "saldo_dados", label: "Saldo · Dados", grupo: "Análise", keywords: "saldo tabela contas diario csv", run: () => navTo("saldo_dados") },
-    { id: "investimentos", label: "Investimentos", grupo: "Análise", keywords: "investimento patrimonio renda fixa fundos acoes etf previdencia pluggy open finance carteira", run: () => navTo("investimentos") },
+    { id: "investimentos", label: "Investimentos", grupo: "Análise", keywords: "investimento patrimonio caixa saldo contas banco renda fixa fundos acoes etf previdencia pluggy open finance carteira", run: () => navTo("investimentos") },
     { id: "planejamento", label: "Planejamento", grupo: "Planejar", keywords: "orcamento projecao metas parcelas", run: () => navTo("planejamento") },
     { id: "importar", label: "Importar arquivo", grupo: "Importação", keywords: "csv excel ofx upload extrato fatura adicionar", run: () => { setAddMetodo("arquivo"); navTo("adicionar"); } },
     { id: "conectar", label: "Conectar banco", grupo: "Importação", keywords: "pluggy open finance sincronizar adicionar", run: () => { setAddMetodo("banco"); navTo("adicionar"); } },
@@ -178,16 +166,7 @@ export default function App() {
   const iconBtn = "w-[28px] h-[28px] rounded-full border border-line bg-transparent text-muted hover:text-txt cursor-pointer flex items-center justify-center transition-colors shrink-0";
 
   // grupo de sub-abas ativo (mostra a barra interna no conteúdo)
-  const subAtivo = SUB_IMPORT.some((s) => s.id === aba)
-    ? SUB_IMPORT
-    : SUB_SALDO.some((s) => s.id === aba)
-      ? SUB_SALDO
-      : null;
-
-  // as duas sub-abas de Saldo compartilham o mesmo componente: chave estável
-  // entre elas evita refazer o fetch ao alternar (só refaz ao trocar de aba-topo)
-  const ehSaldo = aba === "saldo_evolucao" || aba === "saldo_dados";
-  const viewKey = ehSaldo ? "saldo" : aba;
+  const subAtivo = SUB_IMPORT.some((s) => s.id === aba) ? SUB_IMPORT : null;
 
   return (
     <div>
@@ -243,7 +222,7 @@ export default function App() {
                   const isParent = "subs" in a;
                   const ativo = isParent ? a.subs.some((s) => s.id === aba) : aba === a.id;
                   const onClick = isParent
-                    ? () => navTo(a.grupo === "saldo" ? lastSaldo.current : lastImport.current)
+                    ? () => navTo(lastImport.current)
                     : () => navTo(a.id);
                   // pontinho de pendência: aba Classificar ou seu grupo pai (Importação)
                   const dot = isParent ? a.grupo === "importacao" && pendClass > 0 : a.id === "classificar" && pendClass > 0;
@@ -303,7 +282,7 @@ export default function App() {
         {loading && ABAS_DADOS.has(aba) ? (
           aba === "inicio" ? <SkInicio /> : <SkTabela />
         ) : (
-        <div key={viewKey} className="fade-in">
+        <div key={aba} className="fade-in">
           {aba === "inicio" && <Inicio {...tabProps} go={navTo} />}
           {aba === "geral" && <VisaoGeral {...tabProps} />}
           {aba === "mensal" && <ResumoMensal {...tabProps} />}
@@ -314,7 +293,6 @@ export default function App() {
           {aba === "adicionar" && <Adicionar reload={reload} metodo={addMetodo} onMetodo={setAddMetodo} allDados={allDados} />}
           {aba === "openbanking" && <OpenBanking />}
           {aba === "investimentos" && <Investimentos />}
-          {ehSaldo && <Saldo aba={aba} />}
         </div>
         )}
       </main>

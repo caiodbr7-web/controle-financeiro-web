@@ -32,20 +32,6 @@ export interface Lancamento {
   interna_manual?: boolean | null; // override do usuário p/ `interna` (a re-tradução respeita)
 }
 
-// Saldo diário reconstruído de uma conta bancária (tabela public.pluggy_saldos)
-export interface Saldo {
-  account_id: string;
-  item_id: string | null;
-  banco: string | null;
-  conta_nome: string | null;
-  tipo: string;
-  moeda: string;
-  dia: string; // "YYYY-MM-DD" (horário de Brasília)
-  saldo: number; // saldo no fim do dia
-  saldo_atual_ref: number | null; // saldo atual usado como âncora
-  ancora_ts: string | null; // quando o saldo atual foi capturado
-}
-
 // Posição de investimento (tabela public.pluggy_investments) via Open Finance/Pluggy.
 // Cada linha é um ativo/posição: o `saldo` é o valor ATUAL (balance da Pluggy) e
 // `valor_aplicado` é o montante aportado (amount). É o "patrimônio investido".
@@ -91,4 +77,4 @@ export interface InvestimentoHistTipo {
 
 export type Visao = "ALL" | "pessoal" | "corporativo";
 export type Modo = "cartao" | "ambos" | "conta";
-export type Aba = "inicio" | "geral" | "mensal" | "diario" | "planejamento" | "classificar" | "lanc" | "adicionar" | "openbanking" | "saldo_evolucao" | "saldo_dados" | "investimentos";
+export type Aba = "inicio" | "geral" | "mensal" | "diario" | "planejamento" | "classificar" | "lanc" | "adicionar" | "openbanking" | "investimentos";
