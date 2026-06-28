@@ -12,6 +12,9 @@ import {
 } from "../../lib/projecao";
 
 const inp = "bg-card text-txt border border-line rounded-[8px] px-2 py-[6px] text-[13px] outline-none focus:border-muted transition-colors placeholder:text-muted/70";
+// contorno sutil que sinaliza um valor editável (quadrado levemente arredondado) — quem usa
+// acrescenta a cor da borda (border-line por padrão; border-accent/green quando ajustado)
+const editavel = "inline-block border rounded-[6px] px-[7px] py-[2px] transition-colors";
 
 // opções de mês para o formulário: de 6 meses atrás até ~3 anos à frente
 const MES_OPCOES = (() => {
@@ -824,11 +827,13 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   onChange={(e) => setEditVal(e.target.value)}
                   onBlur={() => salvarOverride(p, m.k)}
                   onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setEditCell(null); }} />
-              ) : (
-                <span className={ajustado ? "text-accent font-medium underline decoration-dotted underline-offset-2" : ""}
-                  title={ajustado ? "ajustado manualmente" : undefined}>
-                  {v ? fmtCell(v) : <span className="text-line">·</span>}
+              ) : v ? (
+                <span className={`${editavel} ${ajustado ? "border-accent text-accent font-medium underline decoration-dotted underline-offset-2" : "border-line hover:border-accent"}`}
+                  title={ajustado ? "ajustado manualmente" : "duplo clique para ajustar só este mês"}>
+                  {fmtCell(v)}
                 </span>
+              ) : (
+                <span className="text-line">·</span>
               )}
             </td>
           );
@@ -980,7 +985,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                           ) : (
                             <span className="inline-block" onMouseEnter={(e) => abrirSug("conta", e.currentTarget)} onMouseLeave={fecharSugLento}>
                               <button onClick={() => iniciarOrc("conta")} title="clique para digitar o previsto · passe o mouse para ver a média móvel"
-                                className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-accent">
+                                className={`${editavel} border-line bg-transparent cursor-pointer hover:border-accent hover:text-accent`}>
                                 {contaGeralPrev(comp) == null ? <span className="text-accent">↑ orçar</span> : fmtCell(contaGeralPrev(comp) as number)}
                               </button>
                             </span>
@@ -1001,7 +1006,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                           ) : (
                             <span className="inline-block" onMouseEnter={(e) => abrirSug("cartao", e.currentTarget)} onMouseLeave={fecharSugLento}>
                               <button onClick={() => iniciarOrc("cartao")} title="clique para digitar o previsto · passe o mouse para ver a média móvel"
-                                className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-violet">
+                                className={`${editavel} border-line bg-transparent cursor-pointer hover:border-violet hover:text-violet`}>
                                 {cartaoVarPrev(comp) == null ? <span className="text-violet">↑ orçar</span> : fmtCell(cartaoVarPrev(comp) as number)}
                               </button>
                             </span>
@@ -1032,7 +1037,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                           ) : (
                             <span className="inline-block" onMouseEnter={(e) => abrirSug("receita", e.currentTarget)} onMouseLeave={fecharSugLento}>
                               <button onClick={() => iniciarOrc("receita")} title="clique para digitar a receita prevista · passe o mouse para ver a média do que entrou. Para mudar só um mês, use a aba Projeção."
-                                className="bg-transparent border-0 p-0 cursor-pointer transition-colors hover:text-green">
+                                className={`${editavel} border-line bg-transparent cursor-pointer hover:border-green hover:text-green`}>
                                 {(() => {
                                   const v = receitaPrevMes(comp);
                                   const ajust = !!receitaPlano && (mensal[comp]?.[receitaPlano.id]?.valor_real ?? null) != null;
@@ -1155,11 +1160,13 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                                 onChange={(e) => setEditVal(e.target.value)}
                                 onBlur={() => { if (p) salvarOverride(p, m.k); }}
                                 onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setEditCell(null); }} />
-                            ) : (
-                              <span className={ajustado ? "text-accent font-medium underline decoration-dotted underline-offset-2" : ""}
-                                title={ajustado ? "ajustado manualmente" : undefined}>
-                                {v ? fmtCell(v) : <span className="text-line">·</span>}
+                            ) : v ? (
+                              <span className={`${editavel} ${ajustado ? "border-accent text-accent font-medium underline decoration-dotted underline-offset-2" : "border-line hover:border-green"}`}
+                                title={ajustado ? "ajustado manualmente" : "duplo clique para ajustar a receita prevista só deste mês"}>
+                                {fmtCell(v)}
                               </span>
+                            ) : (
+                              <span className="text-line">·</span>
                             )}
                           </td>
                         );
