@@ -17,7 +17,10 @@ import type { Lancamento } from "../types";
 // As abas Conciliação e Open Banking NÃO usam este hook (têm query própria),
 // então continuam vendo as duas fontes (e os meses futuros) para validação.
 // ---------------------------------------------------------------------------
-const CORTE_OPEN_BANKING = "2026-06"; // Open Banking assume deste mês em diante
+const CORTE_OPEN_BANKING = "2026-05"; // Open Banking assume deste mês em diante.
+// Movido de 2026-06 -> 2026-05: os lançamentos de maio vêm do Open Finance (pluggy)
+// e ficavam ocultos do lado errado do corte, deixando maio vazio nos dashboards por
+// competência. Agora maio sai do Open Finance; o PDF curado cobre só abril e antes.
 
 const compKey = (d: Lancamento) => String(d.competencia || "").slice(0, 7);
 // Uma competência só posiciona a linha no corte se for um "YYYY-MM" válido. Sem
