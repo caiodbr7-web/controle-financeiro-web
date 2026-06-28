@@ -311,7 +311,7 @@ export default function App() {
           {aba === "planejamento" && <Planejamento lancamentos={dados} />}
           {aba === "classificar" && <Classificar dados={dados} allDados={allDados} openModal={openModal} reload={reload} />}
           {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}
-          {aba === "adicionar" && <Adicionar reload={reload} metodo={addMetodo} onMetodo={setAddMetodo} />}
+          {aba === "adicionar" && <Adicionar reload={reload} metodo={addMetodo} onMetodo={setAddMetodo} allDados={allDados} />}
           {aba === "openbanking" && <OpenBanking />}
           {aba === "investimentos" && <Investimentos />}
           {ehSaldo && <Saldo aba={aba} />}
