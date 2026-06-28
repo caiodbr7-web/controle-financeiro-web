@@ -10,11 +10,15 @@ import {
 
 interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[]; openModal: (t: string, r: Lancamento[]) => void; }
 
-// rótulo de % dentro do segmento — só mostra se o pedaço for grande o bastante
+// rótulo de % dentro do segmento — só mostra se o pedaço for grande o bastante.
+// em barra empilhada o recharts entrega value como [base, topo]; o que importa é a
+// fatia da categoria (topo − base), não a posição acumulada do topo.
+const segPct = (e: any) => (Array.isArray(e?.value) ? e.value[1] - e.value[0] : e?.value);
 function PctLabel(props: any) {
   const { x, y, width, height, value } = props;
-  if (value == null || value < 7 || height < 13) return null;
-  return <text x={x + width / 2} y={y + height / 2} fill="#fff" fontSize={10} fontWeight={600} textAnchor="middle" dominantBaseline="central">{Math.round(value)}%</text>;
+  const v = segPct(props) ?? value;
+  if (v == null || v < 7 || height < 13) return null;
+  return <text x={x + width / 2} y={y + height / 2} fill="#fff" fontSize={10} fontWeight={600} textAnchor="middle" dominantBaseline="central">{Math.round(v)}%</text>;
 }
 
 /* Toda esta aba agrupa pela COMPETÊNCIA (fatura/extrato do mês), eixo único do contrato.
@@ -242,7 +246,7 @@ export function ResumoMensal({ dados, allDados, openModal }: Props) {
                 {stack6.cats.map((c) => (
                   <Bar key={c} dataKey={c} stackId="a" fill={corCategoria(c)} isAnimationActive={false} cursor="pointer"
                     onClick={(d: any) => { const comp = d?.payload?._c; if (comp) segClick(c, comp); }}>
-                    <LabelList content={PctLabel} />
+                    <LabelList content={PctLabel} valueAccessor={segPct} />
                   </Bar>
                 ))}
               </BarChart>
