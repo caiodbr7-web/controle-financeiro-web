@@ -171,10 +171,15 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
     const alvo = grupos.filter((g) => !escolhas[g.key]).map((g) => ({ g, cat: "Outros" }));
     aplicar(alvo, `${alvo.length} marcados como Outros`);
   };
+  // bulkCat (quando escolhido) sobrepõe todos; senão, usa a categoria de cada linha.
+  // pula os selecionados que ainda não têm categoria nenhuma.
   const aplicarSelecionados = () => {
-    if (!bulkCat) return;
-    const alvo = grupos.filter((g) => sel.has(g.key)).map((g) => ({ g, cat: bulkCat }));
-    aplicar(alvo, `${alvo.length} selecionados → ${bulkCat}`);
+    const alvo = grupos
+      .filter((g) => sel.has(g.key))
+      .map((g) => ({ g, cat: bulkCat || escolhas[g.key] }))
+      .filter((x) => x.cat);
+    if (!alvo.length) return;
+    aplicar(alvo, bulkCat ? `${alvo.length} selecionados → ${bulkCat}` : `${alvo.length} selecionados classificados ✓`);
     setBulkCat("");
   };
 
@@ -194,6 +199,8 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
   const voltarFoco = () => { setPickerKey(null); listRef.current?.focus(); };
 
   const todosSelecionados = grupos.length > 0 && sel.size === grupos.length;
+  // selecionados que têm categoria pra aplicar (a da linha, ou bulkCat sobrepondo todos)
+  const selAplicaveis = grupos.filter((g) => sel.has(g.key) && (bulkCat || escolhas[g.key])).length;
 
   return (
     <div>
@@ -240,9 +247,16 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
             </label>
             {sel.size > 0 && (
               <div className="flex flex-wrap items-center gap-2 ml-auto">
-                <CategoryPicker value={bulkCat} onSelect={setBulkCat} placeholder="Categoria…" />
-                <button disabled={busy || !bulkCat} onClick={aplicarSelecionados} className="btn-primary !py-[7px] !px-3 !text-[12.5px]">
-                  Aplicar aos {sel.size}
+                <CategoryPicker value={bulkCat} onSelect={setBulkCat} placeholder="Sobrepor categoria…" />
+                <button
+                  disabled={busy || selAplicaveis === 0}
+                  onClick={aplicarSelecionados}
+                  className="btn-primary !py-[7px] !px-3 !text-[12.5px]"
+                  title={bulkCat
+                    ? `Aplica “${bulkCat}” aos ${sel.size} selecionados`
+                    : "Aplica a categoria de cada linha selecionada · escolha uma categoria acima para sobrepor todas"}
+                >
+                  Aplicar aos {selAplicaveis}
                 </button>
                 <button onClick={() => setSel(new Set())} className="btn-ghost !py-[7px] !px-3 !text-[12.5px]">Limpar</button>
               </div>
