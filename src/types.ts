@@ -66,6 +66,7 @@ export interface Investimento {
   taxa: string | null;           // rate + rateType (ex.: "110 CDI")
   status: string | null;
   tipo_manual: string | null;    // classificação SUA do ativo (sobrepõe `tipo`)
+  liquidez_d1_manual: boolean | null; // override SEU de "tem liquidez D+1?" (null = heurística)
   atualizado_em?: string | null;
 }
 
