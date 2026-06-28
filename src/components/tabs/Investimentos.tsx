@@ -148,6 +148,52 @@ function StackTip({ active, payload, label }: { active?: boolean; payload?: any[
   );
 }
 
+// rótulo de uma conta de caixa: "Nubank · Conta Corrente" (sem repetir o banco)
+const contaLabelCaixa = (c: SaldoConta) => {
+  const banco = c.banco ? limpaInstituicao(c.banco) : "";
+  const nome = c.conta_nome ?? "";
+  if (banco && nome && nome.toLowerCase() !== banco.toLowerCase()) return `${banco} · ${nome}`;
+  return banco || nome || "Conta";
+};
+
+// Card "Saldo conta": valor do caixa + pop-up no hover com o saldo de cada conta
+// puxada do Open Finance. Mesma moldura do <Kpi>, com a tabela em camada flutuante.
+function SaldoContaCard({ caixa, total }: { caixa: SaldoConta[]; total: number }) {
+  const contas = [...caixa].sort((a, b) => (b.saldo ?? 0) - (a.saldo ?? 0));
+  return (
+    <div
+      tabIndex={0}
+      className="group relative bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card min-w-0 text-left outline-none cursor-default hover:border-muted/60 transition-colors"
+    >
+      <div className="text-muted text-[12px] font-medium">Saldo conta</div>
+      <div className={`text-[20px] sm:text-[24px] font-semibold mt-[6px] tracking-tight tabular-nums ${total < 0 ? "text-red" : "text-violet"}`}>
+        {BRL0(total)}
+      </div>
+      <div className="text-[11.5px] mt-[4px] text-muted leading-snug">
+        {contas.length} {contas.length === 1 ? "conta" : "contas"} · Open Finance
+      </div>
+      {contas.length > 0 && (
+        <div className="absolute left-0 right-0 sm:right-auto top-full mt-2 z-30 sm:min-w-[280px] rounded-[12px] border border-line bg-card/95 backdrop-blur-[8px] px-3 py-2 shadow-pop text-[12px] hidden group-hover:block group-focus-within:block">
+          <div className="text-muted mb-[3px]">Saldo por conta</div>
+          {contas.map((c) => (
+            <div key={c.account_id} className="flex items-center gap-2 py-[1.5px]">
+              <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: CAIXA_COR }} />
+              <span className="text-muted truncate max-w-[180px]">{contaLabelCaixa(c)}</span>
+              <span className={`ml-auto font-medium tabular-nums pl-3 ${(c.saldo ?? 0) < 0 ? "text-red" : ""}`}>
+                {fmtMoeda(c.saldo ?? 0, c.moeda || "BRL")}
+              </span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2 py-[1.5px] mt-[3px] pt-[5px] border-t border-line">
+            <span className="text-txt font-medium">Total</span>
+            <span className="ml-auto font-semibold tabular-nums pl-3">{BRL0(total)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ColDef {
   key: keyof Investimento;
   label: string;
@@ -542,6 +588,9 @@ export function Investimentos() {
   const mostraCaixa = !fTipo && !fBanco && !busca.trim() && caixaTotal !== 0;
   const caixaShown = mostraCaixa ? caixaTotal : 0;
   const totalPatrimonio = kpis.atual + caixaShown;
+  // liquidez D+1 = saldo em conta (caixa, 100% líquido) + investimentos com D+1
+  const d1Total = kpis.liquidoD1 + caixaShown;
+  const d1Pct = totalPatrimonio > 0 ? (d1Total / totalPatrimonio) * 100 : 0;
 
   // composição do patrimônio: tipos de investimento + (opcional) o Caixa
   const composicao = useMemo(() => {
@@ -778,15 +827,14 @@ export function Investimentos() {
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
+      <div className={`grid grid-cols-2 gap-[14px] mb-[18px] ${caixa.length > 0 ? "md:grid-cols-3 lg:grid-cols-5" : "md:grid-cols-4"}`}>
         <Kpi
-          title="Patrimônio total"
-          value={BRL0(totalPatrimonio)}
-          sub={caixaShown > 0
-            ? `${BRL0(kpis.atual)} investido · ${BRL0(caixaShown)} em caixa`
-            : `${BRL0(kpis.liquidoD1)} com liquidez D+1 (${kpis.pctLiquido.toFixed(0)}%)`}
+          title="Investido total"
+          value={BRL0(kpis.atual)}
+          sub={`D+1 ${BRL0(d1Total)} · ${d1Pct.toFixed(0)}% (saldo + invest. D+1)`}
           color="text-violet"
         />
+        {caixa.length > 0 && <SaldoContaCard caixa={caixa} total={caixaTotal} />}
         {crescKpi("Crescimento MoM", cresc?.mom)}
         {crescKpi("Crescimento YTD", cresc?.ytd)}
         {crescKpi("Crescimento YoY", cresc?.yoy)}
