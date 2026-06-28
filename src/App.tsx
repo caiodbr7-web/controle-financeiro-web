@@ -319,7 +319,7 @@ export default function App() {
         )}
       </main>
 
-      <Modal data={modal} onClose={() => setModal(null)} />
+      <Modal data={modal} onClose={() => setModal(null)} reload={reload} />
       <CommandPalette open={paletaAberta} onClose={() => setPaletaAberta(false)} commands={comandos} />
     </div>
   );

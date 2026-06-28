@@ -1,18 +1,39 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { Lancamento } from "../types";
 import { BRL, catKey, corCategoria, dataCompleta } from "../lib/finance";
 import { ehInterna } from "../lib/lancClasses";
+import { CategoryPicker } from "./CategoryPicker";
+import { sb } from "../lib/supabase";
+import { useToast } from "./Toast";
 
 export interface ModalData { title: string; rows: Lancamento[]; }
 
-export function Modal({ data, onClose }: { data: ModalData | null; onClose: () => void }) {
+export function Modal({ data, onClose, reload }: { data: ModalData | null; onClose: () => void; reload?: () => void }) {
+  const { toast } = useToast();
+  const [salvos, setSalvos] = useState<Record<number, string>>({});
+  const [rev, setRev] = useState(0); // força recomputar a agregação após editar uma categoria
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, [onClose]);
 
+  // edição de categoria direto do pop-up → grava em `categoria_manual` (override).
+  // Espelha já no objeto p/ a UI (agregação + dashboards via reload) refletirem na hora.
+  async function salvarCat(d: Lancamento, valor: string) {
+    setSalvos((s) => ({ ...s, [d.id]: "salvando…" }));
+    const { error } = await sb.from("lancamentos").update({ categoria_manual: valor || null }).eq("id", d.id);
+    if (error) { setSalvos((s) => ({ ...s, [d.id]: "" })); toast({ message: "Erro ao salvar categoria: " + error.message, variant: "error" }); return; }
+    d.categoria_manual = valor || null;
+    setRev((r) => r + 1);
+    reload?.();
+    setSalvos((s) => ({ ...s, [d.id]: "✓" }));
+    setTimeout(() => setSalvos((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
+  }
+
   if (!data) return null;
+  void rev; // dependência implícita do recálculo abaixo
   const grupos: Record<string, number> = {};
   data.rows.forEach((d) => { const k = catKey(d); grupos[k] = (grupos[k] || 0) + Math.abs(d.valor); });
   const cats = Object.keys(grupos).sort((a, b) => grupos[b] - grupos[a]);
@@ -85,7 +106,12 @@ export function Modal({ data, onClose }: { data: ModalData | null; onClose: () =
                         {d.subtipo && <span className="text-muted text-[11px]">· {d.subtipo}</span>}
                       </span>
                     </td>
-                    <td>{catKey(d)}</td>
+                    <td>
+                      <span className="inline-flex items-center gap-[6px]">
+                        <CategoryPicker value={d.categoria_manual || d.categoria_auto || ""} onSelect={(v) => salvarCat(d, v)} />
+                        {salvos[d.id] && <span className="text-muted text-[11px] whitespace-nowrap">{salvos[d.id]}</span>}
+                      </span>
+                    </td>
                     <td className={`num ${d.valor < 0 ? "text-red" : "text-green"}`}>{BRL(d.valor)}</td>
                   </tr>
                 ))}
