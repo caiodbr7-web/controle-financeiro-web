@@ -7,7 +7,7 @@ import {
 import type { Investimento, InvestimentoHist, InvestimentoHistTipo } from "../../types";
 import { Kpi, Panel, Select, BarRow } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
-import { listInvestments, listInvestmentHistory, listInvestmentHistoryByTipo, syncInvestments, setTipoManual } from "../../lib/pluggy";
+import { listInvestments, listInvestmentHistory, listInvestmentHistoryByTipo, syncInvestments, setTipoManual, setLiquidezD1Manual } from "../../lib/pluggy";
 import { BRL0, brlShort, fmtMoeda } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
 
@@ -42,6 +42,25 @@ const labelTipo = (t?: string | null) => (t ? TIPO_LABEL[t] ?? t : "Outros");
 
 // tipo "efetivo": a classificação manual vence a da Pluggy
 const tipoEf = (i: Investimento) => i.tipo_manual ?? i.tipo ?? "";
+
+// Heurística de liquidez D+1 (resgate com o dinheiro disponível em ~1 dia útil),
+// usada quando o usuário não fez override manual. Conservadora: só marca "Sim"
+// quando há sinal claro de liquidez imediata; o resto fica "Não" (o usuário ajusta
+// na coluna "Liquidez D+1"). Tesouro Selic, CDB liquidez diária, fundos DI e
+// cripto -> Sim; renda fixa com vencimento, ações/ETF (D+2), previdência,
+// debêntures e COE -> Não.
+function liquidezD1Auto(i: Investimento): boolean {
+  const t = tipoEf(i);
+  const blob = `${i.nome ?? ""} ${i.subtipo ?? ""} ${i.taxa ?? ""}`.toLowerCase();
+  if (/liquidez\s*di[aá]ria|resgate\s*di[aá]rio|d\s*\+\s*[01]\b/.test(blob)) return true; // sinal explícito
+  if (/tesouro\s*selic|\blft\b|\bselic\b/.test(blob)) return true;                        // pós-fixado do Tesouro
+  if (/caixinha|cofrinho|conta\s*remunerada|carteira/.test(blob)) return true;            // caixinha/conta remunerada
+  if (t === "CRYPTO") return true;                                                        // cripto: liquidez imediata
+  if (t === "MUTUAL_FUND" && /\bdi\b|referenciado|renda\s*fixa\s*simples/.test(blob)) return true; // fundo DI
+  return false;
+}
+// liquidez D+1 "efetiva": o override manual vence a heurística
+const liquidezD1Ef = (i: Investimento) => i.liquidez_d1_manual ?? liquidezD1Auto(i);
 
 // instituição "limpa": "NU FINANCEIRA S.A. - ..." -> "Nubank"; "BANCO AGIBANK S.A" -> "Banco Agibank".
 function limpaInstituicao(s: string): string {
@@ -130,7 +149,17 @@ function toCsv(rows: Investimento[], cols: ColDef[]): string {
     return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const head = cols.map((c) => c.label).join(";");
-  const body = rows.map((i) => cols.map((c) => esc(c.key === "tipo_manual" ? labelTipo(tipoEf(i)) : i[c.key])).join(";"));
+  const body = rows.map((i) =>
+    cols
+      .map((c) =>
+        esc(
+          c.key === "tipo_manual" ? labelTipo(tipoEf(i)) :
+          c.key === "liquidez_d1_manual" ? (liquidezD1Ef(i) ? "Sim" : "Não") :
+          i[c.key],
+        ),
+      )
+      .join(";"),
+  );
   return [head, ...body].join("\n");
 }
 
@@ -199,6 +228,18 @@ export function Investimentos() {
     }
   }, [carregar]);
 
+  // override de liquidez D+1 ("" = automático/heurística, "sim"/"nao" = manual)
+  const setLiquidez = useCallback(async (id: string, valor: string) => {
+    const novo = valor === "" ? null : valor === "sim";
+    setRows((rs) => rs.map((i) => (i.investment_id === id ? { ...i, liquidez_d1_manual: novo } : i)));
+    try {
+      await setLiquidezD1Manual(id, novo);
+    } catch (e) {
+      setMsg("Erro ao salvar liquidez: " + (e as Error).message);
+      carregar(); // reverte para o estado real do banco
+    }
+  }, [carregar]);
+
   const tipos = useMemo(() => [...new Set(rows.map(tipoEf).filter(Boolean))].sort(), [rows]);
   const instituicoes = useMemo(
     () => [...new Set(rows.map(instDe).filter((x) => x && x !== "—"))].sort(),
@@ -223,16 +264,50 @@ export function Investimentos() {
   }, [rows, busca, fTipo, fBanco, sortCol, sortDir]);
 
   const kpis = useMemo(() => {
-    let atual = 0, aplicado = 0, lucro = 0;
+    let atual = 0, aplicado = 0, lucro = 0, liquidoD1 = 0;
     for (const i of filtrados) {
       atual += i.saldo ?? 0;
       aplicado += i.valor_aplicado ?? 0;
       lucro += i.lucro ?? 0;
+      if (liquidezD1Ef(i)) liquidoD1 += i.saldo ?? 0;
     }
     const nInst = new Set(filtrados.map(instDe).filter((x) => x !== "—")).size;
     const pct = aplicado !== 0 ? (lucro / Math.abs(aplicado)) * 100 : 0;
-    return { atual, aplicado, lucro, pct, instituicoes: nInst };
+    const pctLiquido = atual > 0 ? (liquidoD1 / atual) * 100 : 0;
+    return { atual, aplicado, lucro, pct, instituicoes: nInst, liquidoD1, pctLiquido };
   }, [filtrados]);
+
+  // Crescimento do patrimônio (MoM / YTD / YoY) a partir do histórico diário.
+  // Base de cada métrica: o retrato mais recente NA ou ANTES da data-âncora
+  //  - MoM: fim do mês anterior;  - YTD: virada do ano;  - YoY: ~12 meses atrás.
+  // Sem um retrato no período, cai no retrato mais antigo disponível (rótulo
+  // "desde dd/mm/aa" deixa a base explícita) — assim os cards já têm valor e vão
+  // se ajustando à medida que o histórico cresce. É a carteira inteira (não os
+  // filtros), pois o histórico é gravado para o patrimônio todo.
+  const cresc = useMemo(() => {
+    const pts = hist.filter((h) => h.valor_total != null) as { dia: string; valor_total: number }[];
+    if (pts.length < 2) return null;
+    const last = pts[pts.length - 1];
+    const cur = last.valor_total;
+    const earlier = pts.slice(0, pts.length - 1);
+    const refOnOrBefore = (alvo: string) => {
+      let best = earlier[0];
+      for (const p of earlier) if (p.dia <= alvo) best = p;
+      return best;
+    };
+    const y = +last.dia.slice(0, 4), m = +last.dia.slice(5, 7);
+    const fimMesAnterior = new Date(y, m - 1, 0); // dia 0 do mês atual = último dia do anterior
+    const alvoMoM = `${fimMesAnterior.getFullYear()}-${String(fimMesAnterior.getMonth() + 1).padStart(2, "0")}-${String(fimMesAnterior.getDate()).padStart(2, "0")}`;
+    const alvoYTD = `${y - 1}-12-31`;
+    const alvoYoY = `${y - 1}-${last.dia.slice(5)}`;
+    const calc = (alvo: string) => {
+      const ref = refOnOrBefore(alvo);
+      const delta = cur - ref.valor_total;
+      const pct = ref.valor_total !== 0 ? (delta / Math.abs(ref.valor_total)) * 100 : null;
+      return { delta, pct, refDia: ref.dia };
+    };
+    return { mom: calc(alvoMoM), ytd: calc(alvoYTD), yoy: calc(alvoYoY) };
+  }, [hist]);
 
   // composição por tipo efetivo (sobre os filtrados), com cor estável
   const porTipo = useMemo(() => {
@@ -347,6 +422,20 @@ export function Investimentos() {
     { key: "valor_aplicado", label: "Aplicado", num: true, sortable: true, render: (i) => (i.valor_aplicado != null ? fmtMoeda(i.valor_aplicado, moedaDe(i)) : "—") },
     { key: "saldo", label: "Valor atual", num: true, sortable: true, render: (i) => (i.saldo != null ? fmtMoeda(i.saldo, moedaDe(i)) : "—") },
     { key: "lucro", label: "Lucro", num: true, sortable: true, render: (i) => (i.lucro != null ? <span className={i.lucro < 0 ? "text-red" : "text-green"}>{fmtMoeda(i.lucro, moedaDe(i))}</span> : "—") },
+    {
+      key: "liquidez_d1_manual", label: "Liquidez D+1", render: (i) => (
+        <select
+          value={i.liquidez_d1_manual == null ? "" : i.liquidez_d1_manual ? "sim" : "nao"}
+          onChange={(e) => setLiquidez(i.investment_id, e.target.value)}
+          className="select-chev bg-card text-txt border border-line rounded-[8px] pl-2 pr-6 py-[5px] text-[12px] cursor-pointer outline-none focus:border-muted transition-colors max-w-[130px]"
+          title="Tem liquidez D+1 (resgate disponível em ~1 dia útil)? 'Auto' usa uma heurística pelo tipo do ativo; escolha Sim/Não para sobrepor."
+        >
+          <option value="">{`Auto · ${liquidezD1Auto(i) ? "Sim" : "Não"}`}</option>
+          <option value="sim">Sim</option>
+          <option value="nao">Não</option>
+        </select>
+      ),
+    },
     { key: "taxa", label: "Taxa", render: (i) => cell(i.taxa) },
     { key: "vencimento", label: "Vencimento", sortable: true, render: (i) => fmtVenc(i.vencimento) },
     { key: "quantidade", label: "Qtd.", num: true, render: (i) => (i.quantidade != null ? i.quantidade.toLocaleString("pt-BR") : "—") },
@@ -365,6 +454,21 @@ export function Investimentos() {
       </th>
     );
   }
+
+  // card de crescimento: variação em R$ (grande, colorida) + % e base abaixo
+  const crescKpi = (title: string, g: { delta: number; pct: number | null; refDia: string } | undefined) => {
+    if (!g) return <Kpi key={title} title={title} value="—" sub="registrando histórico…" />;
+    const pos = g.delta >= 0;
+    const pctTxt = g.pct == null ? "" : `${pos ? "+" : ""}${g.pct.toFixed(1)}% · `;
+    return (
+      <Kpi
+        key={title}
+        title={title}
+        value={<span className={pos ? "text-green" : "text-red"}>{pos ? "+" : ""}{BRL0(g.delta)}</span>}
+        sub={`${pctTxt}desde ${fmtDiaBR(g.refDia)}`}
+      />
+    );
+  };
 
   const limpar = () => { setBusca(""); setFTipo(""); setFBanco(""); };
 
@@ -406,16 +510,16 @@ export function Investimentos() {
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-[14px] mb-[18px]">
-        <Kpi title="Valor investido hoje" value={BRL0(kpis.atual)} sub="soma das posições" color="text-violet" />
-        <Kpi title="Total aplicado" value={BRL0(kpis.aplicado)} sub="montante aportado" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
         <Kpi
-          title="Lucro acumulado"
-          value={<span className={kpis.lucro < 0 ? "text-red" : "text-green"}>{BRL0(kpis.lucro)}</span>}
-          sub={`${kpis.pct >= 0 ? "+" : ""}${kpis.pct.toFixed(1)}% sobre o aplicado`}
+          title="Valor investido hoje"
+          value={BRL0(kpis.atual)}
+          sub={`${BRL0(kpis.liquidoD1)} com liquidez D+1 (${kpis.pctLiquido.toFixed(0)}%)`}
+          color="text-violet"
         />
-        <Kpi title="Posições" value={filtrados.length.toLocaleString("pt-BR")} sub={`${rows.length.toLocaleString("pt-BR")} no total`} />
-        <Kpi title="Instituições" value={kpis.instituicoes} sub="via Open Finance" />
+        {crescKpi("Crescimento MoM", cresc?.mom)}
+        {crescKpi("Crescimento YTD", cresc?.ytd)}
+        {crescKpi("Crescimento YoY", cresc?.yoy)}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-[14px] items-start">
@@ -528,7 +632,7 @@ export function Investimentos() {
 
       <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
         <div className="max-h-[620px] overflow-auto scroll-thin">
-          <table className="tbl min-w-[1100px] text-[12.5px]">
+          <table className="tbl min-w-[1240px] text-[12.5px]">
             <thead><tr>{COLS.map(th)}</tr></thead>
             <tbody>
               {filtrados.slice(0, MAX).map((i) => (

@@ -152,7 +152,7 @@ export async function listInvestments(): Promise<Investimento[]> {
   const { data, error } = await sb
     .from("pluggy_investments")
     .select(
-      "investment_id,item_id,banco,tipo,subtipo,nome,emissor,saldo,valor_aplicado,lucro,quantidade,moeda,vencimento,taxa,status,tipo_manual,atualizado_em",
+      "investment_id,item_id,banco,tipo,subtipo,nome,emissor,saldo,valor_aplicado,lucro,quantidade,moeda,vencimento,taxa,status,tipo_manual,liquidez_d1_manual,atualizado_em",
     )
     .order("saldo", { ascending: false });
   if (error) throw new Error(error.message);
@@ -191,6 +191,15 @@ export async function setTipoManual(investmentId: string, tipoManual: string | n
   const { error } = await sb
     .from("pluggy_investments")
     .update({ tipo_manual: tipoManual })
+    .eq("investment_id", investmentId);
+  if (error) throw new Error(error.message);
+}
+
+/** Define o override de liquidez D+1 de um ativo (true=Sim, false=Não, null=heurística). */
+export async function setLiquidezD1Manual(investmentId: string, valor: boolean | null): Promise<void> {
+  const { error } = await sb
+    .from("pluggy_investments")
+    .update({ liquidez_d1_manual: valor })
     .eq("investment_id", investmentId);
   if (error) throw new Error(error.message);
 }
