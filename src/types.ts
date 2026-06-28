@@ -53,6 +53,13 @@ export interface Investimento {
   status: string | null;
   tipo_manual: string | null;    // classificação SUA do ativo (sobrepõe `tipo`)
   liquidez_d1_manual: boolean | null; // override SEU de "tem liquidez D+1?" (null = heurística)
+  // posição MANUAL (fora do Open Finance) + cotação de mercado por ticker.
+  // `saldo`/`valor_aplicado` seguem em BRL; o valor nativo é quantidade*preco_unitario.
+  manual?: boolean | null;       // criada à mão (a sync da Pluggy não toca)
+  ticker?: string | null;        // símbolo p/ cotação ao vivo (ex.: 'VT')
+  moeda_cotacao?: string | null; // moeda do preço do ticker (ex.: 'USD'); null = BRL
+  preco_unitario?: number | null;// último preço unitário (na moeda_cotacao)
+  preco_em?: string | null;      // quando o preço foi capturado
   atualizado_em?: string | null;
 }
 
