@@ -11,8 +11,9 @@ import {
   listInvestments, listInvestmentHistory, listInvestmentHistoryByTipo, syncInvestments,
   setTipoManual, setLiquidezD1Manual,
   addManualInvestment, updateManualInvestment, deleteManualInvestment, setInvestmentCotacao, fetchCotacoes,
+  listSaldoCaixa,
 } from "../../lib/pluggy";
-import type { ManualInvestmentInput } from "../../lib/pluggy";
+import type { ManualInvestmentInput, SaldoConta } from "../../lib/pluggy";
 import { BRL, BRL0, brlShort, fmtMoeda } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
 
@@ -105,6 +106,8 @@ const CLASSE_OPTS = [
 
 // paleta categórica (uma cor por tipo) — legível nos dois temas
 const PALETA = ["#820ad1", "#34c98a", "#f2b84b", "#f06a6a", "#3b82f6", "#ec4899", "#14b8a6", "#a855f7"];
+// cor fixa do "Caixa" (saldo líquido em conta) — cinza-azulado, destaca-se da paleta
+const CAIXA_COR = "#64748b";
 
 const cell = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : String(v));
 const fmtVenc = (s?: string | null) => {
@@ -327,6 +330,7 @@ export function Investimentos() {
   const [rows, setRows] = useState<Investimento[]>([]);
   const [hist, setHist] = useState<InvestimentoHist[]>([]);
   const [histTipo, setHistTipo] = useState<InvestimentoHistTipo[]>([]);
+  const [caixa, setCaixa] = useState<SaldoConta[]>([]); // saldo das contas (Open Banking)
   const [status, setStatus] = useState("carregando…");
   const [erro, setErro] = useState("");
   const [msg, setMsg] = useState("");
@@ -380,14 +384,16 @@ export function Investimentos() {
     setStatus("carregando…");
     setErro("");
     try {
-      const [inv, h, ht] = await Promise.all([
+      const [inv, h, ht, cx] = await Promise.all([
         listInvestments(),
         listInvestmentHistory(),
         listInvestmentHistoryByTipo().catch(() => [] as InvestimentoHistTipo[]),
+        listSaldoCaixa().catch(() => [] as SaldoConta[]),
       ]);
       setRows(inv);
       setHist(h);
       setHistTipo(ht);
+      setCaixa(cx);
       void refreshCotacoes(inv, { silent: true }); // atualiza cotações em 2º plano
     } catch (e) {
       setErro((e as Error).message);
@@ -529,6 +535,20 @@ export function Investimentos() {
       .map((x, i) => ({ ...x, cor: PALETA[i % PALETA.length] }));
     return arr;
   }, [filtrados]);
+
+  // "Caixa": saldo líquido somado das contas (Open Banking). Entra no patrimônio e
+  // na composição só na visão geral (sem filtros) — não é uma "posição" filtrável.
+  const caixaTotal = useMemo(() => caixa.reduce((s, c) => s + (c.saldo ?? 0), 0), [caixa]);
+  const mostraCaixa = !fTipo && !fBanco && !busca.trim() && caixaTotal !== 0;
+  const caixaShown = mostraCaixa ? caixaTotal : 0;
+  const totalPatrimonio = kpis.atual + caixaShown;
+
+  // composição do patrimônio: tipos de investimento + (opcional) o Caixa
+  const composicao = useMemo(() => {
+    if (!mostraCaixa) return porTipo;
+    return [...porTipo, { tipo: "CAIXA", label: "Caixa", total: caixaTotal, cor: CAIXA_COR }]
+      .sort((a, b) => b.total - a.total);
+  }, [porTipo, mostraCaixa, caixaTotal]);
 
   // série de evolução do patrimônio (histórico diário)
   const serie = useMemo(
@@ -736,8 +756,8 @@ export function Investimentos() {
     );
   }
 
-  // estado vazio: nenhuma posição ainda (ou tabela ainda não criada)
-  if (!status && rows.length === 0) {
+  // estado vazio: nenhuma posição ainda nem saldo em caixa (ou tabela ainda não criada)
+  if (!status && rows.length === 0 && caixa.length === 0) {
     return (
       <div className="bg-card border border-line rounded-[18px] p-6 sm:p-8 shadow-card text-center">
         <h2 className="text-[16px] font-semibold tracking-tight mb-2">Nenhum investimento ainda</h2>
@@ -760,9 +780,11 @@ export function Investimentos() {
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
         <Kpi
-          title="Valor investido hoje"
-          value={BRL0(kpis.atual)}
-          sub={`${BRL0(kpis.liquidoD1)} com liquidez D+1 (${kpis.pctLiquido.toFixed(0)}%)`}
+          title="Patrimônio total"
+          value={BRL0(totalPatrimonio)}
+          sub={caixaShown > 0
+            ? `${BRL0(kpis.atual)} investido · ${BRL0(caixaShown)} em caixa`
+            : `${BRL0(kpis.liquidoD1)} com liquidez D+1 (${kpis.pctLiquido.toFixed(0)}%)`}
           color="text-violet"
         />
         {crescKpi("Crescimento MoM", cresc?.mom)}
@@ -819,35 +841,41 @@ export function Investimentos() {
           )}
         </Panel>
 
-        <Panel title="Composição por tipo" sub="(valor atual)" className="lg:col-span-1">
-          {porTipo.length > 0 ? (
+        <Panel title="Composição do patrimônio" sub={mostraCaixa ? "(investimentos + caixa)" : "(valor atual)"} className="lg:col-span-1">
+          {composicao.length > 0 ? (
             <div className="flex flex-col gap-4 mt-1">
               <div className="relative h-[200px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={porTipo} dataKey="total" nameKey="label" cx="50%" cy="50%" innerRadius={62} outerRadius={92} paddingAngle={1.5} stroke={cc.cardStroke} strokeWidth={2} isAnimationActive={false}>
-                      {porTipo.map((t) => <Cell key={t.tipo} fill={t.cor} />)}
+                    <Pie data={composicao} dataKey="total" nameKey="label" cx="50%" cy="50%" innerRadius={62} outerRadius={92} paddingAngle={1.5} stroke={cc.cardStroke} strokeWidth={2} isAnimationActive={false}>
+                      {composicao.map((t) => <Cell key={t.tipo} fill={t.cor} />)}
                     </Pie>
-                    <Tooltip content={(p: any) => <ChartTip {...p} pctOf={kpis.atual} />} />
+                    <Tooltip content={(p: any) => <ChartTip {...p} pctOf={totalPatrimonio} />} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <span className="text-[11px] text-muted">Total</span>
-                  <span className="text-[17px] font-semibold tracking-tight tabular-nums">{BRL0(kpis.atual)}</span>
+                  <span className="text-[17px] font-semibold tracking-tight tabular-nums">{BRL0(totalPatrimonio)}</span>
                 </div>
               </div>
               <div className="flex flex-col gap-2 w-full min-w-0">
-                {porTipo.map((t) => (
+                {composicao.map((t) => (
                   <BarRow
                     key={t.tipo}
                     label={<span className="inline-flex items-center gap-2"><span className="w-[9px] h-[9px] rounded-full shrink-0" style={{ background: t.cor }} />{t.label}</span>}
                     value={t.total}
-                    max={porTipo[0].total}
+                    max={composicao[0].total}
                     color={t.cor}
-                    right={`${BRL0(t.total)} · ${kpis.atual > 0 ? ((t.total / kpis.atual) * 100).toFixed(0) : 0}%`}
+                    right={`${BRL0(t.total)} · ${totalPatrimonio > 0 ? ((t.total / totalPatrimonio) * 100).toFixed(0) : 0}%`}
                   />
                 ))}
               </div>
+              {mostraCaixa && (
+                <p className="text-[11.5px] text-muted leading-relaxed">
+                  <span className="inline-block w-[9px] h-[9px] rounded-full align-middle mr-1" style={{ background: CAIXA_COR }} />
+                  Caixa = saldo líquido das contas via Open Banking. Atualiza ao sincronizar o banco na aba <strong>Conectar</strong>.
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-[13px] text-muted mt-1">Sem posições para compor o gráfico.</p>
