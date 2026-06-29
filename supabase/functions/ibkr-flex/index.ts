@@ -13,7 +13,8 @@
 //
 //  Moeda: `saldo`/`valor_aplicado` são gravados em BRL (igual ao resto). Para
 //  posições em US$ etc., o valor nativo (quantidade × preço) é convertido pelo
-//  câmbio do dia (Stooq); a linha mostra o valor nativo e o R$ equivalente.
+//  câmbio do dia (open.er-api.com + reserva frankfurter.app/BCE, grátis e sem
+//  chave); a linha mostra o valor nativo e o R$ equivalente.
 //
 //  Secrets usados (já existentes no projeto): SUPABASE_URL,
 //  SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET. (Token/Query da IBKR ficam por usuário
@@ -94,24 +95,38 @@ async function flexFetch(token: string, queryId: string): Promise<string> {
   throw new Error("IBKR: tempo esgotado aguardando o relatório Flex");
 }
 
-/* ------------------------------- câmbio (Stooq) --------------------------- */
-// moeda do instrumento -> BRL (ex.: USD -> 5.43). BRL = 1.
+/* ------------------------------- câmbio (grátis, sem chave) ---------------- */
+// taxa de UMA moeda -> BRL: open.er-api.com (principal) com reserva no
+// frankfurter.app (BCE). Retorna null se as duas fontes falharem.
+async function taxaBRL(cur: string): Promise<number | null> {
+  try {
+    const r = await fetch(`https://open.er-api.com/v6/latest/${cur}`, { headers: UA });
+    if (r.ok) {
+      const j = await r.json();
+      const p = j?.rates?.BRL;
+      if (typeof p === "number" && Number.isFinite(p)) return p;
+    }
+  } catch { /* tenta a reserva */ }
+  try {
+    const r = await fetch(`https://api.frankfurter.app/latest?from=${cur}&to=BRL`, { headers: UA });
+    if (r.ok) {
+      const j = await r.json();
+      const p = j?.rates?.BRL;
+      if (typeof p === "number" && Number.isFinite(p)) return p;
+    }
+  } catch { /* desiste */ }
+  return null;
+}
+
+// moeda do instrumento -> BRL (ex.: USD -> 5.43). BRL = 1. Moeda sem taxa fica
+// ausente do mapa (o chamador aborta a importação para não gravar saldo zerado).
 async function fxParaBRL(moedas: string[]): Promise<Record<string, number>> {
   const fx: Record<string, number> = { BRL: 1 };
   const need = [...new Set(moedas.map((c) => (c || "").toUpperCase()).filter((c) => c && c !== "BRL"))];
-  if (!need.length) return fx;
-  const syms = need.map((c) => `${c.toLowerCase()}brl`).join(",");
-  try {
-    const r = await fetch(`https://stooq.com/q/l/?s=${encodeURIComponent(syms)}&f=sd2t2ohlcv&h&e=csv`, { headers: UA });
-    if (!r.ok) return fx;
-    const linhas = (await r.text()).trim().split(/\r?\n/);
-    for (let i = 1; i < linhas.length; i++) {
-      const col = linhas[i].split(",");
-      const sym = (col[0] ?? "").trim().toLowerCase(); // "usdbrl"
-      const close = parseFloat(col[6]);
-      if (sym.endsWith("brl") && Number.isFinite(close)) fx[sym.slice(0, 3).toUpperCase()] = close;
-    }
-  } catch { /* sem câmbio -> posições estrangeiras ficam sem saldo BRL */ }
+  for (const cur of need) {
+    const r = await taxaBRL(cur);
+    if (r != null) fx[cur] = r;
+  }
   return fx;
 }
 
@@ -189,14 +204,14 @@ async function importForUser(admin: any, userId: string, token: string, queryId:
 
   const fx = await fxParaBRL(posicoes.map((p) => p.currency || "USD"));
 
-  // Sem câmbio para alguma moeda estrangeira (Stooq fora do ar / moeda exótica),
-  // ABORTA antes de gravar: senão gravaríamos saldo=NULL, sumindo dos KPIs e
-  // corrompendo o retrato diário de patrimônio. Os dados anteriores ficam
+  // Sem câmbio para alguma moeda estrangeira (fontes de câmbio fora do ar /
+  // moeda exótica), ABORTA antes de gravar: senão gravaríamos saldo=NULL,
+  // sumindo dos KPIs e corrompendo o retrato diário. Os dados anteriores ficam
   // preservados e o próximo ciclo tenta de novo.
   const semCambio = [...new Set(posicoes.map((p) => (p.currency || "USD").toUpperCase()))]
     .filter((c) => c !== "BRL" && fx[c] == null);
   if (semCambio.length) {
-    throw new Error(`Sem câmbio p/ ${semCambio.join(", ")} (Stooq indisponível). Importação adiada — dados anteriores preservados.`);
+    throw new Error(`Sem câmbio p/ ${semCambio.join(", ")} (fonte de câmbio indisponível). Importação adiada — dados anteriores preservados.`);
   }
 
   const agora = new Date().toISOString();

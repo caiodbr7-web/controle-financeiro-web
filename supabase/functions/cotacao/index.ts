@@ -1,14 +1,16 @@
 // ============================================================================
 //  Edge Function: cotacao
 //
-//  Cotação de mercado de tickers (ex.: ETF "VT") + câmbio USD->BRL, lidos do
-//  Stooq (https://stooq.com) — fonte gratuita, sem API key. Existe porque o
-//  navegador não pode chamar provedores de cotação direto (CORS): o front
-//  (aba Investimentos) chama esta função para precificar as posições MANUAIS
-//  que têm `ticker`.
+//  Cotação de mercado de tickers (ex.: ETF "VT") + câmbio USD->BRL. Existe
+//  porque o navegador não pode chamar provedores de cotação direto (CORS): o
+//  front (aba Investimentos) chama esta função para precificar as posições
+//  MANUAIS que têm `ticker`.
 //
-//  Não precisa de secret: o Stooq é público. Requer apenas o JWT do usuário
-//  logado (mesmo padrão das outras funções) para não virar um proxy aberto.
+//  Fontes gratuitas, sem API key:
+//   • Preço dos ativos: Yahoo Finance (endpoint /v8/finance/chart).
+//   • Câmbio p/ BRL: open.er-api.com (principal) + frankfurter.app/BCE (reserva).
+//
+//  Requer apenas o JWT do usuário logado (não vira proxy aberto).
 //
 //  Deploy:
 //    supabase functions deploy cotacao
@@ -17,7 +19,7 @@
 //    POST /functions/v1/cotacao
 //    Authorization: Bearer <jwt do usuário>
 //    body: { "tickers": ["VT", "BND"] }
-//    resposta: { ok, fonte:"stooq", usdbrl: number|null,
+//    resposta: { ok, fonte:"yahoo", usdbrl: number|null,
 //                quotes: { "VT": { price: 118.34, currency: "USD" }, ... } }
 // ============================================================================
 
@@ -28,48 +30,48 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...cors, "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 }
 
-// "VT" -> "vt.us" (Stooq usa sufixo de bolsa). Se o usuário já mandou um sufixo
-// (tem ponto), respeita; senão assume bolsa dos EUA (.us), o caso do VT/BND/etc.
-function toStooq(ticker: string): string {
-  const t = ticker.trim().toLowerCase();
-  return t.includes(".") ? t : `${t}.us`;
+const UA = { "User-Agent": "Mozilla/5.0 (compatible; controle-financeiro/1.0)" };
+
+// taxa de UMA moeda -> BRL (open.er-api.com principal; frankfurter.app reserva)
+async function taxaBRL(cur: string): Promise<number | null> {
+  try {
+    const r = await fetch(`https://open.er-api.com/v6/latest/${cur}`, { headers: UA });
+    if (r.ok) {
+      const j = await r.json();
+      const p = j?.rates?.BRL;
+      if (typeof p === "number" && Number.isFinite(p)) return p;
+    }
+  } catch { /* tenta a reserva */ }
+  try {
+    const r = await fetch(`https://api.frankfurter.app/latest?from=${cur}&to=BRL`, { headers: UA });
+    if (r.ok) {
+      const j = await r.json();
+      const p = j?.rates?.BRL;
+      if (typeof p === "number" && Number.isFinite(p)) return p;
+    }
+  } catch { /* desiste */ }
+  return null;
 }
 
-// moeda inferida pelo sufixo do símbolo (o front também sabe a moeda_cotacao)
-function moedaDe(sym: string): string {
-  if (sym.endsWith(".us")) return "USD";
-  if (sym.endsWith(".sa")) return "BRL";
-  if (sym.endsWith(".uk")) return "GBP";
-  if (sym.endsWith(".de")) return "EUR";
-  return "USD";
-}
-
-// baixa o quote "light" do Stooq (CSV) p/ uma lista de símbolos
-//   header: Symbol,Date,Time,Open,High,Low,Close,Volume
-async function stooqQuotes(symbols: string[]): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  if (!symbols.length) return out;
-  const s = symbols.join(",");
-  const url = `https://stooq.com/q/l/?s=${encodeURIComponent(s)}&f=sd2t2ohlcv&h&e=csv`;
-  const r = await fetch(url, { headers: { "User-Agent": "controle-financeiro/1.0" } });
-  if (!r.ok) throw new Error(`Stooq respondeu ${r.status}`);
-  const txt = await r.text();
-  const linhas = txt.trim().split(/\r?\n/);
-  for (let i = 1; i < linhas.length; i++) {
-    const col = linhas[i].split(",");
-    const sym = (col[0] ?? "").trim().toLowerCase(); // ex.: "vt.us"
-    const close = parseFloat(col[6]);               // "Close"
-    if (sym && Number.isFinite(close)) out.set(sym, close);
-  }
-  return out;
+// preço de mercado via Yahoo Finance. US: ticker puro (VT); outras bolsas usam
+// o sufixo do Yahoo (ex.: PETR4.SA). Devolve preço + moeda do ativo.
+async function yahooQuote(ticker: string): Promise<{ price: number; currency: string } | null> {
+  try {
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
+      { headers: UA },
+    );
+    if (!r.ok) return null;
+    const j = await r.json();
+    const meta = j?.chart?.result?.[0]?.meta;
+    const p = meta?.regularMarketPrice;
+    if (typeof p === "number" && Number.isFinite(p)) return { price: p, currency: meta?.currency ?? "USD" };
+  } catch { /* ignora -> front mantém o último preço */ }
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -92,21 +94,18 @@ Deno.serve(async (req) => {
       if (Array.isArray(body?.tickers)) tickers = body.tickers.filter((t: unknown) => typeof t === "string" && t.trim());
     } catch { /* corpo vazio -> só o câmbio */ }
 
-    // dedup + normaliza p/ Stooq; pede também o câmbio USD->BRL numa tacada só
-    const mapaStooq = new Map<string, string>(); // stooqSym -> tickerOriginal
-    for (const t of tickers) mapaStooq.set(toStooq(t), t);
-    const simbolos = [...mapaStooq.keys(), "usdbrl"];
+    const unicos = [...new Set(tickers.map((t) => t.trim().toUpperCase()).filter(Boolean))];
 
-    const closes = await stooqQuotes(simbolos);
+    // preços (Yahoo, em paralelo) + câmbio USD->BRL — independentes
+    const [precos, usdbrl] = await Promise.all([
+      Promise.all(unicos.map((t) => yahooQuote(t).then((q) => [t, q] as const))),
+      taxaBRL("USD"),
+    ]);
 
-    const usdbrl = closes.get("usdbrl") ?? null;
     const quotes: Record<string, { price: number; currency: string }> = {};
-    for (const [stooqSym, original] of mapaStooq) {
-      const price = closes.get(stooqSym);
-      if (price != null) quotes[original] = { price, currency: moedaDe(stooqSym) };
-    }
+    for (const [t, q] of precos) if (q) quotes[t] = q;
 
-    return json({ ok: true, fonte: "stooq", usdbrl, quotes });
+    return json({ ok: true, fonte: "yahoo", usdbrl, quotes });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }

@@ -12,8 +12,9 @@ Open Finance. Assim a IBKR entra nos KPIs, na composição e no histórico.
    `OpenPosition`.
 3. Para cada posição: `saldo`/`valor_aplicado` são gravados **em BRL** — o valor
    nativo (`quantidade × preço`, na moeda do ativo) é convertido pelo câmbio do
-   dia (Stooq). A linha da aba *Investimentos* mostra o valor em US$ com o R$
-   equivalente no hover.
+   dia (open.er-api.com, com reserva no frankfurter.app/BCE — grátis, sem chave).
+   A linha da aba *Investimentos* mostra o valor em US$ com o R$ equivalente no
+   hover.
 4. Faz `upsert` por posição (id estável `ibkr-<conta>-<conid>`) e remove as que
    foram fechadas. As suas reclassificações (`tipo_manual`, liquidez) são
    **preservadas** entre importações.
