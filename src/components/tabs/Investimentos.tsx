@@ -536,6 +536,44 @@ export function Investimentos() {
     return { atual, aplicado, lucro, pct, instituicoes: nInst, liquidoD1, pctLiquido };
   }, [filtrados]);
 
+  // Retrato de HOJE calculado ao vivo sobre a carteira inteira (inclui posições
+  // MANUAIS e qualquer mudança ainda não fotografada por um sync). Substitui o
+  // ponto do dia no histórico para que crescimento e evolução reflitam na hora.
+  const liveHoje = useMemo(() => {
+    let valor_total = 0, valor_aplicado = 0, lucro = 0;
+    for (const i of rows) {
+      valor_total += i.saldo ?? 0;
+      valor_aplicado += i.valor_aplicado ?? 0;
+      lucro += i.lucro ?? 0;
+    }
+    return { valor_total, valor_aplicado, lucro, posicoes: rows.length };
+  }, [rows]);
+
+  const histEff = useMemo<InvestimentoHist[]>(() => {
+    if (!rows.length) return hist;
+    const dia = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" (UTC, como o snapshot)
+    const base = hist.filter((h) => h.dia < dia);       // tira o ponto de hoje, se já houver
+    return [...base, { dia, ...liveHoje }];
+  }, [hist, liveHoje, rows.length]);
+
+  // mesmo retrato de hoje, mas quebrado por categoria (alimenta a área stackada)
+  const histTipoEff = useMemo<InvestimentoHistTipo[]>(() => {
+    if (!rows.length) return histTipo;
+    const dia = new Date().toISOString().slice(0, 10);
+    const base = histTipo.filter((h) => h.dia < dia);
+    const porT = new Map<string, { valor_total: number; valor_aplicado: number; posicoes: number }>();
+    for (const i of rows) {
+      const k = tipoEf(i) || "OUTROS";
+      const acc = porT.get(k) ?? { valor_total: 0, valor_aplicado: 0, posicoes: 0 };
+      acc.valor_total += i.saldo ?? 0;
+      acc.valor_aplicado += i.valor_aplicado ?? 0;
+      acc.posicoes += 1;
+      porT.set(k, acc);
+    }
+    const hoje = [...porT.entries()].map(([tipo, v]) => ({ dia, tipo, ...v }));
+    return [...base, ...hoje];
+  }, [histTipo, rows]);
+
   // Crescimento do patrimônio (MoM / YTD / YoY) a partir do histórico diário.
   // Base de cada métrica: o retrato mais recente NA ou ANTES da data-âncora
   //  - MoM: fim do mês anterior;  - YTD: virada do ano;  - YoY: ~12 meses atrás.
@@ -544,7 +582,7 @@ export function Investimentos() {
   // se ajustando à medida que o histórico cresce. É a carteira inteira (não os
   // filtros), pois o histórico é gravado para o patrimônio todo.
   const cresc = useMemo(() => {
-    const pts = hist.filter((h) => h.valor_total != null) as { dia: string; valor_total: number }[];
+    const pts = histEff.filter((h) => h.valor_total != null) as { dia: string; valor_total: number }[];
     if (pts.length < 2) return null;
     const last = pts[pts.length - 1];
     const cur = last.valor_total;
@@ -566,7 +604,7 @@ export function Investimentos() {
       return { delta, pct, refDia: ref.dia };
     };
     return { mom: calc(alvoMoM), ytd: calc(alvoYTD), yoy: calc(alvoYoY) };
-  }, [hist]);
+  }, [histEff]);
 
   // composição por tipo efetivo (sobre os filtrados), com cor estável
   const porTipo = useMemo(() => {
@@ -601,12 +639,12 @@ export function Investimentos() {
 
   // série de evolução do patrimônio (histórico diário)
   const serie = useMemo(
-    () => hist.map((h) => ({
+    () => histEff.map((h) => ({
       dia: h.dia,
       Patrimônio: Math.round((h.valor_total ?? 0) * 100) / 100,
       Aplicado: Math.round((h.valor_aplicado ?? 0) * 100) / 100,
     })),
-    [hist]
+    [histEff]
   );
 
   // cor estável por categoria (mesma do gráfico de composição -> serve de legenda)
@@ -625,9 +663,9 @@ export function Investimentos() {
     const baseCats = porTipo.map((t) => ({ tipo: t.tipo, label: t.label, cor: t.cor }));
 
     // 1) histórico real por categoria
-    const diasReais = [...new Set(histTipo.map((r) => r.dia))].sort();
+    const diasReais = [...new Set(histTipoEff.map((r) => r.dia))].sort();
     if (diasReais.length >= 2) {
-      const tiposReais = new Set(histTipo.map((r) => r.tipo));
+      const tiposReais = new Set(histTipoEff.map((r) => r.tipo));
       // ordem: categorias da composição atual (na sua ordem) + as demais do histórico
       const extras = [...tiposReais].filter((t) => !baseCats.some((c) => c.tipo === t));
       const cats = [
@@ -639,7 +677,7 @@ export function Investimentos() {
         })),
       ];
       const byDia = new Map<string, Record<string, number>>();
-      for (const r of histTipo) {
+      for (const r of histTipoEff) {
         const row = byDia.get(r.dia) ?? {};
         row[r.tipo] = round(r.valor_total ?? 0);
         byDia.set(r.dia, row);
@@ -665,7 +703,7 @@ export function Investimentos() {
     }
 
     return { data: [] as Record<string, number | string>[], cats: baseCats, sintetico: false };
-  }, [histTipo, serie, porTipo, corPorTipo, kpis.atual]);
+  }, [histTipoEff, serie, porTipo, corPorTipo, kpis.atual]);
 
   function baixarCsv(cols: ColDef[]) {
     const blob = new Blob(["﻿" + toCsv(filtrados, cols)], { type: "text/csv;charset=utf-8;" });
@@ -831,7 +869,7 @@ export function Investimentos() {
         <Kpi
           title="Investido total"
           value={BRL0(kpis.atual)}
-          sub={`D+1 ${BRL0(d1Total)} · ${d1Pct.toFixed(0)}% (saldo + invest. D+1)`}
+          sub={`D+1 ${BRL0(d1Total)} · ${d1Pct.toFixed(0)}%`}
           color="text-violet"
         />
         {caixa.length > 0 && <SaldoContaCard caixa={caixa} total={caixaTotal} />}
