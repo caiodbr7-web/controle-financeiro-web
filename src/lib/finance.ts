@@ -267,20 +267,57 @@ export function normEstab(desc: string): string {
     .slice(0, 48);
 }
 
-// paleta fixa por categoria (mesma cor no gráfico, na rosca e na legenda)
-export const CAT_CORES: Record<string, string> = {
-  Moradia: "#820ad1", Mercado: "#16a34a", Alimentacao: "#f59e0b", Transporte: "#2f6df6",
-  Saude: "#e0382b", Academia: "#0ea5e9", Vestuario: "#db2777", Compras: "#7c3aed",
-  Assinaturas: "#0891b2", Lazer: "#f97316", Viagem: "#6d28d9", Educacao: "#059669",
-  Servicos: "#64748b", Transferencias: "#94a3b8", "Impostos/Taxas": "#b45309",
-  Presentes: "#ec4899", Pets: "#a16207", Corporativo: "#334155", Outros: "#9ca3af",
-  "Sem categoria": "#cbd5e1",
-};
-export const corCategoria = (c: string) => CAT_CORES[c] || "#9ca3af";
+// ---------- categorias: registry dinâmico, sincronizado do banco ----------
+// As categorias passaram a ser editáveis pelo usuário (aba "Categorias"): nome,
+// cor e a ORDEM em que aparecem nos dropdowns moram em public.categorias.
+// Para manter os módulos PUROS (matrizMensal, classificador) e os helpers de cor
+// funcionando sem prop-drilling, guardamos um registry mutável em memória que o
+// CategoriasProvider (src/lib/categorias.tsx) mantém em sincronia com o banco.
+// Os DEFAULTS abaixo são a SEMENTE (1ª carga / base nova) e o FALLBACK.
+export interface CatDef { nome: string; cor: string }
 
-export const CATEGORIAS = [
-  "", "Moradia", "Mercado", "Alimentacao", "Transporte", "Saude", "Academia",
-  "Vestuario", "Compras", "Assinaturas", "Lazer", "Viagem", "Educacao",
-  "Servicos", "Transferencias", "Impostos/Taxas", "Presentes", "Pets",
-  "Corporativo", "Outros",
+export const CATEGORIAS_DEFAULT: CatDef[] = [
+  { nome: "Moradia", cor: "#820ad1" }, { nome: "Mercado", cor: "#16a34a" },
+  { nome: "Alimentacao", cor: "#f59e0b" }, { nome: "Transporte", cor: "#2f6df6" },
+  { nome: "Saude", cor: "#e0382b" }, { nome: "Academia", cor: "#0ea5e9" },
+  { nome: "Vestuario", cor: "#db2777" }, { nome: "Compras", cor: "#7c3aed" },
+  { nome: "Assinaturas", cor: "#0891b2" }, { nome: "Lazer", cor: "#f97316" },
+  { nome: "Viagem", cor: "#6d28d9" }, { nome: "Educacao", cor: "#059669" },
+  { nome: "Servicos", cor: "#64748b" }, { nome: "Transferencias", cor: "#94a3b8" },
+  { nome: "Impostos/Taxas", cor: "#b45309" }, { nome: "Presentes", cor: "#ec4899" },
+  { nome: "Pets", cor: "#a16207" }, { nome: "Corporativo", cor: "#334155" },
+  { nome: "Outros", cor: "#9ca3af" },
 ];
+
+// cor da linha/segmento "Sem categoria" e fallback p/ nomes desconhecidos
+export const COR_SEM_CATEGORIA = "#cbd5e1";
+const COR_FALLBACK = "#9ca3af";
+
+let _cats: CatDef[] = CATEGORIAS_DEFAULT.slice();
+let _corMap: Record<string, string> = Object.fromEntries(_cats.map((c) => [c.nome, c.cor]));
+
+/** Substitui o registry de categorias (chamado pelo CategoriasProvider ao carregar/editar). */
+export function setCategoriasRegistry(cats: CatDef[]): void {
+  _cats = cats.slice();
+  _corMap = Object.fromEntries(_cats.map((c) => [c.nome, c.cor]));
+}
+
+/** Nomes das categorias na ORDEM atual (sem a opção vazia). */
+export function getCategorias(): string[] {
+  return _cats.map((c) => c.nome);
+}
+
+/** Registry completo (nome + cor) na ordem atual. */
+export function getCategoriasDef(): CatDef[] {
+  return _cats;
+}
+
+// paleta usada nas paletas/swatches da aba Categorias (cores distintas e legíveis)
+export const PALETA_CORES = [
+  "#820ad1", "#7c3aed", "#6d28d9", "#2f6df6", "#0ea5e9", "#0891b2", "#16a34a",
+  "#059669", "#f59e0b", "#f97316", "#e0382b", "#db2777", "#ec4899", "#b45309",
+  "#a16207", "#64748b", "#334155", "#94a3b8", "#9ca3af",
+];
+
+export const corCategoria = (c: string) =>
+  c === "Sem categoria" ? COR_SEM_CATEGORIA : _corMap[c] || COR_FALLBACK;

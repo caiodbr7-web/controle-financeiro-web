@@ -5,7 +5,8 @@ import { useConfirm } from "../Confirm";
 import { useToast } from "../Toast";
 import { sb } from "../../lib/supabase";
 import type { Lancamento } from "../../types";
-import { BRL0, CATEGORIAS, dvAddMes, dvLabel, mesComp, valorGasto, valorReceita } from "../../lib/finance";
+import { BRL0, dvAddMes, dvLabel, mesComp, valorGasto, valorReceita } from "../../lib/finance";
+import { useCategorias } from "../../lib/categorias";
 import {
   type Plano, type TipoPlano, TIPOS, mesAtual, horizonte, projetar,
   contribNoMes, fimEfetivo, ehReceitaTipo, mesesEntre,
@@ -130,6 +131,9 @@ function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
 export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   const confirm = useConfirm();
   const { toast } = useToast();
+  const { categorias } = useCategorias();
+  // opções de categoria com a opção vazia na frente ("(qualquer)" / "—")
+  const catOpcoes = useMemo(() => ["", ...categorias.map((c) => c.nome)], [categorias]);
   const [planos, setPlanos] = useState<Plano[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
@@ -817,7 +821,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                 <span className="text-muted">Vincular <b>{p.nome}</b> à despesa real onde:</span>
                 <span>categoria</span>
                 <select className={`select-chev ${inp} cursor-pointer`} value={linkForm.categoria} onChange={(e) => setLinkForm((f) => ({ ...f, categoria: e.target.value }))}>
-                  {CATEGORIAS.map((c) => <option key={c} value={c}>{c || "(qualquer)"}</option>)}
+                  {catOpcoes.map((c) => <option key={c} value={c}>{c || "(qualquer)"}</option>)}
                 </select>
                 <span>e/ou descrição contém</span>
                 <input className={`${inp} w-[200px]`} placeholder="ex.: adas imove" value={linkForm.texto} onChange={(e) => setLinkForm((f) => ({ ...f, texto: e.target.value }))} />
@@ -1271,7 +1275,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
           {podeCategoria && (
             <Field label="Categoria">
               <select className={`select-chev ${inp} cursor-pointer w-[150px]`} value={form.categoria} onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}>
-                {CATEGORIAS.map((c) => <option key={c} value={c}>{c || "—"}</option>)}
+                {catOpcoes.map((c) => <option key={c} value={c}>{c || "—"}</option>)}
               </select>
             </Field>
           )}

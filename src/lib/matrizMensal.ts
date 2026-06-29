@@ -4,7 +4,7 @@
 import type { Lancamento } from "../types";
 import {
   catKey, mesComp, valorGasto, valorReceita, valorAporte, valorReceitaInvest,
-  corCategoria, CATEGORIAS,
+  corCategoria, getCategorias,
 } from "./finance";
 
 export type SecaoMatriz = "receita" | "gasto" | "investido";
@@ -116,8 +116,8 @@ export function construirMatriz(dados: Lancamento[], opts: MatrizOpts): MatrizMe
     .slice(-n);
   const mesesSet = new Set(meses);
 
-  // ---- GASTO: todas as CATEGORIAS (mesmo zeradas) + catKeys extras presentes ----
-  const catGasto = CATEGORIAS.filter(Boolean) as string[];
+  // ---- GASTO: todas as categorias (na ordem do usuário) + catKeys extras presentes ----
+  const catGasto = getCategorias().slice();
   const catGastoSet = new Set(catGasto);
   for (const d of dados) {
     if (!mesesSet.has(mesComp(d))) continue;
