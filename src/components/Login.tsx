@@ -1,6 +1,6 @@
 export function Login({
-  onGoogle, erro,
-}: { onGoogle: () => void; erro: string }) {
+  onGoogle, onTeste, erro,
+}: { onGoogle: () => void; onTeste: () => void; erro: string }) {
   return (
     <div className="px-4">
       <div className="max-w-[380px] mx-auto mt-[14vh] bg-card border border-line rounded-[22px] p-[30px_26px] shadow-card fade-in">
@@ -19,6 +19,26 @@ export function Login({
           </svg>
           Entrar com Google
         </button>
+
+        <div className="flex items-center gap-3 my-[14px]">
+          <span className="h-px flex-1 bg-line" />
+          <span className="text-muted text-[11.5px] uppercase tracking-wide">ou</span>
+          <span className="h-px flex-1 bg-line" />
+        </div>
+
+        <button
+          onClick={onTeste}
+          className="w-full flex items-center justify-center gap-[10px] bg-fill text-txt border border-line rounded-[12px] py-3 text-base font-medium cursor-pointer hover:border-muted/60 transition-colors"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 3l14 9-14 9V3z" />
+          </svg>
+          Acesso teste
+        </button>
+        <p className="text-muted text-[12px] mt-[10px] leading-snug">
+          Explore o produto completo com uma base de dados de exemplo — sem login e sem usar seus dados reais.
+        </p>
+
         <div className="text-red text-[13px] min-h-[18px] mt-[10px]">{erro}</div>
       </div>
     </div>
