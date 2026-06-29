@@ -106,8 +106,8 @@ const CLASSE_OPTS = [
   { v: "OUTROS", label: "Outros" },
 ];
 
-// paleta categórica (uma cor por tipo) — legível nos dois temas
-const PALETA = ["#820ad1", "#34c98a", "#f2b84b", "#f06a6a", "#3b82f6", "#ec4899", "#14b8a6", "#a855f7"];
+// paleta categórica (uma cor por tipo) — legível nos dois temas (premium 2026)
+const PALETA = ["#6d28d9", "#16a06b", "#e0a33a", "#ec5b7e", "#3b82f6", "#8b5cf6", "#14b8a6", "#9ca3af"];
 // cor fixa do "Caixa" (saldo líquido em conta) — cinza-azulado, destaca-se da paleta
 const CAIXA_COR = "#64748b";
 
@@ -312,7 +312,7 @@ function ManualForm({ mode, inicial, onClose, onSaved }: {
       className="fixed inset-0 bg-black/40 backdrop-blur-[6px] flex items-center justify-center z-50 p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-card border border-line rounded-[20px] max-w-[560px] w-full max-h-[90vh] flex flex-col shadow-[0_20px_60px_rgba(0,0,0,.25)] fade-in">
+      <div className="bg-card border border-line rounded-[20px] max-w-[560px] w-full max-h-[90vh] flex flex-col shadow-modal fade-in">
         <div className="flex justify-between items-start gap-3 p-5 border-b border-line">
           <div>
             <h3 className="text-[16px] font-semibold tracking-tight">{mode === "add" ? "Adicionar investimento manual" : "Editar investimento manual"}</h3>
@@ -363,7 +363,7 @@ function ManualForm({ mode, inicial, onClose, onSaved }: {
           <button
             onClick={salvar}
             disabled={salvando}
-            className="bg-accent text-white border-0 rounded-[10px] px-4 py-[9px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
+            className="bg-accent text-onaccent border-0 rounded-[10px] px-4 py-[9px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
           >
             {salvando ? "Salvando…" : "Salvar"}
           </button>
@@ -428,7 +428,7 @@ function IbkrForm({ inicial, onClose, onReload }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-[6px] flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-card border border-line rounded-[20px] max-w-[560px] w-full max-h-[90vh] flex flex-col shadow-[0_20px_60px_rgba(0,0,0,.25)] fade-in">
+      <div className="bg-card border border-line rounded-[20px] max-w-[560px] w-full max-h-[90vh] flex flex-col shadow-modal fade-in">
         <div className="flex justify-between items-start gap-3 p-5 border-b border-line">
           <div>
             <h3 className="text-[16px] font-semibold tracking-tight">Conectar Interactive Brokers</h3>
@@ -477,7 +477,7 @@ function IbkrForm({ inicial, onClose, onReload }: {
             <button
               onClick={() => salvar(!conectado)}
               disabled={busy !== ""}
-              className="bg-accent text-white border-0 rounded-[10px] px-4 py-[9px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
+              className="bg-accent text-onaccent border-0 rounded-[10px] px-4 py-[9px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
             >
               {busy === "save" ? "Salvando…" : busy === "import" ? "Importando…" : conectado ? "Salvar credenciais" : "Conectar e importar"}
             </button>
@@ -960,7 +960,7 @@ export function Investimentos() {
     <button
       onClick={sincronizar}
       disabled={busy}
-      className="bg-accent text-white border-0 rounded-[10px] px-4 py-[9px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
+      className="bg-accent text-onaccent border-0 rounded-[10px] px-4 py-[9px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
     >
       {busy ? "Sincronizando…" : "Sincronizar investimentos"}
     </button>

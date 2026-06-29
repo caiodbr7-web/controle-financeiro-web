@@ -249,7 +249,7 @@ export function Categorias({ reload }: Props) {
                   <button
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={salvarEdicao}
-                    className="shrink-0 btn bg-accent hover:bg-accent2 text-white text-[12px] rounded-[8px] px-3 py-[6px] border-0"
+                    className="shrink-0 btn bg-accent hover:bg-accent2 text-onaccent text-[12px] rounded-[8px] px-3 py-[6px] border-0"
                   >
                     Salvar
                   </button>

@@ -45,7 +45,7 @@ export function Modal({ data, onClose, reload }: { data: ModalData | null; onClo
       className="fixed inset-0 bg-black/40 backdrop-blur-[6px] flex items-center justify-center z-50 p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-card border border-line rounded-[20px] max-w-[860px] w-full max-h-[88vh] flex flex-col shadow-[0_20px_60px_rgba(0,0,0,.25)] fade-in">
+      <div className="bg-card border border-line rounded-[20px] max-w-[860px] w-full max-h-[88vh] flex flex-col shadow-modal fade-in">
         <div className="flex justify-between items-start gap-3 p-5 border-b border-line">
           <div className="min-w-0">
             <h3 className="text-[16px] font-semibold tracking-tight truncate">{data.title}</h3>

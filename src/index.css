@@ -3,39 +3,61 @@
 @tailwind utilities;
 
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", system-ui, sans-serif;
+  font-family: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 
-  /* paleta clara (Apple) — triplas RGB p/ suportar alpha no Tailwind */
-  --c-bg: 245 245 247;      /* #f5f5f7 */
-  --c-card: 255 255 255;    /* #ffffff */
-  --c-card2: 250 250 250;   /* #fafafa */
-  --c-line: 230 230 235;    /* #e6e6eb */
-  --c-txt: 29 29 31;        /* #1d1d1f */
-  --c-muted: 134 134 139;   /* #86868b */
-  --c-fill: 236 236 240;    /* #ececf0 */
-  --c-accent: 130 10 209;   /* #820ad1 */
-  --c-accent2: 109 8 176;   /* #6d08b0 */
-  --c-green: 52 168 83;     /* #34a853 */
-  --c-red: 224 56 43;       /* #e0382b */
-  --c-amber: 196 121 31;    /* #c4791f */
-  --c-violet: 94 92 230;    /* #5e5ce6 */
+  /* ===== paleta clara — "premium" (handoff 2026) =====
+     Triplas RGB p/ suportar alpha no Tailwind: rgb(var(--c-x) / <alpha>). */
+  --c-bg: 247 246 250;      /* #F7F6FA  fundo da página */
+  --c-card: 255 255 255;    /* #FFFFFF  superfície de cards/tabelas */
+  --c-card2: 251 250 253;   /* #FBFAFD  zebra / hover de linha */
+  --c-line: 236 234 242;    /* #ECEAF2  bordas e divisórias */
+  --c-txt: 26 23 38;        /* #1A1726 */
+  --c-muted: 110 106 124;   /* #6E6A7C  texto secundário */
+  --c-fill: 239 238 245;    /* #EFEEF5  fill neutro (skeleton, kbd, hover de lista) */
+  --c-soft: 243 238 254;    /* #F3EEFE  pílulas/segmented (tom roxo suave) */
+  --c-input: 251 250 253;   /* #FBFAFD  fundo de inputs */
+  --c-accent: 109 40 217;   /* #6D28D9  roxo — primária da marca */
+  --c-accent2: 91 33 182;   /* #5B21B6  accent-strong */
+  --c-on-accent: 255 255 255; /* texto/ícone sobre fundo accent (botões) */
+  --c-green: 4 120 87;      /* #047857  positivos/receitas (AA como texto) */
+  --c-red: 194 51 74;       /* #C2334A  negativos/despesas (AA como texto) */
+  --c-amber: 224 163 58;    /* #E0A33A  média/projeção */
+  --c-violet: 139 92 246;   /* #8B5CF6  série/categoria */
+  --c-heatpos: 21 150 107;  /* base p/ heatmap positivo (usado com alpha) */
+  --c-heatneg: 214 69 91;   /* base p/ heatmap negativo (usado com alpha) */
+
+  /* sombras (claras): duas camadas, tom da tinta do texto */
+  --cf-shadow-card: 0 1px 2px rgba(26, 23, 38, 0.04), 0 10px 28px rgba(26, 23, 38, 0.06);
+  --cf-shadow-card-hover: 0 2px 4px rgba(26, 23, 38, 0.06), 0 18px 40px rgba(26, 23, 38, 0.10);
+  --cf-shadow-modal: 0 12px 28px rgba(26, 23, 38, 0.14), 0 32px 64px rgba(26, 23, 38, 0.18);
+  --cf-shadow-pop: 0 8px 30px rgba(26, 23, 38, 0.14);
 }
 
 .dark {
-  /* paleta escura (iOS/macOS) */
-  --c-bg: 13 13 15;         /* #0d0d0f */
-  --c-card: 28 28 30;       /* #1c1c1e */
-  --c-card2: 36 36 39;      /* #242427 */
-  --c-line: 50 50 54;       /* #323236 */
-  --c-txt: 245 245 247;     /* #f5f5f7 */
-  --c-muted: 152 152 157;   /* #98989d */
-  --c-fill: 44 44 48;       /* #2c2c30 */
-  --c-accent: 167 91 255;   /* #a75bff */
-  --c-accent2: 184 124 255; /* #b87cff */
-  --c-green: 48 209 88;     /* #30d158 */
-  --c-red: 255 105 97;      /* #ff6961 */
-  --c-amber: 255 159 10;    /* #ff9f0a */
-  --c-violet: 126 124 245;  /* #7e7cf5 */
+  /* ===== paleta escura — "premium" ===== */
+  --c-bg: 13 11 20;         /* #0D0B14 */
+  --c-card: 23 21 34;       /* #171522 */
+  --c-card2: 30 27 43;      /* #1E1B2B */
+  --c-line: 42 39 54;       /* ≈ white .09 sobre o fundo escuro */
+  --c-txt: 242 240 248;     /* #F2F0F8 */
+  --c-muted: 157 152 172;   /* #9D98AC */
+  --c-fill: 36 33 48;       /* #242130  fill neutro escuro */
+  --c-soft: 40 33 58;       /* ≈ rgba(167,139,250,.16) sobre fundo */
+  --c-input: 30 27 43;      /* #1E1B2B */
+  --c-accent: 167 139 250;  /* #A78BFA */
+  --c-accent2: 196 181 253; /* #C4B5FD */
+  --c-on-accent: 13 11 20;  /* #0D0B14  texto escuro sobre accent claro (dark) */
+  --c-green: 52 211 153;    /* #34D399 */
+  --c-red: 251 113 133;     /* #FB7185 */
+  --c-amber: 242 182 90;    /* #F2B65A */
+  --c-violet: 167 139 250;  /* #A78BFA */
+  --c-heatpos: 52 211 153;
+  --c-heatneg: 251 113 133;
+
+  --cf-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 14px 40px rgba(0, 0, 0, 0.45);
+  --cf-shadow-card-hover: 0 2px 6px rgba(0, 0, 0, 0.6), 0 22px 56px rgba(0, 0, 0, 0.55);
+  --cf-shadow-modal: 0 16px 40px rgba(0, 0, 0, 0.55), 0 32px 72px rgba(0, 0, 0, 0.62);
+  --cf-shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.55);
 }
 
 html {
@@ -44,25 +66,34 @@ html {
 
 body {
   margin: 0;
+  font-family: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   background: rgb(var(--c-bg));
   color: rgb(var(--c-txt));
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
-  transition: background-color 0.25s ease, color 0.25s ease;
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+::selection {
+  background: rgb(var(--c-accent) / 0.18);
 }
 
 @layer components {
   /* tabela padrão do app — th/td herdam o estilo; alinhe com .num quando numérico */
   .tbl { @apply w-full border-collapse text-[13.5px]; }
-  .tbl th { @apply p-[10px] border-b border-line text-left align-bottom text-[11px] font-semibold uppercase tracking-[0.05em] text-muted; }
+  .tbl th { @apply p-[10px] border-b border-line text-left align-bottom text-[11px] font-bold uppercase tracking-[0.05em] text-muted; }
   .tbl td { @apply p-[10px] border-b border-line text-left; }
   .tbl .num { @apply text-right tabular-nums; }
 
-  .input { @apply bg-card text-txt border border-line rounded-[10px] px-3 py-[8px] text-[14px] outline-none transition-colors placeholder:text-muted/70 focus:border-muted; }
+  .input { @apply bg-input text-txt border border-line rounded-[10px] px-3 py-[8px] text-[14px] outline-none transition-colors placeholder:text-muted focus:border-accent; }
   .btn { @apply inline-flex items-center justify-center gap-2 cursor-pointer rounded-[10px] font-medium transition-colors disabled:opacity-45 disabled:cursor-default; }
-  .btn-primary { @apply inline-flex items-center justify-center gap-2 cursor-pointer rounded-[10px] font-medium transition-colors disabled:opacity-45 disabled:cursor-default bg-accent text-white hover:bg-accent2 px-4 py-2 text-[13px] border-0; }
-  .btn-ghost { @apply inline-flex items-center justify-center gap-2 cursor-pointer rounded-[10px] font-medium transition-colors disabled:opacity-45 disabled:cursor-default bg-transparent border border-line text-muted hover:text-txt px-4 py-2 text-[13px]; }
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 cursor-pointer rounded-[10px] font-medium transition-all disabled:opacity-45 disabled:cursor-default bg-accent text-onaccent hover:bg-accent2 hover:-translate-y-px px-4 py-2 text-[13px] border-0; }
+  .btn-ghost { @apply inline-flex items-center justify-center gap-2 cursor-pointer rounded-[10px] font-medium transition-colors disabled:opacity-45 disabled:cursor-default bg-transparent border border-line text-muted hover:text-txt hover:border-accent px-4 py-2 text-[13px]; }
   .kbd { @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-[5px] mx-[1px] rounded-[5px] border border-line bg-fill text-muted text-[10.5px] font-medium align-middle; }
+
+  /* card de superfície reutilizável: borda + sombra premium + leve elevação no hover */
+  .surface { @apply bg-card border border-line rounded-[18px] shadow-card; }
+  .surface-hover { @apply transition-all duration-[280ms] hover:-translate-y-[3px] hover:shadow-card-hover; }
 }
 
 /* esconde scrollbar (nav de abas) */
@@ -79,18 +110,38 @@ body {
 .select-chev {
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2386868b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236E6A7C' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 11px center;
   padding-right: 30px;
 }
 
+/* ===== keyframes do design premium ===== */
 /* entrada suave do conteúdo ao trocar de aba */
 @keyframes cf-fade-up {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: none; }
 }
-.fade-in { animation: cf-fade-up 0.22s ease both; }
+.fade-in { animation: cf-fade-up 0.32s cubic-bezier(0.4, 0, 0.2, 1) both; }
+
+/* utilitários de animação disponíveis para cards/gráficos (SVG) */
+@keyframes cf-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cf-draw { from { stroke-dashoffset: 2000; } to { stroke-dashoffset: 0; } }
+@keyframes cf-grow-up { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes cf-pop { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+.anim-fade { animation: cf-fade 0.6s ease both; }
+.anim-draw { stroke-dasharray: 2000; animation: cf-draw 1.3s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.anim-pop { animation: cf-pop 0.4s ease both; }
+
+/* entrada escalonada: aplique .stagger no container e os filhos diretos entram em sequência */
+.stagger > * { animation: cf-fade-up 0.5s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: 0s; }
+.stagger > *:nth-child(2) { animation-delay: 0.05s; }
+.stagger > *:nth-child(3) { animation-delay: 0.1s; }
+.stagger > *:nth-child(4) { animation-delay: 0.15s; }
+.stagger > *:nth-child(5) { animation-delay: 0.2s; }
+.stagger > *:nth-child(6) { animation-delay: 0.25s; }
+.stagger > *:nth-child(n + 7) { animation-delay: 0.3s; }
 
 /* ===== foco acessível: anel visível só na navegação por teclado ===== */
 :focus-visible {
@@ -132,7 +183,8 @@ a:focus:not(:focus-visible),
 .toast-out { animation: cf-toast-out 0.18s ease both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .fade-in, .toast-in, .toast-out { animation: none; }
+  .fade-in, .toast-in, .toast-out, .anim-fade, .anim-draw, .anim-pop, .stagger > * { animation: none; }
+  .anim-draw { stroke-dasharray: none; }
   .skeleton::after { animation: none; }
 }
 

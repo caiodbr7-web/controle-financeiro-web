@@ -48,7 +48,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
           className="fixed inset-0 bg-black/40 backdrop-blur-[6px] flex items-center justify-center z-[90] p-4"
           onClick={(e) => { if (e.target === e.currentTarget) fechar(false); }}
         >
-          <div className="bg-card border border-line rounded-[20px] max-w-[400px] w-full p-5 shadow-[0_20px_60px_rgba(0,0,0,.28)] fade-in">
+          <div className="bg-card border border-line rounded-[20px] max-w-[400px] w-full p-5 shadow-modal fade-in">
             <h3 className="text-[16px] font-semibold tracking-tight">{opts.title}</h3>
             {opts.message && <div className="text-muted text-[13.5px] leading-relaxed mt-[6px]">{opts.message}</div>}
             <div className="flex gap-2 justify-end mt-5">
@@ -58,7 +58,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               <button
                 onClick={() => fechar(true)}
                 autoFocus
-                className={`btn !py-[9px] !px-4 text-white border-0 ${opts.danger ? "bg-red hover:opacity-90" : "bg-accent hover:bg-accent2"}`}
+                className={`btn !py-[9px] !px-4 text-onaccent border-0 ${opts.danger ? "bg-red hover:opacity-90" : "bg-accent hover:bg-accent2"}`}
               >
                 {opts.confirmLabel || "Confirmar"}
               </button>

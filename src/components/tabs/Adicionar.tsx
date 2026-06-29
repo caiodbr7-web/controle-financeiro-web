@@ -55,7 +55,7 @@ export function Adicionar({
               }`}
             >
               <span className={`shrink-0 w-[38px] h-[38px] rounded-[11px] flex items-center justify-center transition-colors ${
-                on ? "bg-accent text-white" : "bg-fill text-muted"
+                on ? "bg-accent text-onaccent" : "bg-fill text-muted"
               }`}>
                 {m.icon}
               </span>

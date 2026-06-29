@@ -743,10 +743,10 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
           <pre className="bg-fill border border-line rounded-[10px] p-3 text-[11.5px] overflow-x-auto scroll-thin leading-snug">{SQL_HINT}</pre>
           <button
             onClick={() => { navigator.clipboard?.writeText(SQL_HINT); setCopiado(true); setTimeout(() => setCopiado(false), 1500); }}
-            className="absolute top-2 right-2 btn bg-accent hover:bg-accent2 text-white rounded-[8px] px-3 py-[5px] text-[12px] border-0"
+            className="absolute top-2 right-2 btn bg-accent hover:bg-accent2 text-onaccent rounded-[8px] px-3 py-[5px] text-[12px] border-0"
           >{copiado ? "copiado!" : "copiar"}</button>
         </div>
-        <button onClick={carregar} className="mt-4 btn bg-accent hover:bg-accent2 text-white rounded-[8px] px-4 py-[8px] text-[13px] border-0">Já rodei — verificar</button>
+        <button onClick={carregar} className="mt-4 btn bg-accent hover:bg-accent2 text-onaccent rounded-[8px] px-4 py-[8px] text-[13px] border-0">Já rodei — verificar</button>
       </Panel>
     );
   }
@@ -804,7 +804,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
           </td>
           <td className="!text-center">
             <button onClick={() => togglePago(p)} title={d.pago ? "Pago" : "Marcar pago"}
-              className={`w-7 h-7 rounded-[8px] border-2 flex items-center justify-center mx-auto text-[15px] font-bold cursor-pointer transition-colors ${d.pago ? "bg-green border-green text-white" : "bg-transparent border-line text-transparent hover:border-green"}`}>✓</button>
+              className={`w-7 h-7 rounded-[8px] border-2 flex items-center justify-center mx-auto text-[15px] font-bold cursor-pointer transition-colors ${d.pago ? "bg-green border-green text-onaccent" : "bg-transparent border-line text-transparent hover:border-green"}`}>✓</button>
           </td>
           <td className="!text-center whitespace-nowrap text-[12px]">
             <button onClick={() => abrirLink(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-accent transition-colors">vincular</button>
@@ -825,7 +825,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                 </select>
                 <span>e/ou descrição contém</span>
                 <input className={`${inp} w-[200px]`} placeholder="ex.: adas imove" value={linkForm.texto} onChange={(e) => setLinkForm((f) => ({ ...f, texto: e.target.value }))} />
-                <button onClick={() => salvarLink(p)} className="btn bg-accent hover:bg-accent2 text-white rounded-[8px] px-3 py-[6px] text-[12px] border-0">Salvar vínculo</button>
+                <button onClick={() => salvarLink(p)} className="btn bg-accent hover:bg-accent2 text-onaccent rounded-[8px] px-3 py-[6px] text-[12px] border-0">Salvar vínculo</button>
                 <button onClick={() => setLinkEdit(null)} className="bg-transparent border-0 p-0 cursor-pointer text-muted text-[12px]">cancelar</button>
               </div>
             </td>
@@ -1317,7 +1317,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
               </button>
             </Field>
           )}
-          <button onClick={salvar} className="btn bg-accent hover:bg-accent2 text-white rounded-[8px] px-4 py-[8px] text-[13px] border-0">{editId ? "Salvar" : "Adicionar"}</button>
+          <button onClick={salvar} className="btn bg-accent hover:bg-accent2 text-onaccent rounded-[8px] px-4 py-[8px] text-[13px] border-0">{editId ? "Salvar" : "Adicionar"}</button>
           {editId && <button onClick={resetForm} className="bg-transparent border-0 p-0 cursor-pointer text-muted text-[12px]">cancelar</button>}
         </div>
         <div className="text-muted text-[12px] mt-3 leading-relaxed">

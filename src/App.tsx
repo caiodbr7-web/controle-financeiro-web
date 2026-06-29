@@ -166,7 +166,7 @@ export default function App() {
   if (!logado) return <Login onGoogle={entrarGoogle} onTeste={entrarTeste} erro={erro} />;
 
   const tabProps = { dados, allDados, months, openModal };
-  const iconBtn = "w-[28px] h-[28px] rounded-full border border-line bg-transparent text-muted hover:text-txt cursor-pointer flex items-center justify-center transition-colors shrink-0";
+  const iconBtn = "w-[28px] h-[28px] rounded-full border border-line bg-transparent text-muted cursor-pointer flex items-center justify-center transition-all shrink-0";
 
   // grupo de sub-abas ativo (mostra a barra interna no conteúdo)
   const subAtivo = SUB_IMPORT.some((s) => s.id === aba) ? SUB_IMPORT : null;
@@ -176,10 +176,10 @@ export default function App() {
       <header className="sticky top-0 z-20 bg-bg/80 backdrop-blur-[14px] border-b border-line">
         <div className="max-w-[1380px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-[10px] pt-[7px]">
-            <div className="w-[24px] h-[24px] rounded-[7px] bg-gradient-to-br from-[#820ad1] to-[#a855f7] text-white text-[12px] font-bold flex items-center justify-center select-none shrink-0">
+            <div className="w-[30px] h-[30px] rounded-[9px] bg-accent text-white font-display text-[16px] font-extrabold flex items-center justify-center select-none shrink-0">
               C
             </div>
-            <h1 className="text-[15px] font-semibold tracking-tight whitespace-nowrap hidden min-[420px]:block">
+            <h1 className="font-display text-[15px] font-bold tracking-tight whitespace-nowrap hidden min-[420px]:block">
               Controle Financeiro
             </h1>
             {demo && (
@@ -196,28 +196,28 @@ export default function App() {
                 onClick={() => setPaletaAberta(true)}
                 title="Buscar e navegar (Ctrl/⌘K)"
                 aria-label="Buscar e navegar"
-                className="hidden sm:inline-flex items-center gap-2 h-[28px] rounded-full border border-line bg-transparent text-muted hover:text-txt hover:border-muted/60 cursor-pointer pl-[10px] pr-[8px] transition-colors shrink-0"
+                className="hidden sm:inline-flex items-center gap-2 h-[28px] rounded-full border border-line bg-transparent text-muted hover:text-txt hover:border-accent cursor-pointer pl-[10px] pr-[8px] transition-colors shrink-0"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" strokeLinecap="round" /></svg>
                 <span className="text-[12.5px]">Buscar</span>
                 <kbd className="kbd">⌘K</kbd>
               </button>
-              <button onClick={() => setPaletaAberta(true)} title="Buscar e navegar" aria-label="Buscar e navegar" className={`sm:hidden ${iconBtn}`}>
+              <button onClick={() => setPaletaAberta(true)} title="Buscar e navegar" aria-label="Buscar e navegar" className={`sm:hidden ${iconBtn} hover:text-txt hover:border-accent`}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" strokeLinecap="round" /></svg>
               </button>
               <button
                 onClick={cycleVisao}
                 title={`Visão: ${VISAO_LABEL[visao]} — clique para alternar`}
                 aria-label={`Visão: ${VISAO_LABEL[visao]} (clique para alternar)`}
-                className="inline-flex items-center gap-[6px] h-[28px] rounded-full border border-line bg-transparent text-muted hover:text-txt hover:border-muted/60 cursor-pointer pl-[10px] pr-[12px] text-[12.5px] font-medium transition-colors shrink-0"
+                className="inline-flex items-center gap-[6px] h-[28px] rounded-full border border-line bg-transparent text-muted hover:text-txt hover:border-accent cursor-pointer pl-[10px] pr-[12px] text-[12.5px] font-medium transition-colors shrink-0"
               >
                 <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${visao === "pessoal" ? "bg-accent" : visao === "corporativo" ? "bg-amber" : "bg-muted"}`} />
                 {VISAO_LABEL[visao]}
               </button>
-              <button onClick={cycle} title={TEMA_TITLE[pref]} aria-label={TEMA_TITLE[pref]} className={iconBtn}>
+              <button onClick={cycle} title={TEMA_TITLE[pref]} aria-label={TEMA_TITLE[pref]} className={`${iconBtn} hover:text-accent hover:border-accent hover:-rotate-12`}>
                 <ThemeIcon pref={pref} />
               </button>
-              <button onClick={sair} title="Sair" aria-label="Sair" className={iconBtn}>
+              <button onClick={sair} title="Sair" aria-label="Sair" className={`${iconBtn} hover:text-red hover:border-red`}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                   <path d="M16 17l5-5-5-5M21 12H9" />
@@ -244,14 +244,14 @@ export default function App() {
                       onClick={onClick}
                       aria-current={ativo ? "page" : undefined}
                       className={`relative whitespace-nowrap bg-transparent border-0 px-[10px] pt-[5px] pb-[8px] text-[13px] cursor-pointer transition-colors ${
-                        ativo ? "text-txt font-semibold" : "text-muted hover:text-txt font-medium"
+                        ativo ? "text-accent font-bold" : "text-muted hover:text-txt font-medium"
                       }`}
                     >
                       {a.label}
                       {dot && (
                         <span className="absolute top-[7px] right-[2px] w-[5px] h-[5px] rounded-full bg-amber" title={`${pendClass} lançamentos a classificar`} />
                       )}
-                      {ativo && <span className="absolute left-[10px] right-[10px] bottom-0 h-[2px] rounded-full bg-txt" />}
+                      {ativo && <span className="absolute left-[10px] right-[10px] bottom-0 h-[2px] rounded-full bg-accent" />}
                     </button>
                   );
                 })}
@@ -270,15 +270,15 @@ export default function App() {
         )}
 
         {subAtivo && (
-          <div className="inline-flex gap-[2px] bg-fill p-[3px] rounded-[10px] flex-wrap mb-[18px]">
+          <div className="inline-flex gap-[2px] bg-soft p-[3px] rounded-[10px] flex-wrap mb-[18px]">
             {subAtivo.map((s) => {
               const on = aba === s.id;
               return (
                 <button
                   key={s.id}
                   onClick={() => navTo(s.id)}
-                  className={`relative whitespace-nowrap border-0 px-[13px] py-[7px] text-[13px] cursor-pointer rounded-[8px] font-medium transition-all ${
-                    on ? "bg-card text-txt shadow-[0_1px_3px_rgba(0,0,0,.16)]" : "bg-transparent text-muted hover:text-txt"
+                  className={`relative whitespace-nowrap border-0 px-[13px] py-[7px] text-[13px] cursor-pointer rounded-[8px] transition-all ${
+                    on ? "bg-card text-accent font-bold shadow-card" : "bg-transparent text-muted hover:text-txt font-medium"
                   }`}
                 >
                   {s.label}

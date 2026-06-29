@@ -250,7 +250,7 @@ export function mvSeriesMensal(dados: Lancamento[], allDados: Lancamento[], mont
 }
 
 export const MODOS: Record<Modo, { rotulo: string; cor: string }> = {
-  cartao: { rotulo: "Cartão de crédito", cor: "#820ad1" },
+  cartao: { rotulo: "Cartão de crédito", cor: "#6d28d9" },
   ambos: { rotulo: "Cartão + contas", cor: "#5e5ce6" },
   conta: { rotulo: "Contas", cor: "#2f6df6" },
 };
@@ -277,7 +277,7 @@ export function normEstab(desc: string): string {
 export interface CatDef { nome: string; cor: string }
 
 export const CATEGORIAS_DEFAULT: CatDef[] = [
-  { nome: "Moradia", cor: "#820ad1" }, { nome: "Mercado", cor: "#16a34a" },
+  { nome: "Moradia", cor: "#6d28d9" }, { nome: "Mercado", cor: "#16a34a" },
   { nome: "Alimentacao", cor: "#f59e0b" }, { nome: "Transporte", cor: "#2f6df6" },
   { nome: "Saude", cor: "#e0382b" }, { nome: "Academia", cor: "#0ea5e9" },
   { nome: "Vestuario", cor: "#db2777" }, { nome: "Compras", cor: "#7c3aed" },
@@ -314,7 +314,7 @@ export function getCategoriasDef(): CatDef[] {
 
 // paleta usada nas paletas/swatches da aba Categorias (cores distintas e legíveis)
 export const PALETA_CORES = [
-  "#820ad1", "#7c3aed", "#6d28d9", "#2f6df6", "#0ea5e9", "#0891b2", "#16a34a",
+  "#6d28d9", "#7c3aed", "#a855f7", "#2f6df6", "#0ea5e9", "#0891b2", "#16a34a",
   "#059669", "#f59e0b", "#f97316", "#e0382b", "#db2777", "#ec4899", "#b45309",
   "#a16207", "#64748b", "#334155", "#94a3b8", "#9ca3af",
 ];
