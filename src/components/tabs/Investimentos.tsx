@@ -351,7 +351,7 @@ function ManualForm({ mode, inicial, onClose, onSaved }: {
 
           {temTicker && (
             <div className="sm:col-span-2 text-[11.5px] text-muted leading-relaxed">
-              Com ticker, o <b>valor atual é cotado pelo mercado</b> (Stooq, último fechamento)
+              Com ticker, o <b>valor atual é cotado pelo mercado</b> (Yahoo Finance)
               {moeda !== "BRL" && " e convertido para R$ pelo câmbio do dia"} ao salvar e em “Atualizar cotações”.
             </div>
           )}
@@ -511,7 +511,7 @@ export function Investimentos() {
   const [sortDir, setSortDir] = useState(-1);
 
   // Recalcula o valor atual das posições manuais com `ticker` pela cotação de
-  // mercado (Stooq) + câmbio USD->BRL. Grava `saldo` em BRL (convertido) e mostra
+  // mercado (Yahoo) + câmbio USD->BRL. Grava `saldo` em BRL (convertido) e mostra
   // o valor nativo (US$) na linha. Silencioso no carregamento; com aviso no botão.
   const refreshCotacoes = useCallback(async (lista: Investimento[], opts?: { silent?: boolean }) => {
     const comTicker = lista.filter((i) => i.manual && i.ticker);
@@ -529,7 +529,7 @@ export function Investimentos() {
         if (!q) continue;
         const nativo = (i.quantidade ?? 0) * q.price;
         const estrangeira = !!(i.moeda_cotacao && i.moeda_cotacao !== "BRL");
-        const taxa = i.moeda_cotacao === "USD" ? usdbrl : 1;     // só USD tem câmbio do Stooq
+        const taxa = i.moeda_cotacao === "USD" ? usdbrl : 1;     // câmbio só p/ USD (cotacao devolve usdbrl)
         const saldo = estrangeira ? (taxa != null ? nativo * taxa : i.saldo ?? null) : nativo;
         const lucro = saldo != null && i.valor_aplicado != null ? saldo - i.valor_aplicado : i.lucro ?? null;
         patches.set(i.investment_id, { preco_unitario: q.price, preco_em: agora, saldo, lucro });

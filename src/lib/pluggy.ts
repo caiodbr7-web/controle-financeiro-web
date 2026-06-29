@@ -324,7 +324,7 @@ export interface CotacaoResp {
   quotes: Record<string, { price: number; currency: string }>;
 }
 
-/** Busca cotações de tickers + câmbio USD->BRL (Edge Function `cotacao`/Stooq). */
+/** Busca cotações de tickers (Yahoo) + câmbio USD->BRL (Edge Function `cotacao`). */
 export async function fetchCotacoes(tickers: string[]): Promise<CotacaoResp> {
   const r = await fetch(`${FN_BASE}/cotacao`, {
     method: "POST",
