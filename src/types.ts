@@ -55,6 +55,7 @@ export interface Investimento {
   liquidez_d1_manual: boolean | null; // override SEU de "tem liquidez D+1?" (null = heurística)
   // posição MANUAL (fora do Open Finance) + cotação de mercado por ticker.
   // `saldo`/`valor_aplicado` seguem em BRL; o valor nativo é quantidade*preco_unitario.
+  fonte?: string | null;         // 'pluggy' | 'manual' | 'ibkr' (origem da posição)
   manual?: boolean | null;       // criada à mão (a sync da Pluggy não toca)
   ticker?: string | null;        // símbolo p/ cotação ao vivo (ex.: 'VT')
   moeda_cotacao?: string | null; // moeda do preço do ticker (ex.: 'USD'); null = BRL
