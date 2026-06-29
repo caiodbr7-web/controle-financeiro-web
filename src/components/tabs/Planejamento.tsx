@@ -177,7 +177,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
 
   const carregar = useCallback(async () => {
     setLoading(true); setErro(""); setSemTabela(false);
-    const { data, error } = await sb.from("planos").select("*").order("tipo").order("ordem").order("id");
+    const { data, error } = await sb.from("planos").select("*").order("ordem").order("id");
     if (error) {
       if (/does not exist|schema cache|relation|could not find/i.test(error.message)) setSemTabela(true);
       else setErro(error.message);
@@ -377,6 +377,62 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     setErro("");
     setPlanos((arr) => arr.map((x) => (x.id === p.id ? { ...x, no_cartao: novo } : x)));
   }
+
+  // ---------- reordenar itens (arrastar e soltar) ----------
+  // os itens são exibidos em três grupos (recorrentes/outros/receitas); o arrasto só vale
+  // dentro do mesmo grupo. Ao soltar, recalcula `ordem` de todos e persiste o que mudou.
+  const dragId = useRef<number | null>(null);
+  const [dropAlvo, setDropAlvo] = useState<number | null>(null);
+  const grupoDe = (p: Plano) => (ehReceitaTipo(p.tipo) ? "rec" : p.tipo === "fixo" ? "fix" : "out");
+
+  async function soltarSobre(alvo: Plano) {
+    const id = dragId.current;
+    dragId.current = null; setDropAlvo(null);
+    if (id == null || id === alvo.id) return;
+    const orig = planos.find((p) => p.id === id);
+    if (!orig || grupoDe(orig) !== grupoDe(alvo)) return;
+    const g = grupoDe(alvo);
+    const grupo = planos.filter((p) => grupoDe(p) === g);
+    const from = grupo.findIndex((p) => p.id === id);
+    const to = grupo.findIndex((p) => p.id === alvo.id);
+    if (from < 0 || to < 0) return;
+    const novoGrupo = [...grupo];
+    const [movido] = novoGrupo.splice(from, 1);
+    novoGrupo.splice(to, 0, movido);
+    // recompõe a lista completa mantendo os outros itens em suas posições
+    const idsGrupo = new Set(grupo.map((p) => p.id));
+    const fila = [...novoGrupo];
+    const novaLista = planos.map((p) => (idsGrupo.has(p.id) ? fila.shift()! : p));
+    const antes = new Map(planos.map((p) => [p.id, p.ordem]));
+    const comOrdem = novaLista.map((p, i) => ({ ...p, ordem: i }));
+    setPlanos(comOrdem);
+    // persiste só os itens cuja ordem mudou
+    const mudados = comOrdem.filter((p) => antes.get(p.id) !== p.ordem);
+    const res = await Promise.all(mudados.map((p) => sb.from("planos").update({ ordem: p.ordem }).eq("id", p.id)));
+    const err = res.find((r) => r.error);
+    if (err?.error) { toast({ message: "Erro ao reordenar: " + err.error.message, variant: "error" }); carregar(); }
+  }
+
+  // botão-alça de arrasto exibido no início de cada linha de item
+  function DragHandle({ p }: { p: Plano }) {
+    return (
+      <span draggable
+        onDragStart={(e) => { dragId.current = p.id; e.dataTransfer.effectAllowed = "move"; }}
+        onDragEnd={() => { dragId.current = null; setDropAlvo(null); }}
+        title="arraste para reordenar"
+        className="shrink-0 cursor-grab active:cursor-grabbing text-muted hover:text-txt select-none text-[13px] leading-none">⠿</span>
+    );
+  }
+  // props de alvo de drop para a <tr> de um item
+  const dropProps = (p: Plano) => ({
+    onDragOver: (e: DragEvent) => {
+      const orig = dragId.current == null ? null : planos.find((x) => x.id === dragId.current);
+      if (!orig || grupoDe(orig) !== grupoDe(p)) return;
+      e.preventDefault();
+      if (dropAlvo !== p.id) setDropAlvo(p.id);
+    },
+    onDrop: (e: DragEvent) => { e.preventDefault(); soltarSobre(p); },
+  });
 
   // ---------- total do cartão (linha especial: orçamento mensal + real por mês) ----------
   async function garantirCartaoPlano(): Promise<Plano | null> {
@@ -716,9 +772,10 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     const rec = ehReceitaTipo(p.tipo);
     return (
       <Fragment key={p.id}>
-        <tr>
-          <td className="font-medium !pl-[26px]">
+        <tr {...dropProps(p)} className={dropAlvo === p.id ? "bg-accent/10" : ""}>
+          <td className="font-medium !pl-[10px]">
             <div className="flex items-center gap-2">
+              <DragHandle p={p} />
               <input type="checkbox" checked={p.ativo} onChange={() => toggleAtivo(p)} title="ativo" className="cursor-pointer" />
               <div className="min-w-0">
                 <div className="truncate">{p.nome}{(p.link_categoria || p.link_texto) && <span title="vínculo a lançamentos" className="ml-1 text-accent text-[11px]">🔗</span>}</div>
@@ -803,9 +860,10 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   // linha de item na visão "Projeção" (uma célula por mês do horizonte, com duplo clique p/ ajuste)
   function LinhaProj(p: Plano) {
     return (
-      <tr key={p.id} className={p.ativo ? "" : "opacity-45"}>
-        <td className="min-w-[230px] !pl-[26px]">
+      <tr key={p.id} {...dropProps(p)} className={`${p.ativo ? "" : "opacity-45"} ${dropAlvo === p.id ? "bg-accent/10" : ""}`}>
+        <td className="min-w-[230px] !pl-[10px]">
           <div className="flex items-center gap-2">
+            <DragHandle p={p} />
             <input type="checkbox" checked={p.ativo} onChange={() => toggleAtivo(p)} title={p.ativo ? "ativo" : "ignorado"} className="cursor-pointer" />
             <div className="min-w-0">
               <div className="font-medium truncate">{p.nome}{p.categoria && <span className="text-muted text-[11px] font-normal"> · {p.categoria}</span>}</div>
@@ -1274,14 +1332,14 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       {/* legenda explicativa — por último, abaixo do formulário */}
       {view === "mes" ? (
         <div className="text-muted text-[12px] mt-2 leading-relaxed">
-          <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (duplo clique). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦, 💳 e 💰, <b>clique</b> para digitar o valor (não sobrescreve o que já está lá) e <b>passe o mouse</b> em cima para abrir um pop-up com a <b>média móvel dos meses fechados</b> — clique em <b>Usar</b> ali para aplicá-la. Clique no nome de um grupo (<b>🔁 Gastos recorrentes</b>, <b>📦 Outros gastos</b>) para <b>minimizar</b> — os itens somem e fica só o total na linha-cabeçalho. O <b>Σ Gastos gerais</b> é a soma das quatro linhas acima: <b>🔁 recorrentes + 📦 outros + 🏦 conta (gerais) + 💳 cartão</b>.
+          <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (duplo clique). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦, 💳 e 💰, <b>clique</b> para digitar o valor (não sobrescreve o que já está lá) e <b>passe o mouse</b> em cima para abrir um pop-up com a <b>média móvel dos meses fechados</b> — clique em <b>Usar</b> ali para aplicá-la. Clique no nome de um grupo (<b>🔁 Gastos recorrentes</b>, <b>📦 Outros gastos</b>) para <b>minimizar</b> — os itens somem e fica só o total na linha-cabeçalho. Arraste a alça <b>⠿</b> no início de cada item para <b>reordenar</b> as linhas dentro do grupo. O <b>Σ Gastos gerais</b> é a soma das quatro linhas acima: <b>🔁 recorrentes + 📦 outros + 🏦 conta (gerais) + 💳 cartão</b>.
           {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           {!temOrcConta && <> <span className="text-amber">{MSG_MIGRACAO_CONTA}</span></>}
           {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
         </div>
       ) : (
         <div className="text-muted text-[12px] mt-2 leading-relaxed">
-          Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). <b>Mesma estrutura da visão Mês</b>: <b>🔁 Gastos recorrentes</b> e <b>📦 Outros gastos</b> trazem o total no próprio cabeçalho — clique no nome para <b>minimizar</b> e esconder os itens; depois vêm <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos quatro, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>duplo clique</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
+          Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). <b>Mesma estrutura da visão Mês</b>: <b>🔁 Gastos recorrentes</b> e <b>📦 Outros gastos</b> trazem o total no próprio cabeçalho — clique no nome para <b>minimizar</b> e esconder os itens (arraste a alça <b>⠿</b> de cada item para <b>reordenar</b>); depois vêm <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos quatro, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>duplo clique</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
           {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
         </div>
