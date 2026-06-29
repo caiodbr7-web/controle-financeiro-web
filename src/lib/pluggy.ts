@@ -149,7 +149,7 @@ export async function syncInvestments(itemId?: string): Promise<InvestSyncResult
 
 // colunas lidas/retornadas para uma posição de investimento (fonte única)
 const INV_COLS =
-  "investment_id,item_id,banco,tipo,subtipo,nome,emissor,saldo,valor_aplicado,lucro,quantidade,moeda,vencimento,taxa,status,tipo_manual,liquidez_d1_manual,manual,ticker,moeda_cotacao,preco_unitario,preco_em,atualizado_em";
+  "investment_id,item_id,banco,tipo,subtipo,nome,emissor,saldo,valor_aplicado,lucro,quantidade,moeda,vencimento,taxa,status,tipo_manual,liquidez_d1_manual,fonte,manual,ticker,moeda_cotacao,preco_unitario,preco_em,atualizado_em";
 
 /** Lista as posicoes de investimento ja sincronizadas (tabela pluggy_investments). */
 export async function listInvestments(): Promise<Investimento[]> {
@@ -280,7 +280,7 @@ function manualPayload(inp: ManualInvestmentInput) {
 export async function addManualInvestment(inp: ManualInvestmentInput): Promise<Investimento> {
   const { data, error } = await sb
     .from("pluggy_investments")
-    .insert({ investment_id: genManualId(), manual: true, item_id: null, tipo: null, moeda: "BRL", ...manualPayload(inp) })
+    .insert({ investment_id: genManualId(), manual: true, fonte: "manual", item_id: null, tipo: null, moeda: "BRL", ...manualPayload(inp) })
     .select(INV_COLS)
     .single();
   if (error) throw new Error(error.message);
@@ -334,4 +334,64 @@ export async function fetchCotacoes(tickers: string[]): Promise<CotacaoResp> {
   const data = await r.json();
   if (!r.ok) throw new Error(data?.error || "Falha ao buscar cotações");
   return { usdbrl: data.usdbrl ?? null, quotes: data.quotes ?? {} };
+}
+
+/* ============================ IBKR (Flex Web Service) ====================== */
+
+export interface IbkrCredencial {
+  flex_query_id: string;
+  account_id: string | null;
+  status: string | null;
+  last_synced_at: string | null;
+  last_result: unknown;
+}
+
+/** Lê a credencial IBKR do usuário (sem o token). null se não conectado. */
+export async function getIbkrCredencial(): Promise<IbkrCredencial | null> {
+  const { data, error } = await sb
+    .from("ibkr_flex")
+    .select("flex_query_id, account_id, status, last_synced_at, last_result")
+    .maybeSingle();
+  if (error) {
+    // tabela ainda não criada (migração não rodou) -> trata como "não conectado"
+    if (/relation|does not exist|could not find|schema cache|not exist/i.test(error.message)) return null;
+    throw new Error(error.message);
+  }
+  return (data as IbkrCredencial) ?? null;
+}
+
+/** Salva o query id da IBKR (e o token, se informado — em branco mantém o atual). */
+export async function saveIbkrCredencial(token: string | null, queryId: string): Promise<void> {
+  const { data: u } = await sb.auth.getUser();
+  const user_id = u.user?.id;
+  if (!user_id) throw new Error("Sessão expirada — entre novamente.");
+  // token só entra no payload quando informado: assim atualizar só o Query ID
+  // (token em branco) NÃO apaga o token já salvo.
+  const payload: Record<string, unknown> = { user_id, flex_query_id: queryId.trim(), atualizado_em: new Date().toISOString() };
+  if (token && token.trim()) payload.flex_token = token.trim();
+  const { error } = await sb.from("ibkr_flex").upsert(payload, { onConflict: "user_id" });
+  if (error) throw new Error(error.message);
+}
+
+/** Desconecta a IBKR (remove a credencial). As posições importadas continuam. */
+export async function deleteIbkrCredencial(): Promise<void> {
+  const { data: u } = await sb.auth.getUser();
+  const user_id = u.user?.id;
+  if (!user_id) return;
+  const { error } = await sb.from("ibkr_flex").delete().eq("user_id", user_id);
+  if (error) throw new Error(error.message);
+}
+
+export interface IbkrImportResult { ok: boolean; posicoes: number; accountId?: string | null; aviso?: string }
+
+/** Dispara a importação das posições da IBKR (Edge Function `ibkr-flex`). */
+export async function importIbkr(): Promise<IbkrImportResult> {
+  const r = await fetch(`${FN_BASE}/ibkr-flex`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({}),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data?.error || "Falha ao importar da IBKR");
+  return data as IbkrImportResult;
 }

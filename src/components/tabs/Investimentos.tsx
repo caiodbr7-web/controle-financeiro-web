@@ -12,8 +12,9 @@ import {
   setTipoManual, setLiquidezD1Manual,
   addManualInvestment, updateManualInvestment, deleteManualInvestment, setInvestmentCotacao, fetchCotacoes,
   listSaldoCaixa,
+  getIbkrCredencial, saveIbkrCredencial, deleteIbkrCredencial, importIbkr,
 } from "../../lib/pluggy";
-import type { ManualInvestmentInput, SaldoConta } from "../../lib/pluggy";
+import type { ManualInvestmentInput, SaldoConta, IbkrCredencial } from "../../lib/pluggy";
 import { BRL, BRL0, brlShort, fmtMoeda } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
 
@@ -68,11 +69,12 @@ function liquidezD1Auto(i: Investimento): boolean {
 // liquidez D+1 "efetiva": o override manual vence a heurística
 const liquidezD1Ef = (i: Investimento) => i.liquidez_d1_manual ?? liquidezD1Auto(i);
 
-// posição manual com cotação em moeda estrangeira (ex.: VT em US$): a tabela
-// mostra o valor NATIVO (quantidade × preço); `saldo` segue em BRL (convertido).
+// posição em moeda estrangeira (manual com ticker ou IBKR, ex.: VT em US$): a
+// tabela mostra o valor NATIVO (quantidade × preço); `saldo` segue em BRL.
 const temCotacaoNativa = (i: Investimento) =>
-  !!(i.manual && i.moeda_cotacao && i.moeda_cotacao !== "BRL" && i.preco_unitario != null && i.quantidade != null);
+  !!(i.moeda_cotacao && i.moeda_cotacao !== "BRL" && i.preco_unitario != null && i.quantidade != null);
 const valorNativo = (i: Investimento) => (i.quantidade ?? 0) * (i.preco_unitario ?? 0);
+const ehIbkr = (i: Investimento) => i.fonte === "ibkr";
 
 // instituição "limpa": "NU FINANCEIRA S.A. - ..." -> "Nubank"; "BANCO AGIBANK S.A" -> "Banco Agibank".
 function limpaInstituicao(s: string): string {
@@ -371,6 +373,121 @@ function ManualForm({ mode, inicial, onClose, onSaved }: {
   );
 }
 
+// Modal de conexão com a IBKR (Interactive Brokers) via Flex Web Service.
+function IbkrForm({ inicial, onClose, onReload }: {
+  inicial: IbkrCredencial | null;
+  onClose: () => void;
+  onReload: () => void | Promise<void>;
+}) {
+  const conectado = !!inicial;
+  const [token, setToken] = useState("");
+  const [queryId, setQueryId] = useState(inicial?.flex_query_id ?? "");
+  const [busy, setBusy] = useState<"" | "save" | "import" | "disc">("");
+  const [err, setErr] = useState("");
+  const [info, setInfo] = useState("");
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  async function salvar(comImport: boolean) {
+    // ao conectar, token + query são obrigatórios; já conectado, token em branco mantém o atual
+    if (!queryId.trim() || (!conectado && !token.trim())) { setErr("Informe o token e o Query ID."); return; }
+    setErr(""); setInfo("");
+    try {
+      setBusy("save");
+      await saveIbkrCredencial(token.trim() ? token : null, queryId);
+      if (comImport) {
+        setBusy("import");
+        const r = await importIbkr();
+        setInfo(`✓ ${r.posicoes} posição(ões) importada(s).${r.aviso ? " " + r.aviso : ""}`);
+      } else {
+        setInfo("✓ Credenciais salvas.");
+      }
+      await onReload();
+      setToken("");
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
+  }
+  async function importar() {
+    setErr(""); setInfo("");
+    try {
+      setBusy("import");
+      const r = await importIbkr();
+      setInfo(`✓ ${r.posicoes} posição(ões) importada(s).${r.aviso ? " " + r.aviso : ""}`);
+      await onReload();
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
+  }
+  async function desconectar() {
+    if (!window.confirm("Desconectar a IBKR? As posições já importadas continuam, mas não serão mais atualizadas.")) return;
+    setErr(""); setInfo("");
+    try { setBusy("disc"); await deleteIbkrCredencial(); await onReload(); onClose(); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-[6px] flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-card border border-line rounded-[20px] max-w-[560px] w-full max-h-[90vh] flex flex-col shadow-[0_20px_60px_rgba(0,0,0,.25)] fade-in">
+        <div className="flex justify-between items-start gap-3 p-5 border-b border-line">
+          <div>
+            <h3 className="text-[16px] font-semibold tracking-tight">Conectar Interactive Brokers</h3>
+            <div className="text-muted text-[12px] mt-[2px]">Importa suas posições via <b>Flex Web Service</b> (somente leitura). Atualiza junto do sync automático, 2×/dia.</div>
+          </div>
+          <button onClick={onClose} aria-label="Fechar" className="w-[30px] h-[30px] rounded-full bg-fill text-muted hover:text-txt border-0 cursor-pointer flex items-center justify-center text-[13px] shrink-0 transition-colors">✕</button>
+        </div>
+
+        <div className="p-5 overflow-auto scroll-thin flex flex-col gap-3">
+          {conectado && (
+            <div className="text-[12.5px] bg-fill rounded-[10px] px-3 py-2 leading-relaxed">
+              <b>Conectado.</b> Query ID <span className="font-mono">{inicial!.flex_query_id}</span>
+              {inicial!.account_id && <> · conta <span className="font-mono">{inicial!.account_id}</span></>}
+              {inicial!.status && <> · status: {inicial!.status}</>}
+              {inicial!.last_synced_at && <> · última importação: {new Date(inicial!.last_synced_at).toLocaleString("pt-BR")}</>}
+            </div>
+          )}
+
+          <div className="text-[11.5px] text-muted leading-relaxed">
+            Na IBKR: <b>Client Portal → Performance &amp; Reports → Flex Queries</b>. Crie uma
+            <b> Activity Flex Query</b> com a seção <b>Open Positions</b> (formato XML) e copie o
+            <b> Query ID</b>; em <b>Flex Web Service Configuration</b>, ative e gere um <b>token</b>.
+          </div>
+
+          <Campo label={conectado ? "Novo token (deixe em branco p/ manter)" : "Token do Flex Web Service"}>
+            <input className={inputCls} value={token} onChange={(e) => setToken(e.target.value)} placeholder="cole o token aqui" autoFocus />
+          </Campo>
+          <Campo label="Query ID (Open Positions)">
+            <input className={inputCls} inputMode="numeric" value={queryId} onChange={(e) => setQueryId(e.target.value)} placeholder="ex.: 1234567" />
+          </Campo>
+
+          {err && <div className="text-[13px] text-red bg-fill rounded-[10px] px-3 py-2">{err}</div>}
+          {info && <div className="text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2">{info}</div>}
+        </div>
+
+        <div className="flex justify-between items-center gap-2 p-5 border-t border-line">
+          <div>
+            {conectado && <button className="btn-ghost text-red" onClick={desconectar} disabled={busy !== ""}>Desconectar</button>}
+          </div>
+          <div className="flex gap-2">
+            {conectado && (
+              <button onClick={importar} disabled={busy !== ""} className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[9px] text-[13.5px] font-medium cursor-pointer hover:border-muted transition-colors disabled:opacity-50">
+                {busy === "import" ? "Importando…" : "Importar agora"}
+              </button>
+            )}
+            <button
+              onClick={() => salvar(!conectado)}
+              disabled={busy !== ""}
+              className="bg-accent text-white border-0 rounded-[10px] px-4 py-[9px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
+            >
+              {busy === "save" ? "Salvando…" : busy === "import" ? "Importando…" : conectado ? "Salvar credenciais" : "Conectar e importar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Investimentos() {
   const cc = useChart();
   const [rows, setRows] = useState<Investimento[]>([]);
@@ -384,6 +501,8 @@ export function Investimentos() {
   const [cotBusy, setCotBusy] = useState(false);
   const [fx, setFx] = useState<number | null>(null);     // câmbio USD->BRL mais recente
   const [modal, setModal] = useState<{ mode: "add" | "edit"; inv?: Investimento } | null>(null);
+  const [ibkr, setIbkr] = useState<IbkrCredencial | null>(null); // conexão IBKR (null = não conectado)
+  const [ibkrModal, setIbkrModal] = useState(false);
 
   const [busca, setBusca] = useState("");
   const [fTipo, setFTipo] = useState("");
@@ -430,16 +549,18 @@ export function Investimentos() {
     setStatus("carregando…");
     setErro("");
     try {
-      const [inv, h, ht, cx] = await Promise.all([
+      const [inv, h, ht, cx, cred] = await Promise.all([
         listInvestments(),
         listInvestmentHistory(),
         listInvestmentHistoryByTipo().catch(() => [] as InvestimentoHistTipo[]),
         listSaldoCaixa().catch(() => [] as SaldoConta[]),
+        getIbkrCredencial().catch(() => null),
       ]);
       setRows(inv);
       setHist(h);
       setHistTipo(ht);
       setCaixa(cx);
+      setIbkr(cred);
       void refreshCotacoes(inv, { silent: true }); // atualiza cotações em 2º plano
     } catch (e) {
       setErro((e as Error).message);
@@ -719,13 +840,14 @@ export function Investimentos() {
     {
       key: "nome", label: "Investimento", sortable: true, render: (i) => (
         <span title={i.nome ?? ""} className="inline-flex items-center gap-[6px] min-w-0">
+          {ehIbkr(i) && <span className="text-[10px] px-[5px] py-[1px] rounded-[5px] bg-accent2/10 text-accent2 font-semibold shrink-0">IBKR</span>}
           {i.manual && <span className="text-[10px] px-[5px] py-[1px] rounded-[5px] bg-violet/10 text-violet font-semibold shrink-0">manual</span>}
           <span className="truncate">{cell(i.nome)}</span>
           {i.ticker && <span className="text-muted text-[11px] shrink-0">· {i.ticker}</span>}
         </span>
       ),
     },
-    { key: "tipo", label: "Tipo (Pluggy)", sortable: true, render: (i) => (i.manual ? <span className="text-muted">Manual</span> : labelTipo(i.tipo)) },
+    { key: "tipo", label: "Tipo (Pluggy)", sortable: true, render: (i) => (ehIbkr(i) ? <span className="text-muted">IBKR</span> : i.manual ? <span className="text-muted">Manual</span> : labelTipo(i.tipo)) },
     {
       key: "tipo_manual", label: "Classe (sua)", render: (i) => (
         <select
@@ -824,6 +946,16 @@ export function Investimentos() {
     </button>
   );
 
+  const btnIbkr = (
+    <button
+      onClick={() => setIbkrModal(true)}
+      className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors"
+      title={ibkr ? "IBKR conectada — importar/gerenciar" : "Conectar Interactive Brokers"}
+    >
+      {ibkr ? "IBKR ✓" : "Conectar IBKR"}
+    </button>
+  );
+
   const btnSync = (
     <button
       onClick={sincronizar}
@@ -857,8 +989,9 @@ export function Investimentos() {
         </p>
         {erro && <div className="text-[13px] text-red bg-fill rounded-[10px] px-3 py-2 mt-4 max-w-[560px] mx-auto">Erro: {erro}</div>}
         {msg && <div className="text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2 mt-3 max-w-[560px] mx-auto">{msg}</div>}
-        <div className="mt-4 flex gap-2 justify-center flex-wrap">{btnAddManual}{btnSync}</div>
+        <div className="mt-4 flex gap-2 justify-center flex-wrap">{btnAddManual}{btnIbkr}{btnSync}</div>
         {modal && <ManualForm mode={modal.mode} inicial={modal.inv} onClose={() => setModal(null)} onSaved={carregar} />}
+        {ibkrModal && <IbkrForm inicial={ibkr} onClose={() => setIbkrModal(false)} onReload={carregar} />}
       </div>
     );
   }
@@ -997,6 +1130,7 @@ export function Investimentos() {
         )}
         {fx != null && temTickers && <span className="text-muted text-[12px] tabular-nums">USD R$ {fx.toFixed(2)}</span>}
         {btnAddManual}
+        {btnIbkr}
         {btnSync}
       </div>
 
@@ -1024,6 +1158,7 @@ export function Investimentos() {
       {filtrados.length > MAX && <div className="text-muted text-[12.5px] mt-2">Mostrando {MAX.toLocaleString("pt-BR")} de {filtrados.length.toLocaleString("pt-BR")} posições. Refine os filtros.</div>}
 
       {modal && <ManualForm mode={modal.mode} inicial={modal.inv} onClose={() => setModal(null)} onSaved={carregar} />}
+      {ibkrModal && <IbkrForm inicial={ibkr} onClose={() => setIbkrModal(false)} onReload={carregar} />}
     </div>
   );
 }
