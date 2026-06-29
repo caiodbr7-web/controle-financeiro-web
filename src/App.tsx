@@ -18,6 +18,7 @@ import { Planejamento } from "./components/tabs/Planejamento";
 import { Adicionar, type MetodoAdd } from "./components/tabs/Adicionar";
 import { OpenBanking } from "./components/tabs/OpenBanking";
 import { Investimentos } from "./components/tabs/Investimentos";
+import { Categorias } from "./components/tabs/Categorias";
 
 type SubAba = { id: Aba; label: string };
 
@@ -42,6 +43,7 @@ const GRUPOS: TopAba[][] = [
   ],
   [{ id: "planejamento", label: "Planejamento" }],
   [{ grupo: "importacao", label: "Importação", subs: SUB_IMPORT }],
+  [{ id: "categorias", label: "Categorias" }],
 ];
 
 function ThemeIcon({ pref }: { pref: ThemePref }) {
@@ -147,6 +149,7 @@ export default function App() {
     { id: "diario", label: "Evolução Diária", grupo: "Análise", keywords: "acumulado dia", run: () => navTo("diario") },
     { id: "investimentos", label: "Investimentos", grupo: "Análise", keywords: "investimento patrimonio caixa saldo contas banco renda fixa fundos acoes etf previdencia pluggy open finance carteira", run: () => navTo("investimentos") },
     { id: "planejamento", label: "Planejamento", grupo: "Planejar", keywords: "orcamento projecao metas parcelas", run: () => navTo("planejamento") },
+    { id: "categorias", label: "Categorias", grupo: "Ações", keywords: "categoria adicionar apagar editar ordem cor gerenciar", run: () => navTo("categorias") },
     { id: "importar", label: "Importar arquivo", grupo: "Importação", keywords: "csv excel ofx upload extrato fatura adicionar", run: () => { setAddMetodo("arquivo"); navTo("adicionar"); } },
     { id: "conectar", label: "Conectar banco", grupo: "Importação", keywords: "pluggy open finance sincronizar adicionar", run: () => { setAddMetodo("banco"); navTo("adicionar"); } },
     { id: "classificar", label: "Classificar", grupo: "Importação", keywords: "categorizar pendencias", dot: pendClass > 0, hint: pendClass > 0 ? String(pendClass) : undefined, run: () => navTo("classificar") },
@@ -293,6 +296,7 @@ export default function App() {
           {aba === "adicionar" && <Adicionar reload={reload} metodo={addMetodo} onMetodo={setAddMetodo} allDados={allDados} />}
           {aba === "openbanking" && <OpenBanking />}
           {aba === "investimentos" && <Investimentos />}
+          {aba === "categorias" && <Categorias reload={reload} />}
         </div>
         )}
       </main>

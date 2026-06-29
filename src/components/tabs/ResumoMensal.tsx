@@ -4,6 +4,7 @@ import { Panel, Select, Seg, Toolbar } from "../ui";
 import { construirMatriz, mesesDisponiveis } from "../../lib/matrizMensal";
 import { MatrizMensal } from "../MatrizMensal";
 import { dvLabel, dvParcialLimite } from "../../lib/finance";
+import { useCategorias } from "../../lib/categorias";
 
 interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[]; openModal: (t: string, r: Lancamento[]) => void; }
 
@@ -12,6 +13,7 @@ interface Props { dados: Lancamento[]; allDados: Lancamento[]; months: string[];
 export function ResumoMensal({ dados, openModal }: Props) {
   const [mes, setMes] = useState("");
   const [nStr, setNStr] = useState("6");
+  const { categorias } = useCategorias(); // recomputa a matriz quando muda ordem/nome/cor
 
   const meses = useMemo(() => mesesDisponiveis(dados), [dados]);
   const lim = useMemo(() => dvParcialLimite(), []);
@@ -28,7 +30,7 @@ export function ResumoMensal({ dados, openModal }: Props) {
   const nMeses = +nStr;
   const parcial = m >= lim;
 
-  const matriz = useMemo(() => construirMatriz(dados, { mesSelecionado: m, nMeses }), [dados, m, nMeses]);
+  const matriz = useMemo(() => construirMatriz(dados, { mesSelecionado: m, nMeses }), [dados, m, nMeses, categorias]);
   const primeiroMes = matriz.meses[0] || m;
 
   if (!m) return <div className="text-muted">Sem dados.</div>;

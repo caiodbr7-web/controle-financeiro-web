@@ -18,7 +18,7 @@
 // ("Aplicar conhecidos"); "motor"/"banco" são só sugestões pré-preenchidas que
 // você confirma — e, ao confirmar, viram histórico para o próximo mês.
 // ============================================================================
-import { CATEGORIAS } from "./finance";
+import { getCategorias } from "./finance";
 import { semAcento } from "./texto";
 
 export type FonteSugestao = "vinculo" | "historico" | "motor" | "banco" | "nenhuma";
@@ -53,7 +53,7 @@ export interface CtxSugestao {
 // por você" (conhecido) de "motor embutido" (só sugestão).
 const PRIO_APRENDIDA = 100;
 
-const ehCategoria = (c?: string | null): c is string => !!c && CATEGORIAS.includes(c);
+const ehCategoria = (c?: string | null): c is string => !!c && getCategorias().includes(c);
 
 /** Normaliza texto p/ comparação por conteúdo: minúsculas, sem acento, espaço colapsado. */
 export function normTexto(s: string): string {
@@ -92,7 +92,7 @@ const BANCO_MAP: [RegExp, string][] = [
 export function bancoSugestao(catBanco?: string | null): string {
   const t = normTexto(catBanco || "");
   if (!t) return "";
-  for (const c of CATEGORIAS) if (c && normTexto(c) === t) return c; // já é PT
+  for (const c of getCategorias()) if (c && normTexto(c) === t) return c; // já é PT
   for (const [re, cat] of BANCO_MAP) if (re.test(t)) return cat;
   return "";
 }

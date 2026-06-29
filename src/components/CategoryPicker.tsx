@@ -1,14 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { CATEGORIAS, corCategoria } from "../lib/finance";
+import { corCategoria } from "../lib/finance";
+import { useCategorias } from "../lib/categorias";
 import { semAcento } from "../lib/texto";
 
 /* ---------- seletor de categoria com busca + teclado + cores ----------
    Substitui o <select> nativo no Classificar e em Lançamentos. Abre num portal
    (fixed) para não ser cortado pelo overflow das tabelas. Totalmente navegável
    por teclado: digite p/ filtrar, ↑/↓ move, Enter escolhe, Esc fecha. */
-
-const CATS = CATEGORIAS.filter((c) => c); // sem a opção vazia
 
 interface Props {
   value: string;                       // categoria atual ("" = sem categoria)
@@ -29,13 +28,14 @@ export function CategoryPicker({
   const [rect, setRect] = useState<{ left: number; top: number; width: number; up: boolean } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { categorias } = useCategorias();
 
   const lista = useMemo(() => {
     const t = semAcento(q).toLowerCase().trim();
-    const base = ["", ...CATS]; // "" = sem categoria (limpar)
+    const base = ["", ...categorias.map((c) => c.nome)]; // "" = sem categoria (limpar)
     if (!t) return base;
     return base.filter((c) => (c === "" ? "sem categoria" : semAcento(c).toLowerCase()).includes(t));
-  }, [q]);
+  }, [q, categorias]);
 
   function posicionar() {
     const el = btnRef.current;
