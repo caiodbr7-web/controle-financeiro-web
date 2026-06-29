@@ -1,12 +1,16 @@
 import { useEffect, useState, useCallback } from "react";
-import { sb } from "../lib/supabase";
+import { sb, isDemo, enterDemo, exitDemo } from "../lib/supabase";
 
-/** Sessão + login (Google) + logout. */
+/** Sessão + login (Google) + acesso teste (demo) + logout. */
 export function useAuth() {
   const [logado, setLogado] = useState<boolean | null>(null);
   const [erro, setErro] = useState("");
+  // modo demo ("Acesso teste"): base fake, sem tocar o Supabase real
+  const [demo, setDemo] = useState(isDemo());
 
   useEffect(() => {
+    // em modo demo a sessão é local: assume logado sem consultar o Supabase
+    if (isDemo()) { setLogado(true); return; }
     const { data: sub } = sb.auth.onAuthStateChange((_e, s) => setLogado(!!s));
     sb.auth.getSession().then(({ data }) => setLogado(!!data.session));
     return () => sub.subscription.unsubscribe();
@@ -21,7 +25,23 @@ export function useAuth() {
     if (error) setErro("Falha no login Google: " + error.message);
   }, []);
 
-  const sair = useCallback(async () => { await sb.auth.signOut(); }, []);
+  // entra no modo demonstração: liga a base fake e marca como logado
+  const entrarTeste = useCallback(() => {
+    setErro("");
+    enterDemo();
+    setDemo(true);
+    setLogado(true);
+  }, []);
 
-  return { logado, erro, entrarGoogle, sair };
+  const sair = useCallback(async () => {
+    if (isDemo()) {
+      exitDemo();
+      setDemo(false);
+      setLogado(false);
+      return;
+    }
+    await sb.auth.signOut();
+  }, []);
+
+  return { logado, erro, demo, entrarGoogle, entrarTeste, sair };
 }

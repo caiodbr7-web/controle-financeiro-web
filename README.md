@@ -69,6 +69,22 @@ no navegador do celular.
 > testar telas é ideal; só lembre que itens criados/editados em teste alteram
 > seus dados reais.
 
+## Acesso teste (modo demonstração)
+
+Para mostrar o produto a outras pessoas **sem expor seus dados reais**, a tela de
+login tem o botão **“Acesso teste”**. Ele entra numa demonstração completa com uma
+**base de dados fictícia** (≈14 meses de lançamentos, investimentos, planejamento,
+categorias e saldos) — todas as abas funcionam normalmente.
+
+- Nada toca o Supabase: os dados são gerados e servidos **em memória, no
+  navegador** (`src/lib/demo/`). Um cliente fake (`demoClient.ts`) substitui o
+  `sb` enquanto o modo está ligado; os dados vêm de `fakeData.ts`.
+- O cabeçalho mostra um selo **“Modo teste”**. Edições (classificar, planejar,
+  categorias) funcionam e ficam só na sessão — **somem ao recarregar a página**.
+- Integrações que dependem de backend (conectar banco, sincronizar, IBKR,
+  cotações ao vivo) ficam indisponíveis no modo teste, com aviso amigável.
+- Sair do modo teste (botão **Sair**) volta para a tela de login normal.
+
 ## Build de produção
 
 ```bash

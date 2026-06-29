@@ -86,7 +86,7 @@ const VISAO_LABEL: Record<Visao, string> = {
 const ABAS_DADOS = new Set<Aba>(["inicio", "geral", "mensal", "diario", "planejamento", "classificar", "lanc"]);
 
 export default function App() {
-  const { logado, erro, entrarGoogle, sair } = useAuth();
+  const { logado, erro, demo, entrarGoogle, entrarTeste, sair } = useAuth();
   const { allDados, status, reload, loading } = useLancamentos(!!logado);
   const { pref, cycle } = useTheme();
   const [visao, setVisao] = useState<Visao>("pessoal");
@@ -163,7 +163,7 @@ export default function App() {
   ], [navTo, pendClass, cycle, sair]);
 
   if (logado === null) return <div className="p-8 text-muted">Carregando…</div>;
-  if (!logado) return <Login onGoogle={entrarGoogle} erro={erro} />;
+  if (!logado) return <Login onGoogle={entrarGoogle} onTeste={entrarTeste} erro={erro} />;
 
   const tabProps = { dados, allDados, months, openModal };
   const iconBtn = "w-[28px] h-[28px] rounded-full border border-line bg-transparent text-muted hover:text-txt cursor-pointer flex items-center justify-center transition-colors shrink-0";
@@ -182,6 +182,15 @@ export default function App() {
             <h1 className="text-[15px] font-semibold tracking-tight whitespace-nowrap hidden min-[420px]:block">
               Controle Financeiro
             </h1>
+            {demo && (
+              <span
+                title="Você está no modo teste: os dados são fictícios e ficam só no seu navegador."
+                className="inline-flex items-center gap-[5px] h-[20px] rounded-full bg-amber/15 text-amber border border-amber/30 px-[8px] text-[11px] font-semibold whitespace-nowrap shrink-0"
+              >
+                <span className="w-[5px] h-[5px] rounded-full bg-amber" />
+                Modo teste
+              </span>
+            )}
             <div className="ml-auto flex items-center gap-2">
               <button
                 onClick={() => setPaletaAberta(true)}

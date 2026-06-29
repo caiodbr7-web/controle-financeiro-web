@@ -1,7 +1,11 @@
-import { sb, SUPABASE_URL, SUPABASE_ANON } from "./supabase";
+import { sb, SUPABASE_URL, SUPABASE_ANON, isDemo } from "./supabase";
 import type { Investimento, InvestimentoHist, InvestimentoHistTipo } from "../types";
 
 const FN_BASE = `${SUPABASE_URL}/functions/v1`;
+
+// no modo teste não há backend: integrações que dependem de Edge Functions
+// (conectar banco, sincronizar, cotações ao vivo) são bloqueadas com aviso amigável.
+const ERRO_DEMO = "Indisponível no modo teste — esta ação depende de uma conta real conectada.";
 
 async function authHeaders() {
   const { data } = await sb.auth.getSession();
@@ -15,6 +19,7 @@ async function authHeaders() {
 
 /** Pede ao backend um Connect Token para abrir o widget Pluggy. */
 export async function getConnectToken(itemId?: string): Promise<string> {
+  if (isDemo()) throw new Error(ERRO_DEMO);
   const r = await fetch(`${FN_BASE}/pluggy-connect-token`, {
     method: "POST",
     headers: await authHeaders(),
@@ -48,6 +53,7 @@ export interface SyncOpts {
 
 /** Dispara a sincronizacao (contas + transacoes) de um item Pluggy. */
 export async function syncItem(itemId: string, from?: string, opts: SyncOpts = {}): Promise<SyncResult> {
+  if (isDemo()) return { ok: true, contas: 2, transacoes: 0, inseridos: 0, from: from ?? "", por_conta: {}, status: "UPDATED" };
   const r = await fetch(`${FN_BASE}/pluggy-sync`, {
     method: "POST",
     headers: await authHeaders(),
@@ -61,6 +67,7 @@ export async function syncItem(itemId: string, from?: string, opts: SyncOpts = {
 /** Roda a tradução CRU->lancamentos (+ saldos) UMA vez, sem baixar nada da Pluggy.
  *  Passo final após sincronizar várias conexões com translate=false. */
 export async function translateLancamentos(): Promise<{ inseridos: number }> {
+  if (isDemo()) return { inseridos: 0 };
   const r = await fetch(`${FN_BASE}/pluggy-sync`, {
     method: "POST",
     headers: await authHeaders(),
@@ -137,6 +144,7 @@ export interface InvestSyncResult {
 /** Dispara a sincronizacao das posicoes de investimento (endpoint /investments).
  *  Sem itemId, sincroniza todas as conexoes do usuario. */
 export async function syncInvestments(itemId?: string): Promise<InvestSyncResult> {
+  if (isDemo()) return { ok: true, itens: 2, investimentos: 7, inseridos: 0, por_item: {} };
   const r = await fetch(`${FN_BASE}/pluggy-investments`, {
     method: "POST",
     headers: await authHeaders(),
@@ -326,6 +334,7 @@ export interface CotacaoResp {
 
 /** Busca cotações de tickers (Yahoo) + câmbio USD->BRL (Edge Function `cotacao`). */
 export async function fetchCotacoes(tickers: string[]): Promise<CotacaoResp> {
+  if (isDemo()) return { usdbrl: 5.42, quotes: {} };
   const r = await fetch(`${FN_BASE}/cotacao`, {
     method: "POST",
     headers: await authHeaders(),
@@ -386,6 +395,7 @@ export interface IbkrImportResult { ok: boolean; posicoes: number; accountId?: s
 
 /** Dispara a importação das posições da IBKR (Edge Function `ibkr-flex`). */
 export async function importIbkr(): Promise<IbkrImportResult> {
+  if (isDemo()) throw new Error(ERRO_DEMO);
   const r = await fetch(`${FN_BASE}/ibkr-flex`, {
     method: "POST",
     headers: await authHeaders(),
