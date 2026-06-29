@@ -316,7 +316,7 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
                     <button
                       disabled={busy || !cat}
                       onClick={() => aplicarUm(g)}
-                      className="btn bg-accent hover:bg-accent2 text-white text-[12px] rounded-[8px] px-3 py-[6px] border-0 disabled:opacity-40"
+                      className="btn bg-accent hover:bg-accent2 text-onaccent text-[12px] rounded-[8px] px-3 py-[6px] border-0 disabled:opacity-40"
                     >
                       Aplicar
                     </button>

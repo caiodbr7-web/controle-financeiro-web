@@ -7,8 +7,8 @@ export function Panel({
     <div className={`bg-card border border-line rounded-[18px] p-4 sm:p-5 shadow-card mb-[18px] min-w-0 ${className}`}>
       {(title || right) && (
         <div className="flex flex-wrap gap-x-3 gap-y-2 items-center justify-between mb-2">
-          <h2 className="text-[15px] font-semibold tracking-tight">
-            {title} {sub && <span className="text-muted text-[12px] font-normal">{sub}</span>}
+          <h2 className="font-display text-[16px] font-bold tracking-tight">
+            {title} {sub && <span className="text-muted text-[12px] font-normal font-sans">{sub}</span>}
           </h2>
           {right}
         </div>
@@ -25,12 +25,12 @@ export function Kpi({
   return (
     <Tag
       onClick={onClick}
-      className={`bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card min-w-0 text-left ${
-        onClick ? "cursor-pointer hover:border-muted/60 transition-colors" : ""
+      className={`bg-card border border-line rounded-[16px] p-4 sm:p-[18px] shadow-card min-w-0 text-left transition-all duration-[280ms] hover:-translate-y-[3px] hover:shadow-card-hover ${
+        onClick ? "cursor-pointer hover:border-accent/50" : ""
       }`}
     >
-      <div className="text-muted text-[12px] font-medium">{title}</div>
-      <div className={`text-[20px] sm:text-[24px] font-semibold mt-[6px] tracking-tight tabular-nums ${color}`}>{value}</div>
+      <div className="text-muted text-[12.5px] font-semibold">{title}</div>
+      <div className={`font-display text-[22px] sm:text-[26px] font-bold mt-[6px] tracking-tight tabular-nums ${color}`}>{value}</div>
       {sub !== undefined && <div className="text-[11.5px] mt-[4px] text-muted leading-snug">{sub}</div>}
     </Tag>
   );
@@ -41,15 +41,15 @@ export function Seg<T extends string>({
 }: { value: T; onChange: (v: T) => void; options: { v: T; label: string }[]; size?: "sm" | "md" }) {
   const pad = size === "sm" ? "px-[10px] py-[5px] text-[12.5px]" : "px-[13px] py-[7px] text-[13px]";
   return (
-    <div className="inline-flex gap-[2px] bg-fill p-[3px] rounded-[10px] flex-wrap">
+    <div className="inline-flex gap-[2px] bg-soft p-[3px] rounded-[10px] flex-wrap">
       {options.map((o) => (
         <button
           key={o.v}
           onClick={() => onChange(o.v)}
-          className={`whitespace-nowrap border-0 ${pad} cursor-pointer rounded-[8px] font-medium transition-all ${
+          className={`whitespace-nowrap border-0 ${pad} cursor-pointer rounded-[8px] transition-all ${
             value === o.v
-              ? "bg-card text-txt shadow-[0_1px_3px_rgba(0,0,0,.16)]"
-              : "bg-transparent text-muted hover:text-txt"
+              ? "bg-card text-accent font-bold shadow-card"
+              : "bg-transparent text-muted hover:text-txt font-medium"
           }`}
         >
           {o.label}
@@ -66,7 +66,7 @@ export function Select({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={`select-chev bg-card text-txt border border-line rounded-[10px] pl-3 py-[8px] text-[13.5px] cursor-pointer outline-none focus:border-muted transition-colors ${className}`}
+      className={`select-chev bg-card text-txt border border-line rounded-[10px] pl-3 py-[8px] text-[13.5px] font-medium cursor-pointer outline-none hover:border-accent focus:border-accent transition-colors ${className}`}
     >
       {children}
     </select>

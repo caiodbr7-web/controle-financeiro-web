@@ -5,17 +5,17 @@
 
 export type RGB = readonly [number, number, number];
 
-// Hue base por secao
+// Hue base por secao (paleta premium 2026)
 export const HUE_SECAO: Record<'receita' | 'gasto' | 'investido' | 'saldo', RGB> = {
-  receita: [22, 163, 74],    // verde
-  gasto: [224, 56, 43],      // vermelho
-  investido: [124, 58, 237], // violeta
-  saldo: [94, 92, 230],      // violeta-azulado
+  receita: [21, 150, 107],   // verde  (#15966B)
+  gasto: [214, 69, 91],      // vermelho (#D6455B)
+  investido: [109, 40, 217], // roxo (#6D28D9)
+  saldo: [139, 92, 246],     // violeta (#8B5CF6)
 };
 
 // Verde/vermelho fixos p/ a escala divergente
-const VERDE: RGB = [22, 163, 74];
-const VERMELHO: RGB = [224, 56, 43];
+const VERDE: RGB = [21, 150, 107];
+const VERMELHO: RGB = [214, 69, 91];
 
 // Tint sequencial: intensidade proporcional a |valor|/max no hue da secao
 export function tintSequencial(

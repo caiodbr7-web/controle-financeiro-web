@@ -53,7 +53,7 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
       className="fixed inset-0 bg-black/40 backdrop-blur-[6px] flex items-start justify-center z-[80] p-4 pt-[12vh]"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-card border border-line rounded-[16px] w-full max-w-[520px] shadow-[0_20px_60px_rgba(0,0,0,.3)] fade-in overflow-hidden">
+      <div className="bg-card border border-line rounded-[16px] w-full max-w-[520px] shadow-modal fade-in overflow-hidden">
         <div className="flex items-center gap-2 px-4 border-b border-line">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted shrink-0"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" strokeLinecap="round" /></svg>
           <input

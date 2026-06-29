@@ -4,8 +4,8 @@ export function Login({
   return (
     <div className="px-4">
       <div className="max-w-[380px] mx-auto mt-[14vh] bg-card border border-line rounded-[22px] p-[30px_26px] shadow-card fade-in">
-        <div className="w-[46px] h-[46px] rounded-[14px] bg-gradient-to-br from-[#820ad1] to-[#a855f7] flex items-center justify-center text-white text-[22px] font-bold mb-4 select-none">C</div>
-        <h2 className="text-[21px] tracking-tight mb-1 font-semibold">Controle Financeiro</h2>
+        <div className="w-[46px] h-[46px] rounded-[14px] bg-accent flex items-center justify-center text-white font-display text-[22px] font-extrabold mb-4 select-none">C</div>
+        <h2 className="font-display text-[22px] tracking-tight mb-1 font-bold">Controle Financeiro</h2>
         <p className="text-muted text-sm mb-5">Entre com sua conta Google para acessar seus lançamentos.</p>
         <button
           onClick={onGoogle}

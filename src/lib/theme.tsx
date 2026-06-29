@@ -37,7 +37,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", dark ? "#0d0d0f" : "#f5f5f7");
+    if (meta) meta.setAttribute("content", dark ? "#0D0B14" : "#F7F6FA");
   }, [dark]);
 
   const cycle = () =>
@@ -58,17 +58,17 @@ export function useChart() {
   const { dark } = useTheme();
   return useMemo(
     () => ({
-      grid: dark ? "#2a2a2e" : "#ececf0",
-      tick: { fill: dark ? "#98989d" : "#86868b", fontSize: 11 },
-      tickSm: { fill: dark ? "#98989d" : "#86868b", fontSize: 10 },
-      tickStrong: { fill: dark ? "#f5f5f7" : "#1d1d1f", fontSize: 11 },
-      cardStroke: dark ? "#1c1c1e" : "#ffffff",
+      grid: dark ? "#2a2736" : "#eceaf2",
+      tick: { fill: dark ? "#9d98ac" : "#6e6a7c", fontSize: 11 },
+      tickSm: { fill: dark ? "#9d98ac" : "#6e6a7c", fontSize: 10 },
+      tickStrong: { fill: dark ? "#f2f0f8" : "#1a1726", fontSize: 11 },
+      cardStroke: dark ? "#171522" : "#ffffff",
       cursor: { fill: dark ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.04)" },
-      saldo: dark ? "#ffd60a" : "#f2b84b",
-      receita: dark ? "#30d158" : "#34c98a",
-      despesa: dark ? "#ff6961" : "#f06a6a",
-      media: dark ? "#ffb340" : "#f0a818",
-      roxoLinha: (alpha: string) => (dark ? `rgba(191,138,255,${alpha})` : `rgba(130,10,209,${alpha})`),
+      saldo: dark ? "#f2b65a" : "#e0a33a",
+      receita: dark ? "#34d399" : "#047857",
+      despesa: dark ? "#fb7185" : "#c2334a",
+      media: dark ? "#f2b65a" : "#e0a33a",
+      roxoLinha: (alpha: string) => (dark ? `rgba(167,139,250,${alpha})` : `rgba(109,40,217,${alpha})`),
     }),
     [dark]
   );

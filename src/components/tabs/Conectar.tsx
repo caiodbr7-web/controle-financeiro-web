@@ -215,7 +215,7 @@ export function Conectar({ reload }: { reload: () => void }) {
           <button
             onClick={() => conectar()}
             disabled={busy}
-            className="bg-accent text-white border-0 rounded-[10px] px-4 py-[10px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
+            className="bg-accent text-onaccent border-0 rounded-[10px] px-4 py-[10px] text-[13.5px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
           >
             + Conectar banco
           </button>
@@ -235,7 +235,7 @@ export function Conectar({ reload }: { reload: () => void }) {
             <button
               onClick={sincronizarTudo}
               disabled={busy}
-              className="bg-accent text-white border-0 rounded-[10px] px-4 py-[9px] text-[13px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
+              className="bg-accent text-onaccent border-0 rounded-[10px] px-4 py-[9px] text-[13px] font-semibold cursor-pointer disabled:opacity-50 hover:opacity-90 transition-opacity"
             >
               Sincronizar tudo
             </button>
