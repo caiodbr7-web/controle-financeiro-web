@@ -393,11 +393,12 @@ function IbkrForm({ inicial, onClose, onReload }: {
   }, [onClose]);
 
   async function salvar(comImport: boolean) {
-    if (!token.trim() || !queryId.trim()) { setErr("Informe o token e o Query ID."); return; }
+    // ao conectar, token + query são obrigatórios; já conectado, token em branco mantém o atual
+    if (!queryId.trim() || (!conectado && !token.trim())) { setErr("Informe o token e o Query ID."); return; }
     setErr(""); setInfo("");
     try {
       setBusy("save");
-      await saveIbkrCredencial(token, queryId);
+      await saveIbkrCredencial(token.trim() ? token : null, queryId);
       if (comImport) {
         setBusy("import");
         const r = await importIbkr();

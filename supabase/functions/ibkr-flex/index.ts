@@ -85,7 +85,8 @@ async function flexFetch(token: string, queryId: string): Promise<string> {
     if (x2.includes("<FlexQueryResponse")) return x2;                 // pronto
     const code = tagText(x2, "ErrorCode");
     if (code === "1009" || code === "1019" || code === "1018") {      // gerando / ocupado / throttle
-      await sleep(code === "1018" ? 10000 : waits[Math.min(i, waits.length - 1)]);
+      if (i === waits.length) break;                                  // última tentativa: não dorme à toa
+      await sleep(code === "1018" ? 10000 : waits[i]);
       continue;
     }
     throw new Error(`IBKR GetStatement erro ${code ?? "?"}: ${tagText(x2, "ErrorMessage") ?? x2.slice(0, 200)}`);
@@ -187,6 +188,17 @@ async function importForUser(admin: any, userId: string, token: string, queryId:
     : agruparPorConid(posicoes);
 
   const fx = await fxParaBRL(posicoes.map((p) => p.currency || "USD"));
+
+  // Sem câmbio para alguma moeda estrangeira (Stooq fora do ar / moeda exótica),
+  // ABORTA antes de gravar: senão gravaríamos saldo=NULL, sumindo dos KPIs e
+  // corrompendo o retrato diário de patrimônio. Os dados anteriores ficam
+  // preservados e o próximo ciclo tenta de novo.
+  const semCambio = [...new Set(posicoes.map((p) => (p.currency || "USD").toUpperCase()))]
+    .filter((c) => c !== "BRL" && fx[c] == null);
+  if (semCambio.length) {
+    throw new Error(`Sem câmbio p/ ${semCambio.join(", ")} (Stooq indisponível). Importação adiada — dados anteriores preservados.`);
+  }
+
   const agora = new Date().toISOString();
   let accountId: string | null = null;
 
@@ -205,7 +217,9 @@ async function importForUser(admin: any, userId: string, token: string, queryId:
     const custo = num(p.costBasisMoney);
     const aplicado = custo != null && rate != null ? custo * rate : null;
     return {
-      investment_id: `ibkr-${acct || "x"}-${conid}`,
+      // id por USUÁRIO: evita que duas contas do app que apontem para a mesma
+      // conta IBKR (família/assessor) colidam no PK global investment_id.
+      investment_id: `ibkr-${userId}-${acct || "x"}-${conid}`,
       user_id: userId,
       fonte: "ibkr",
       manual: false,
@@ -240,15 +254,19 @@ async function importForUser(admin: any, userId: string, token: string, queryId:
   const { error: upErr } = await admin.from("pluggy_investments").upsert(unicos, { onConflict: "investment_id" });
   if (upErr) throw new Error("upsert ibkr: " + upErr.message);
 
-  // remove posições IBKR que sumiram (fechadas), preservando as que ficaram
-  const ids = unicos.map((r) => r.investment_id);
-  const { error: delErr } = await admin
-    .from("pluggy_investments")
-    .delete()
-    .eq("user_id", userId)
-    .eq("fonte", "ibkr")
-    .not("investment_id", "in", `(${ids.map((id) => `"${id}"`).join(",")})`);
-  if (delErr) throw new Error("limpeza ibkr: " + delErr.message);
+  // remove posições IBKR que sumiram (fechadas), preservando as que ficaram (com
+  // suas reclassificações). Diff explícito + .in() parametrizado — robusto a
+  // símbolos com vírgula/aspas (sem montar a lista PostgREST na mão).
+  const manter = new Set(unicos.map((r) => r.investment_id));
+  const { data: existentes, error: exErr } = await admin
+    .from("pluggy_investments").select("investment_id").eq("user_id", userId).eq("fonte", "ibkr");
+  if (exErr) throw new Error("leitura ibkr: " + exErr.message);
+  const remover = (existentes ?? []).map((r: any) => r.investment_id).filter((id: string) => !manter.has(id));
+  if (remover.length) {
+    const { error: delErr } = await admin
+      .from("pluggy_investments").delete().eq("user_id", userId).eq("fonte", "ibkr").in("investment_id", remover);
+    if (delErr) throw new Error("limpeza ibkr: " + delErr.message);
+  }
 
   await snapshot(admin, userId, agora);
   return { posicoes: unicos.length, accountId };

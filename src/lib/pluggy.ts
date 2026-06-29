@@ -360,17 +360,16 @@ export async function getIbkrCredencial(): Promise<IbkrCredencial | null> {
   return (data as IbkrCredencial) ?? null;
 }
 
-/** Salva (cria/atualiza) o token + query id da IBKR do usuário. */
-export async function saveIbkrCredencial(token: string, queryId: string): Promise<void> {
+/** Salva o query id da IBKR (e o token, se informado — em branco mantém o atual). */
+export async function saveIbkrCredencial(token: string | null, queryId: string): Promise<void> {
   const { data: u } = await sb.auth.getUser();
   const user_id = u.user?.id;
   if (!user_id) throw new Error("Sessão expirada — entre novamente.");
-  const { error } = await sb
-    .from("ibkr_flex")
-    .upsert(
-      { user_id, flex_token: token.trim(), flex_query_id: queryId.trim(), atualizado_em: new Date().toISOString() },
-      { onConflict: "user_id" },
-    );
+  // token só entra no payload quando informado: assim atualizar só o Query ID
+  // (token em branco) NÃO apaga o token já salvo.
+  const payload: Record<string, unknown> = { user_id, flex_query_id: queryId.trim(), atualizado_em: new Date().toISOString() };
+  if (token && token.trim()) payload.flex_token = token.trim();
+  const { error } = await sb.from("ibkr_flex").upsert(payload, { onConflict: "user_id" });
   if (error) throw new Error(error.message);
 }
 

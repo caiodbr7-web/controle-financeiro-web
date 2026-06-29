@@ -60,32 +60,53 @@ create policy "proprios dados" on public.ibkr_flex
 --    do `pluggy-cron` trocando o nome (mesmo projeto).
 --
 --    Rode o deploy antes:  supabase functions deploy ibkr-flex --no-verify-jwt
---    Mesma frequência: 09:00 e 21:00 UTC (06:00 e 18:00 de Brasília).
+--    Frequência: 09:10 e 21:10 UTC — 10 min DEPOIS do cron da Pluggy (06:10 e
+--    18:10 Brasília). O atraso garante que o retrato diário gravado pela IBKR
+--    (que soma TODAS as posições) já enxergue os dados frescos da Pluggy.
+--
+--    O bloco abaixo é à prova de falha: se os segredos do cron da Pluggy não
+--    existirem ou a URL não puder ser derivada, ele NÃO agenda e apenas avisa
+--    (a importação manual pelo botão continua funcionando). A criação da coluna
+--    `fonte` e da tabela ibkr_flex acima NÃO depende disso.
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
-select cron.unschedule('ibkr-sync-automatico')
-where exists (select 1 from cron.job where jobname = 'ibkr-sync-automatico');
+do $$
+declare
+  v_url text;
+  v_cmd text;
+begin
+  if not exists (select 1 from vault.secrets where name = 'pluggy_cron_url')
+     or not exists (select 1 from vault.secrets where name = 'pluggy_cron_secret') then
+    raise notice 'IBKR: cron NÃO agendado — rode db/migrations/2026-06-21-cron-sync.sql primeiro (segredos pluggy_cron_url/secret). A importação manual pelo botão funciona normalmente.';
+    return;
+  end if;
 
-select cron.schedule(
-  'ibkr-sync-automatico',
-  '0 9,21 * * *',
-  $$
-  select net.http_post(
-    url     := replace(
-                 (select decrypted_secret from vault.decrypted_secrets where name = 'pluggy_cron_url'),
-                 'pluggy-cron', 'ibkr-flex'
-               ),
-    headers := jsonb_build_object(
-                 'Content-Type', 'application/json',
-                 'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'pluggy_cron_secret')
-               ),
-    body    := '{}'::jsonb,
-    timeout_milliseconds := 600000
-  );
-  $$
-);
+  select replace(decrypted_secret, 'pluggy-cron', 'ibkr-flex')
+    into v_url
+    from vault.decrypted_secrets where name = 'pluggy_cron_url';
+
+  if v_url is null or position('/ibkr-flex' in v_url) = 0 then
+    raise notice 'IBKR: cron NÃO agendado — não consegui derivar a URL de ibkr-flex a partir de pluggy_cron_url (valor: %). Crie um segredo ibkr_cron_url e agende manualmente.', v_url;
+    return;
+  end if;
+
+  if exists (select 1 from cron.job where jobname = 'ibkr-sync-automatico') then
+    perform cron.unschedule('ibkr-sync-automatico');
+  end if;
+
+  -- URL (não-secreta) embutida no comando; o x-cron-secret é resolvido em runtime
+  v_cmd := format($cmd$select net.http_post(
+      url := %L,
+      headers := jsonb_build_object('Content-Type','application/json','x-cron-secret',(select decrypted_secret from vault.decrypted_secrets where name = 'pluggy_cron_secret')),
+      body := '{}'::jsonb,
+      timeout_milliseconds := 600000
+    );$cmd$, v_url);
+
+  perform cron.schedule('ibkr-sync-automatico', '10 9,21 * * *', v_cmd);
+  raise notice 'IBKR: cron agendado (10 9,21 * * *) -> %', v_url;
+end $$;
 
 -- ============================================================
 --  Conferir (opcional):
