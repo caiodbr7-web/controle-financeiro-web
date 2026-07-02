@@ -145,7 +145,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
 
     const serieNome = dvLabel(selKey);
     const benchNome = `Média ${janela}m`;
-    const parcNome = "Parcelas de meses ant.";
+    const parcNome = "Parcelas de meses anteriores";
     const chart = Array.from({ length: nd }, (_, i) => ({
       dia: i + 1,
       [serieNome]: isAtual && i + 1 > refDay ? null : selArr[i],

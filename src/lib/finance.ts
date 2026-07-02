@@ -199,7 +199,7 @@ export function diaDoMov(d: Lancamento): number {
 //  (b) sufixo "NN/MM" com NN >= 2 na descrição de linha de CARTÃO — bancos que
 //      datam cada parcela dentro do próprio ciclo ("regime espalhado"); é a
 //      mesma regra do SQL de tradução que espalha a competência das parcelas.
-const RE_PARCELA_FIM = /(\d{1,2})\s*\/\s*(\d{1,2})\s*$/;
+const RE_PARCELA_FIM = /(?:^|\D)(\d{1,2})\s*\/\s*(\d{1,2})\s*$/;
 export function ehParcelaAnterior(d: Lancamento): boolean {
   const r = dvDataReal(d);
   if (r && r.k < mesComp(d)) return true;
