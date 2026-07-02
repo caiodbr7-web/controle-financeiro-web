@@ -6,8 +6,8 @@ import { useChart, ChartTip } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
   BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dataCompleta,
-  dvDiasNoMes, dvLabel, MES_ABREV, mesCurto, mesComp, diaDoMov, normEstab,
-  valorAporte, valorReceitaInvest,
+  dvDiasNoMes, dvLabel, MES_ABREV, mesCurto, mesComp, diaDoMov, ehParcelaAnterior,
+  normEstab, valorAporte, valorReceitaInvest,
 } from "../../lib/finance";
 import { ehInterna } from "../../lib/lancClasses";
 import { type Plano, projetar, contribNoMes, ehReceitaTipo } from "../../lib/projecao";
@@ -68,22 +68,33 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   // Série diária por COMPETÊNCIA (mês da fatura/extrato), não pela data da compra.
   // Assim cada parcela conta no mês em que cai na fatura (sofá 12x = 1 parcela/mês),
   // e o total do mês bate com a fatura + extrato — cartão e conta juntos.
-  // O dia (eixo x) vem da data_mov; sem data válida, cai no dia 1.
+  // O dia (eixo x) vem da data_mov; sem data válida, cai no dia 1. Parcelas e
+  // compras de MESES ANTERIORES já estavam comprometidas quando o mês abriu,
+  // então contam desde o dia 1 — é o "platô" do início da curva (parc/parcRows
+  // guardam esse pedaço por mês, p/ a banda do gráfico e o detalhamento).
   const compSeries = useMemo(() => {
     const map: Record<string, number[]> = {};
+    const parc: Record<string, number> = {};
+    const parcRows: Record<string, Lancamento[]> = {};
     for (const d of dados) {
       const g = dvGasto(d); // já exclui interna/aporte e desconta estorno (lancClasses)
       if (!g) continue;
       const k = mesComp(d);
       if (!/^\d{4}-\d{2}$/.test(k)) continue;
-      (map[k] = map[k] || new Array(31).fill(0))[diaDoMov(d) - 1] += g;
+      const ant = ehParcelaAnterior(d);
+      const dia = ant ? 1 : Math.min(diaDoMov(d), dvDiasNoMes(k));
+      (map[k] = map[k] || new Array(31).fill(0))[dia - 1] += g;
+      if (ant) {
+        parc[k] = (parc[k] || 0) + g;
+        (parcRows[k] = parcRows[k] || []).push(d);
+      }
     }
-    return map;
+    return { map, parc, parcRows };
   }, [dados]);
 
   // meses disponíveis para escolher (por competência) + o mês civil atual
   const mesesOpc = useMemo(() => {
-    const ks = new Set(Object.keys(compSeries));
+    const ks = new Set(Object.keys(compSeries.map));
     ks.add(mesAtual);
     return [...ks].filter((k) => k <= mesAtual).sort().reverse();
   }, [compSeries, mesAtual]);
@@ -97,7 +108,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   /* ---------- gasto do mês selecionado vs média da janela ---------- */
   const calc = useMemo(() => {
     if (!selKey) return null;
-    const map = compSeries;
+    const map = compSeries.map;
 
     const cum = (k: string) => {
       const nd = dvDiasNoMes(k); const out: number[] = []; let s = 0;
@@ -128,17 +139,23 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
     const gastoAtual = selArr[refDay - 1] || 0;
     const delta = benchAtRef != null ? gastoAtual - benchAtRef : null;
 
+    // platô: parcelas/compras de meses anteriores já comprometidas no dia 1.
+    // Banda constante no mês inteiro — mesmo além de hoje, o piso já é conhecido.
+    const parcSel = Math.round((compSeries.parc[selKey] || 0) * 100) / 100;
+
     const serieNome = dvLabel(selKey);
     const benchNome = `Média ${janela}m`;
+    const parcNome = "Parcelas de meses ant.";
     const chart = Array.from({ length: nd }, (_, i) => ({
       dia: i + 1,
       [serieNome]: isAtual && i + 1 > refDay ? null : selArr[i],
       [benchNome]: bench[i],
+      ...(parcSel > 0 ? { [parcNome]: parcSel } : {}),
     }));
 
     return {
       selKey, isAtual, completo, comparavel, nd, refDay, gastoAtual, benchAtRef: benchAtRef ?? null, benchFim,
-      delta, chart, serieNome, benchNome, temBench: base.length > 0, nBase: base.length,
+      delta, chart, serieNome, benchNome, parcNome, parcSel, temBench: base.length > 0, nBase: base.length,
     };
   }, [compSeries, selKey, janela, mesAtual, hoje]);
 
@@ -295,6 +312,9 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                 <Tooltip content={<ChartTip labelPrefix="Dia " />} />
                 <Line type="monotone" dataKey={calc.benchNome} stroke={cc.media} strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls isAnimationActive={false} />
                 <Area type="monotone" dataKey={calc.serieNome} stroke={roxo} strokeWidth={2.5} fill="url(#heroGrad)" dot={false} connectNulls={false} isAnimationActive={false} />
+                {calc.parcSel > 0 && (
+                  <Area type="monotone" dataKey={calc.parcNome} stroke={cc.parcela} strokeWidth={1.5} fill={cc.parcela} fillOpacity={0.13} dot={false} isAnimationActive={false} />
+                )}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -306,6 +326,15 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
               <span className="w-[10px] h-0 border-t-2 border-dashed" style={{ borderColor: cc.media }} />Média {janela}m
             </span>
+            {calc.parcSel > 0 && (
+              <button
+                onClick={() => openModal(`Parcelas de meses anteriores · ${dvLabel(calc.selKey)}`, compSeries.parcRows[calc.selKey] || [])}
+                className="inline-flex items-center gap-[6px] text-[11.5px] text-muted bg-transparent border-0 p-0 cursor-pointer hover:text-accent transition-colors"
+              >
+                <span className="w-[10px] h-[3px] rounded-full" style={{ background: cc.parcela }} />
+                Parcelas de meses anteriores · {BRL0(calc.parcSel)} ›
+              </button>
+            )}
             {calc.delta != null && calc.comparavel && (
               <span className={`inline-flex items-center gap-1 rounded-full px-[10px] py-[3px] text-[12px] font-semibold ${
                 calc.delta <= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"
@@ -320,7 +349,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             )}
           </div>
           <div className="text-[11.5px] text-muted mt-2">
-            Pela competência (fatura/extrato do mês), cartão + contas — parcelas contam no mês em que caem na fatura.{!calc.completo ? " Mês ainda em curso." : ""}
+            Pela competência (fatura/extrato do mês), cartão + contas. Parcelas e compras de meses anteriores já contam desde o dia 1º — o platô no início da curva.{!calc.completo ? " Mês ainda em curso." : ""}
           </div>
         </Panel>
 
@@ -330,7 +359,8 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             <BigVal
               label={`Gasto atual · ${dvLabel(calc.selKey)}`}
               value={BRL0(calc.gastoAtual)}
-              sub={calc.isAtual ? `até hoje · dia ${calc.refDay}/${calc.nd}` : "fatura + extrato do mês"}
+              sub={(calc.isAtual ? `até hoje · dia ${calc.refDay}/${calc.nd}` : "fatura + extrato do mês")
+                + (calc.parcSel > 0 ? ` · ${BRL0(calc.parcSel)} de meses anteriores` : "")}
               dot={roxo}
             />
             <BigVal

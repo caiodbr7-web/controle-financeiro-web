@@ -68,6 +68,7 @@ export function useChart() {
       receita: dark ? "#34d399" : "#047857",
       despesa: dark ? "#fb7185" : "#c2334a",
       media: dark ? "#f2b65a" : "#e0a33a",
+      parcela: dark ? "#06b6d4" : "#0891b2",
       roxoLinha: (alpha: string) => (dark ? `rgba(167,139,250,${alpha})` : `rgba(109,40,217,${alpha})`),
     }),
     [dark]
