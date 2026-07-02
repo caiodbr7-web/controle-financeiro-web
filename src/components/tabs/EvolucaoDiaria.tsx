@@ -98,7 +98,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
     <div>
       <Panel
         title="Gasto acumulado ao longo do mês"
-        sub="(por competência · dia a dia pela data da compra · só meses completos)"
+        sub="(por competência · dia a dia pela data da compra · parcelas de meses anteriores no dia 1 · só meses completos)"
         right={
           <div className="flex items-center gap-2 flex-wrap">
             <Seg size="sm" value={mesesSel} onChange={setMesesSel} options={MESES_OPTS} />
@@ -135,6 +135,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
         <div className="text-muted text-[12.5px] mt-4 leading-relaxed">
           A <b className="text-amber">linha laranja grossa</b> é a <b>média dos últimos 3 meses completos</b>, dia a dia — onde você deveria estar.
           As linhas roxas são os meses completos (mais fortes = mais recentes). Meses parciais (mês atual e faturas por vir) ficam de fora.
+          Parcelas e compras de meses anteriores contam no dia 1 — por isso as curvas já nascem num platô, o pedaço do mês que já estava comprometido.
         </div>
       </Panel>
 

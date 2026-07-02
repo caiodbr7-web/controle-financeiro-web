@@ -165,6 +165,22 @@ function buildLancamentos(): Lancamento[] {
     rows.push(novo(y, m, 10, "Conta Itau", "Itau", "Pagamento Fatura Nubank", "Transferencia/Pagamento", -money(1800, 3200), null, { interna: true, subtipo: "Pagamento de fatura" }));
   }
 
+  // parcelamentos no cartão — cada parcela cai na competência do próprio mês,
+  // mas repete a DATA ORIGINAL da compra ("regime colapsado") e traz o sufixo
+  // "N/M" na descrição. É daqui que nasce o platô do dia 1 na curva diária
+  // (Início/Diário): valor já comprometido antes de o mês abrir.
+  // "Notebook Dell" casa com o plano "Notebook novo" (10× de 583,20).
+  const NTB = ymBack(3);
+  for (let i = 0; i <= 3; i++) {
+    const { y, m } = ymBack(3 - i);
+    rows.push({ ...novo(y, m, 14, "Cartao Nubank", "Nubank", `Notebook Dell ${i + 1}/10`, "Gasto", -583.2, "Compras"), data_mov: dd(14, NTB.m) });
+  }
+  const PAS = ymBack(9);
+  for (let i = 0; i <= 9; i++) {
+    const { y, m } = ymBack(9 - i);
+    rows.push({ ...novo(y, m, 8, "Cartao Nubank", "Nubank", `Latam Passagens ${i + 1}/12`, "Gasto", -420.5, "Viagem"), data_mov: dd(8, PAS.m) });
+  }
+
   return rows;
 }
 

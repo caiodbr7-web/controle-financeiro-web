@@ -188,6 +188,38 @@ export function diaDoMov(d: Lancamento): number {
   return dia >= 1 && dia <= 31 ? dia : 1;
 }
 
+// ---------- parcelas / compras de meses anteriores (platô do dia 1) ----------
+// Detecta a linha cuja COMPRA aconteceu em mês ANTERIOR ao da competência — a
+// parcela de uma compra antiga, ou a compra do fim do ciclo passado que só caiu
+// na fatura deste mês. Esse valor já estava comprometido quando o mês abriu,
+// então a curva diária o conta desde o dia 1. Dois sinais, um por regime de
+// datação dos bancos (docs/fonte-unica-lancamentos.md):
+//  (a) data real da compra em mês < competência — base PDF curada e bancos que
+//      datam toda parcela na data ORIGINAL da compra ("regime colapsado");
+//  (b) sufixo "NN/MM" com NN >= 2 na descrição de linha de CARTÃO — bancos que
+//      datam cada parcela dentro do próprio ciclo ("regime espalhado"); é a
+//      mesma regra do SQL de tradução que espalha a competência das parcelas.
+const RE_PARCELA_FIM = /(?:^|\D)(\d{1,2})\s*\/\s*(\d{1,2})\s*$/;
+export function ehParcelaAnterior(d: Lancamento): boolean {
+  const r = dvDataReal(d);
+  if (r && r.k < mesComp(d)) return true;
+  if (String(d.origem || "").startsWith("Cartao")) {
+    const m = String(d.descricao || "").match(RE_PARCELA_FIM);
+    if (m && +m[1] >= 2 && +m[1] <= +m[2]) return true;
+  }
+  return false;
+}
+
+// dia da linha no eixo diário da competência: parcela/compra de mês anterior
+// conta desde o dia 1 (o platô já comprometido ao abrir o mês); o resto entra no
+// dia da compra, limitado aos dias do mês da competência (um dia 31 numa
+// competência de 30 dias não pode cair fora da curva).
+export function diaNaComp(d: Lancamento): number {
+  if (ehParcelaAnterior(d)) return 1;
+  const nd = dvDiasNoMes(mesComp(d));
+  return nd ? Math.min(diaDoMov(d), nd) : diaDoMov(d);
+}
+
 export function mvOrigemOk(origem: string, modo: Modo): boolean {
   const o = String(origem || "");
   if (modo === "cartao") return o.startsWith("Cartao");
@@ -217,7 +249,8 @@ export function mvLimiteParcial(allDados: Lancamento[], modo: Modo): string {
 
 // série diária (mapa mês -> array[31] de gasto por dia), respeitando o modo.
 // EIXO DO MÊS = competência (cada parcela cai no mês da fatura/extrato); o DIA
-// (eixo x dentro do mês) vem da data real do movimento — sem data válida, dia 1.
+// (eixo x dentro do mês) vem da data real do movimento — sem data válida, dia 1;
+// parcelas/compras de meses anteriores contam desde o dia 1 (ver diaNaComp).
 export function dvSeries(dados: Lancamento[], months: string[], modo: Modo) {
   const map: Record<string, number[]> = {};
   for (const d of dados) {
@@ -226,7 +259,7 @@ export function dvSeries(dados: Lancamento[], months: string[], modo: Modo) {
     if (!mvOrigemOk(d.origem, modo)) continue;
     const k = mesComp(d);
     if (!/^\d{4}-\d{2}$/.test(k)) continue;
-    (map[k] = map[k] || new Array(31).fill(0))[diaDoMov(d) - 1] += g;
+    (map[k] = map[k] || new Array(31).fill(0))[diaNaComp(d) - 1] += g;
   }
   const first = months.length ? String(months[0]).slice(0, 7) : "0000-00";
   return { keys: Object.keys(map).filter((k) => k >= first).sort(), map };

@@ -49,7 +49,7 @@ unificar tudo em `competencia`.
 | # | Decisão | Escolha |
 |---|---------|---------|
 | 1 | Regras SQL | **Recuperar e versionar** a função atual, e estender a partir dela. |
-| 2 | Eixo do mês | **Tudo por `competencia`.** Data real só para a curva diária dentro do mês. |
+| 2 | Eixo do mês | **Tudo por `competencia`.** Data real só para a curva diária dentro do mês; parcelas/compras de **meses anteriores** entram no **dia 1** da competência — o "platô" já comprometido (`ehParcelaAnterior`/`diaNaComp` em `src/lib/finance.ts`). |
 | 3 | Modelo de dados | **Novas classes + flags de ligação** (colunas em `lancamentos`). |
 | 4 | Detecção | **Automático** (categoria Pluggy + casamento de pernas) **+ correção manual** na aba Lançamentos. |
 
