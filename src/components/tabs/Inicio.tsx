@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip } from "recharts";
 import type { Aba, Lancamento } from "../../types";
 import { Panel, BarRow, Select, Seg } from "../ui";
@@ -22,8 +22,8 @@ interface Props {
 
 // valor grande da coluna da direita
 function BigVal({
-  label, value, sub, accent = "", dot, onClick,
-}: { label: string; value: string; sub?: string; accent?: string; dot?: string; onClick?: () => void }) {
+  label, value, sub, extra, accent = "", dot, onClick,
+}: { label: string; value: string; sub?: string; extra?: ReactNode; accent?: string; dot?: string; onClick?: () => void }) {
   const Tag: any = onClick ? "button" : "div";
   return (
     <Tag
@@ -37,6 +37,7 @@ function BigVal({
       </div>
       <div className={`text-[25px] sm:text-[29px] font-semibold tracking-tight tabular-nums mt-[3px] leading-none ${accent}`}>{value}</div>
       {sub && <div className="text-[11.5px] text-muted mt-[3px]">{sub}</div>}
+      {extra}
     </Tag>
   );
 }
@@ -68,12 +69,12 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   // Série diária por COMPETÊNCIA (mês da fatura/extrato), não pela data da compra.
   // Assim cada parcela conta no mês em que cai na fatura (sofá 12x = 1 parcela/mês),
   // e o total do mês bate com a fatura + extrato — cartão e conta juntos.
-  // O dia (eixo x) vem da data_mov; sem data válida, cai no dia 1. Parcelas e
-  // compras de MESES ANTERIORES já estavam comprometidas quando o mês abriu,
-  // então contam desde o dia 1 — é o "platô" do início da curva (parc/parcRows
-  // guardam esse pedaço por mês, p/ a banda do gráfico e o detalhamento).
+  // Duas partes por mês: `novo` = compras do próprio mês, dia a dia pela data da
+  // compra (sem data válida, dia 1); `parc` = parcelas/compras de MESES ANTERIORES,
+  // que já estavam comprometidas quando o mês abriu e contam desde o dia 1 — é o
+  // "platô" da curva. O total do mês = novo acumulado + parc (empilhados no gráfico).
   const compSeries = useMemo(() => {
-    const map: Record<string, number[]> = {};
+    const novo: Record<string, number[]> = {};
     const parc: Record<string, number> = {};
     const parcRows: Record<string, Lancamento[]> = {};
     for (const d of dados) {
@@ -81,20 +82,20 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
       if (!g) continue;
       const k = mesComp(d);
       if (!/^\d{4}-\d{2}$/.test(k)) continue;
-      const ant = ehParcelaAnterior(d);
-      const dia = ant ? 1 : Math.min(diaDoMov(d), dvDiasNoMes(k));
-      (map[k] = map[k] || new Array(31).fill(0))[dia - 1] += g;
-      if (ant) {
+      if (ehParcelaAnterior(d)) {
         parc[k] = (parc[k] || 0) + g;
         (parcRows[k] = parcRows[k] || []).push(d);
+      } else {
+        const dia = Math.min(diaDoMov(d), dvDiasNoMes(k));
+        (novo[k] = novo[k] || new Array(31).fill(0))[dia - 1] += g;
       }
     }
-    return { map, parc, parcRows };
+    return { novo, parc, parcRows };
   }, [dados]);
 
   // meses disponíveis para escolher (por competência) + o mês civil atual
   const mesesOpc = useMemo(() => {
-    const ks = new Set(Object.keys(compSeries.map));
+    const ks = new Set([...Object.keys(compSeries.novo), ...Object.keys(compSeries.parc)]);
     ks.add(mesAtual);
     return [...ks].filter((k) => k <= mesAtual).sort().reverse();
   }, [compSeries, mesAtual]);
@@ -108,12 +109,19 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   /* ---------- gasto do mês selecionado vs média da janela ---------- */
   const calc = useMemo(() => {
     if (!selKey) return null;
-    const map = compSeries.map;
+    const { novo, parc } = compSeries;
+    const r2 = (v: number) => Math.round(v * 100) / 100;
 
-    const cum = (k: string) => {
+    // acumulado das compras do próprio mês (sem o platô)
+    const cumNovo = (k: string) => {
       const nd = dvDiasNoMes(k); const out: number[] = []; let s = 0;
-      for (let j = 0; j < nd; j++) { s += map[k]?.[j] || 0; out.push(Math.round(s * 100) / 100); }
+      for (let j = 0; j < nd; j++) { s += novo[k]?.[j] || 0; out.push(r2(s)); }
       return out;
+    };
+    // acumulado TOTAL do mês: compras do mês + platô (parcelas desde o dia 1)
+    const cum = (k: string) => {
+      const p = parc[k] || 0;
+      return cumNovo(k).map((v) => r2(v + p));
     };
 
     const nd = dvDiasNoMes(selKey);
@@ -124,38 +132,44 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
     const comparavel = completo || isAtual;
 
     // benchmark: média acumulada dos N meses fechados ANTERIORES ao selecionado
-    const base = Object.keys(map).filter((k) => k < selKey).sort().slice(-janela);
+    const keysAll = new Set([...Object.keys(novo), ...Object.keys(parc)]);
+    const base = [...keysAll].filter((k) => k < selKey).sort().slice(-janela);
     const bench: (number | null)[] = [];
     for (let j = 0; j < 31; j++) {
       let s = 0, c = 0;
       base.forEach((k) => { const a = cum(k); const v = j < a.length ? a[j] : a[a.length - 1]; if (v != null) { s += v; c++; } });
-      bench.push(c ? Math.round((s / c) * 100) / 100 : null);
+      bench.push(c ? r2(s / c) : null);
     }
     let benchFim = 0;
     for (let j = nd - 1; j >= 0; j--) if (bench[j] != null) { benchFim = bench[j] as number; break; }
     const benchAtRef = bench[refDay - 1]; // esperado no mesmo ponto do mês
 
-    const selArr = cum(selKey);
-    const gastoAtual = selArr[refDay - 1] || 0;
-    const delta = benchAtRef != null ? gastoAtual - benchAtRef : null;
-
     // platô: parcelas/compras de meses anteriores já comprometidas no dia 1.
     // Banda constante no mês inteiro — mesmo além de hoje, o piso já é conhecido.
-    const parcSel = Math.round((compSeries.parc[selKey] || 0) * 100) / 100;
+    const parcSel = r2(parc[selKey] || 0);
+    const novoArr = cumNovo(selKey);
+    const selArr = cum(selKey);
+    const gastoAtual = selArr[refDay - 1] || 0;
+    const novoAtual = r2(novoArr[refDay - 1] || 0); // só as compras do próprio mês
+    const delta = benchAtRef != null ? gastoAtual - benchAtRef : null;
 
     const serieNome = dvLabel(selKey);
     const benchNome = `Média ${janela}m`;
     const parcNome = "Parcelas de meses anteriores";
+    // com platô, as duas áreas EMPILHAM: a curva do mês nasce no topo do platô e
+    // o topo da pilha é o total gasto (bate com o "Gasto atual").
+    const empilhado = parcSel > 0;
     const chart = Array.from({ length: nd }, (_, i) => ({
       dia: i + 1,
-      [serieNome]: isAtual && i + 1 > refDay ? null : selArr[i],
+      [serieNome]: isAtual && i + 1 > refDay ? null : (empilhado ? novoArr[i] : selArr[i]),
       [benchNome]: bench[i],
-      ...(parcSel > 0 ? { [parcNome]: parcSel } : {}),
+      // série invisível só p/ o tooltip fechar a conta: platô + mês = total
+      ...(empilhado ? { [parcNome]: parcSel, "Total gasto": isAtual && i + 1 > refDay ? null : selArr[i] } : {}),
     }));
 
     return {
-      selKey, isAtual, completo, comparavel, nd, refDay, gastoAtual, benchAtRef: benchAtRef ?? null, benchFim,
-      delta, chart, serieNome, benchNome, parcNome, parcSel, temBench: base.length > 0, nBase: base.length,
+      selKey, isAtual, completo, comparavel, nd, refDay, gastoAtual, novoAtual, benchAtRef: benchAtRef ?? null, benchFim,
+      delta, chart, serieNome, benchNome, parcNome, parcSel, empilhado, temBench: base.length > 0, nBase: base.length,
     };
   }, [compSeries, selKey, janela, mesAtual, hoje]);
 
@@ -311,9 +325,12 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                 <YAxis hide domain={[0, "auto"]} />
                 <Tooltip content={<ChartTip labelPrefix="Dia " />} />
                 <Line type="monotone" dataKey={calc.benchNome} stroke={cc.media} strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls isAnimationActive={false} />
-                <Area type="monotone" dataKey={calc.serieNome} stroke={roxo} strokeWidth={2.5} fill="url(#heroGrad)" dot={false} connectNulls={false} isAnimationActive={false} />
-                {calc.parcSel > 0 && (
-                  <Area type="monotone" dataKey={calc.parcNome} stroke={cc.parcela} strokeWidth={1.5} fill={cc.parcela} fillOpacity={0.13} dot={false} isAnimationActive={false} />
+                {calc.empilhado && (
+                  <Area type="monotone" dataKey={calc.parcNome} stackId="gasto" stroke={cc.parcela} strokeWidth={1.5} fill={cc.parcela} fillOpacity={0.13} dot={false} isAnimationActive={false} />
+                )}
+                <Area type="monotone" dataKey={calc.serieNome} stackId="gasto" stroke={roxo} strokeWidth={2.5} fill="url(#heroGrad)" dot={false} connectNulls={false} isAnimationActive={false} />
+                {calc.empilhado && (
+                  <Line type="monotone" dataKey="Total gasto" stroke="transparent" dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
                 )}
               </ComposedChart>
             </ResponsiveContainer>
@@ -359,8 +376,23 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             <BigVal
               label={`Gasto atual · ${dvLabel(calc.selKey)}`}
               value={BRL0(calc.gastoAtual)}
-              sub={(calc.isAtual ? `até hoje · dia ${calc.refDay}/${calc.nd}` : "fatura + extrato do mês")
-                + (calc.parcSel > 0 ? ` · ${BRL0(calc.parcSel)} de meses anteriores` : "")}
+              sub={calc.isAtual ? `até hoje · dia ${calc.refDay}/${calc.nd}` : "fatura + extrato do mês"}
+              extra={calc.empilhado ? (
+                <div className="flex flex-wrap items-center gap-x-[7px] gap-y-[2px] text-[11.5px] text-muted mt-[5px] tabular-nums">
+                  <span className="inline-flex items-center gap-[5px]">
+                    <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: roxo }} />
+                    {/* parte "do mês" derivada dos valores já arredondados p/ a soma fechar */}
+                    {BRL0(Math.round(calc.gastoAtual) - Math.round(calc.parcSel))} gasto no mês
+                  </span>
+                  <span aria-hidden>+</span>
+                  <span className="inline-flex items-center gap-[5px]">
+                    <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: cc.parcela }} />
+                    {BRL0(calc.parcSel)} parcelas
+                  </span>
+                  <span aria-hidden>=</span>
+                  <b className="font-semibold">{BRL0(calc.gastoAtual)}</b>
+                </div>
+              ) : undefined}
               dot={roxo}
             />
             <BigVal
