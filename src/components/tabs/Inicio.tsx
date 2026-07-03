@@ -78,6 +78,9 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
     const cred: Record<string, number[]> = {};    // estornos/créditos do mês (magnitude, g < 0)
     const parc: Record<string, number> = {};
     const parcRows: Record<string, Lancamento[]> = {};
+    // lançamentos do próprio mês por dia (p/ o detalhamento ao clicar num dia);
+    // parcelas de meses anteriores ficam de fora — têm o próprio botão de detalhe.
+    const diaRows: Record<string, Lancamento[][]> = {};
     for (const d of dados) {
       const g = dvGasto(d); // já exclui interna/aporte e desconta estorno (lancClasses)
       if (!g) continue;
@@ -92,9 +95,10 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
         // desce abaixo do platô); estornos entram como termo próprio no total.
         const alvo = g > 0 ? compras : cred;
         (alvo[k] = alvo[k] || new Array(31).fill(0))[dia - 1] += Math.abs(g);
+        (diaRows[k] = diaRows[k] || Array.from({ length: 31 }, () => []))[dia - 1].push(d);
       }
     }
-    return { compras, cred, parc, parcRows };
+    return { compras, cred, parc, parcRows, diaRows };
   }, [dados]);
 
   // meses disponíveis para escolher (por competência) + o mês civil atual
@@ -297,6 +301,17 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   const temPend = pend.classGrupos > 0 || (orc?.pend || 0) > 0 || pend.arqFaltam > 0;
   const roxo = cc.roxoLinha("1");
 
+  // clique num dia do gráfico → detalhamento dos lançamentos daquele dia.
+  // No mês corrente, só os dias já decorridos (até hoje) têm o que mostrar.
+  const abrirDia = (dia?: number | string | null) => {
+    const n = typeof dia === "string" ? parseInt(dia, 10) : dia;
+    if (!n || n < 1 || n > calc.nd) return;
+    if (calc.isAtual && n > calc.refDay) return;
+    const rows = compSeries.diaRows[calc.selKey]?.[n - 1] || [];
+    if (!rows.length) return;
+    openModal(`Lançamentos · dia ${n} · ${dvLabel(calc.selKey)}`, rows);
+  };
+
   // "ainda previsto" — placeholder provisório (cálculo final a definir):
   // o que falta para fechar o budget do mês (ou, sem budget, para alcançar a média).
   const aindaPrev = budget != null ? Math.max(0, budget - calc.gastoAtual)
@@ -322,9 +337,13 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             </div>
           </div>
 
-          <div className="h-[200px] sm:h-[230px] mt-2 -ml-1 min-w-0 flex-1">
+          <div className="h-[200px] sm:h-[230px] mt-2 -ml-1 min-w-0 flex-1 cursor-pointer">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={calc.chart} margin={{ top: 6, right: 4, left: 4, bottom: 0 }}>
+              <ComposedChart
+                data={calc.chart}
+                margin={{ top: 6, right: 4, left: 4, bottom: 0 }}
+                onClick={(s: any) => abrirDia(s?.activeLabel ?? (s?.activeTooltipIndex != null ? s.activeTooltipIndex + 1 : null))}
+              >
                 <defs>
                   <linearGradient id="heroGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={roxo} stopOpacity={0.28} />
@@ -388,7 +407,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             )}
           </div>
           <div className="text-[11.5px] text-muted mt-2">
-            Pela competência (fatura/extrato do mês), cartão + contas. Parcelas e compras de meses anteriores já contam desde o dia 1º — o platô no início da curva.{!calc.completo ? " Mês ainda em curso." : ""}
+            Pela competência (fatura/extrato do mês), cartão + contas. Parcelas e compras de meses anteriores já contam desde o dia 1º — o platô no início da curva.{!calc.completo ? " Mês ainda em curso." : ""} <span className="text-accent">Clique num dia para ver os lançamentos.</span>
           </div>
         </Panel>
 
