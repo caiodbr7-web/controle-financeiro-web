@@ -5,6 +5,7 @@ import { useLancamentos } from "./hooks/useLancamentos";
 import { useTheme, type ThemePref } from "./lib/theme";
 import { ehGasto } from "./lib/finance";
 import { Login } from "./components/Login";
+import { Logo } from "./components/Logo";
 import { Modal, type ModalData } from "./components/Modal";
 import { CommandPalette, type Cmd } from "./components/CommandPalette";
 import { SkInicio, SkTabela } from "./components/Skeleton";
@@ -176,9 +177,7 @@ export default function App() {
       <header className="sticky top-0 z-20 bg-bg/80 backdrop-blur-[14px] border-b border-line">
         <div className="max-w-[1380px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-[10px] pt-[7px]">
-            <div className="w-[30px] h-[30px] rounded-[9px] bg-accent text-white font-display text-[16px] font-extrabold flex items-center justify-center select-none shrink-0">
-              C
-            </div>
+            <Logo size={30} radius={9} className="shrink-0 select-none" />
             <h1 className="font-display text-[15px] font-bold tracking-tight whitespace-nowrap hidden min-[420px]:block">
               Controle Financeiro
             </h1>
