@@ -74,7 +74,8 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   // que já estavam comprometidas quando o mês abriu e contam desde o dia 1 — é o
   // "platô" da curva. O total do mês = novo acumulado + parc (empilhados no gráfico).
   const compSeries = useMemo(() => {
-    const novo: Record<string, number[]> = {};
+    const compras: Record<string, number[]> = {}; // compras do próprio mês (g > 0)
+    const cred: Record<string, number[]> = {};    // estornos/créditos do mês (magnitude, g < 0)
     const parc: Record<string, number> = {};
     const parcRows: Record<string, Lancamento[]> = {};
     for (const d of dados) {
@@ -87,15 +88,18 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
         (parcRows[k] = parcRows[k] || []).push(d);
       } else {
         const dia = Math.min(diaDoMov(d), dvDiasNoMes(k));
-        (novo[k] = novo[k] || new Array(31).fill(0))[dia - 1] += g;
+        // separa compra de estorno: a curva roxa empilha SÓ as compras (nunca
+        // desce abaixo do platô); estornos entram como termo próprio no total.
+        const alvo = g > 0 ? compras : cred;
+        (alvo[k] = alvo[k] || new Array(31).fill(0))[dia - 1] += Math.abs(g);
       }
     }
-    return { novo, parc, parcRows };
+    return { compras, cred, parc, parcRows };
   }, [dados]);
 
   // meses disponíveis para escolher (por competência) + o mês civil atual
   const mesesOpc = useMemo(() => {
-    const ks = new Set([...Object.keys(compSeries.novo), ...Object.keys(compSeries.parc)]);
+    const ks = new Set([...Object.keys(compSeries.compras), ...Object.keys(compSeries.cred), ...Object.keys(compSeries.parc)]);
     ks.add(mesAtual);
     return [...ks].filter((k) => k <= mesAtual).sort().reverse();
   }, [compSeries, mesAtual]);
@@ -109,19 +113,19 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   /* ---------- gasto do mês selecionado vs média da janela ---------- */
   const calc = useMemo(() => {
     if (!selKey) return null;
-    const { novo, parc } = compSeries;
+    const { compras, cred, parc } = compSeries;
     const r2 = (v: number) => Math.round(v * 100) / 100;
 
-    // acumulado das compras do próprio mês (sem o platô)
-    const cumNovo = (k: string) => {
+    const cumDe = (m: Record<string, number[]>, k: string) => {
       const nd = dvDiasNoMes(k); const out: number[] = []; let s = 0;
-      for (let j = 0; j < nd; j++) { s += novo[k]?.[j] || 0; out.push(r2(s)); }
+      for (let j = 0; j < nd; j++) { s += m[k]?.[j] || 0; out.push(r2(s)); }
       return out;
     };
-    // acumulado TOTAL do mês: compras do mês + platô (parcelas desde o dia 1)
+    // acumulado TOTAL do mês: platô (desde o dia 1) + compras − estornos
     const cum = (k: string) => {
       const p = parc[k] || 0;
-      return cumNovo(k).map((v) => r2(v + p));
+      const cr = cumDe(cred, k);
+      return cumDe(compras, k).map((v, j) => r2(v - cr[j] + p));
     };
 
     const nd = dvDiasNoMes(selKey);
@@ -132,7 +136,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
     const comparavel = completo || isAtual;
 
     // benchmark: média acumulada dos N meses fechados ANTERIORES ao selecionado
-    const keysAll = new Set([...Object.keys(novo), ...Object.keys(parc)]);
+    const keysAll = new Set([...Object.keys(compras), ...Object.keys(cred), ...Object.keys(parc)]);
     const base = [...keysAll].filter((k) => k < selKey).sort().slice(-janela);
     const bench: (number | null)[] = [];
     for (let j = 0; j < 31; j++) {
@@ -147,29 +151,35 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
     // platô: parcelas/compras de meses anteriores já comprometidas no dia 1.
     // Banda constante no mês inteiro — mesmo além de hoje, o piso já é conhecido.
     const parcSel = r2(parc[selKey] || 0);
-    const novoArr = cumNovo(selKey);
+    const comprasArr = cumDe(compras, selKey);
+    const credArr = cumDe(cred, selKey);
     const selArr = cum(selKey);
     const gastoAtual = selArr[refDay - 1] || 0;
-    const novoAtual = r2(novoArr[refDay - 1] || 0); // só as compras do próprio mês
+    const comprasAtual = r2(comprasArr[refDay - 1] || 0); // compras do próprio mês
+    const credAtual = r2(credArr[refDay - 1] || 0);       // estornos/créditos do mês
     const delta = benchAtRef != null ? gastoAtual - benchAtRef : null;
 
     const serieNome = dvLabel(selKey);
     const benchNome = `Média ${janela}m`;
     const parcNome = "Parcelas de meses anteriores";
-    // com platô, as duas áreas EMPILHAM: a curva do mês nasce no topo do platô e
-    // o topo da pilha é o total gasto (bate com o "Gasto atual").
+    // com platô, as áreas EMPILHAM: a curva roxa (só compras, nunca negativa)
+    // nasce no topo do platô e só sobe. Estornos entram como termo próprio: o
+    // total líquido (platô + compras − estornos) vira a linha "Total gasto" —
+    // visível quando há estorno no mês (pode ficar abaixo do platô), invisível
+    // (só tooltip) quando não há, já que coincidiria com o topo da pilha.
     const empilhado = parcSel > 0;
+    const temCred = credArr[refDay - 1] > 0; // estornos já ocorridos até o ponto de referência
     const chart = Array.from({ length: nd }, (_, i) => ({
       dia: i + 1,
-      [serieNome]: isAtual && i + 1 > refDay ? null : (empilhado ? novoArr[i] : selArr[i]),
+      [serieNome]: isAtual && i + 1 > refDay ? null : (empilhado ? comprasArr[i] : selArr[i]),
       [benchNome]: bench[i],
-      // série invisível só p/ o tooltip fechar a conta: platô + mês = total
       ...(empilhado ? { [parcNome]: parcSel, "Total gasto": isAtual && i + 1 > refDay ? null : selArr[i] } : {}),
+      ...(empilhado && temCred ? { "Estornos do mês": isAtual && i + 1 > refDay ? null : -credArr[i] } : {}),
     }));
 
     return {
-      selKey, isAtual, completo, comparavel, nd, refDay, gastoAtual, novoAtual, benchAtRef: benchAtRef ?? null, benchFim,
-      delta, chart, serieNome, benchNome, parcNome, parcSel, empilhado, temBench: base.length > 0, nBase: base.length,
+      selKey, isAtual, completo, comparavel, nd, refDay, gastoAtual, comprasAtual, credAtual, benchAtRef: benchAtRef ?? null, benchFim,
+      delta, chart, serieNome, benchNome, parcNome, parcSel, empilhado, temCred, temBench: base.length > 0, nBase: base.length,
     };
   }, [compSeries, selKey, janela, mesAtual, hoje]);
 
@@ -330,7 +340,14 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                 )}
                 <Area type="monotone" dataKey={calc.serieNome} stackId="gasto" stroke={roxo} strokeWidth={2.5} fill="url(#heroGrad)" dot={false} connectNulls={false} isAnimationActive={false} />
                 {calc.empilhado && (
-                  <Line type="monotone" dataKey="Total gasto" stroke="transparent" dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                  <Line
+                    type="monotone" dataKey="Total gasto"
+                    stroke={calc.temCred ? roxo : "transparent"} strokeWidth={1.5} strokeDasharray="5 3"
+                    dot={false} activeDot={calc.temCred} connectNulls={false} isAnimationActive={false}
+                  />
+                )}
+                {calc.empilhado && calc.temCred && (
+                  <Line type="monotone" dataKey="Estornos do mês" stroke="transparent" dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
                 )}
               </ComposedChart>
             </ResponsiveContainer>
@@ -351,6 +368,11 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                 <span className="w-[10px] h-[3px] rounded-full" style={{ background: cc.parcela }} />
                 Parcelas de meses anteriores · {BRL0(calc.parcSel)} ›
               </button>
+            )}
+            {calc.empilhado && calc.temCred && (
+              <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
+                <span className="w-[10px] h-0 border-t-2 border-dashed" style={{ borderColor: roxo }} />Total (após estornos)
+              </span>
             )}
             {calc.delta != null && calc.comparavel && (
               <span className={`inline-flex items-center gap-1 rounded-full px-[10px] py-[3px] text-[12px] font-semibold ${
@@ -381,14 +403,21 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                 <div className="flex flex-wrap items-center gap-x-[7px] gap-y-[2px] text-[11.5px] text-muted mt-[5px] tabular-nums">
                   <span className="inline-flex items-center gap-[5px]">
                     <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: roxo }} />
-                    {/* parte "do mês" derivada dos valores já arredondados p/ a soma fechar */}
-                    {BRL0(Math.round(calc.gastoAtual) - Math.round(calc.parcSel))} gasto no mês
+                    {/* sem estorno, a parte "compras" deriva dos arredondados p/ a soma fechar */}
+                    {BRL0(calc.credAtual > 0 ? Math.round(calc.comprasAtual) : Math.round(calc.gastoAtual) - Math.round(calc.parcSel))} compras do mês
                   </span>
                   <span aria-hidden>+</span>
                   <span className="inline-flex items-center gap-[5px]">
                     <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: cc.parcela }} />
                     {BRL0(calc.parcSel)} parcelas
                   </span>
+                  {calc.credAtual > 0 && (
+                    <>
+                      <span aria-hidden>−</span>
+                      {/* estornos derivam dos termos já arredondados p/ a soma fechar */}
+                      <span>{BRL0(Math.round(calc.comprasAtual) + Math.round(calc.parcSel) - Math.round(calc.gastoAtual))} estornos</span>
+                    </>
+                  )}
                   <span aria-hidden>=</span>
                   <b className="font-semibold">{BRL0(calc.gastoAtual)}</b>
                 </div>
