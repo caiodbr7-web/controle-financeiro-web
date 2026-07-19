@@ -17,7 +17,7 @@ type Row = Record<string, unknown>;
 interface Result<T = unknown> { data: T; error: { message: string } | null; count?: number | null }
 
 // tabelas cujo id é numérico autoincremento (geramos id no insert quando ausente)
-const TABELAS_ID_NUM = new Set(["lancamentos", "categorias", "planos"]);
+const TABELAS_ID_NUM = new Set(["lancamentos", "categorias", "subcategorias", "planos"]);
 
 function cmp(a: unknown, b: unknown): number {
   if (a == null && b == null) return 0;
