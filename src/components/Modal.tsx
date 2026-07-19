@@ -68,7 +68,7 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
           <button
             onClick={onClose}
             aria-label="Fechar"
-            className="w-[30px] h-[30px] rounded-full bg-fill text-muted hover:text-txt border-0 cursor-pointer flex items-center justify-center text-[13px] shrink-0 transition-colors"
+            className="tap w-[30px] h-[30px] rounded-full bg-fill text-muted hover:text-txt border-0 cursor-pointer flex items-center justify-center text-[13px] shrink-0 transition-colors"
           >
             ✕
           </button>

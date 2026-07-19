@@ -127,11 +127,13 @@ export function MatrizMensal({ dados, matriz, openModal }: Props) {
 
   return (
     <div className="overflow-auto scroll-thin max-h-[calc(100vh-180px)]">
-      <table className="tbl">
+      {/* min-w garante rolagem horizontal limpa (células não “esmagam”) no mobile;
+          a 1ª coluna (categoria) fica fixa à esquerda ao rolar. */}
+      <table className="tbl min-w-[680px]">
         <thead>
           <tr>
             <th
-              className={`cursor-pointer select-none hover:text-txt transition-colors sticky top-0 z-20 bg-card ${sort.col === "label" ? "text-txt" : ""}`}
+              className={`cursor-pointer select-none hover:text-txt transition-colors sticky top-0 left-0 z-30 bg-card ${sort.col === "label" ? "text-txt" : ""}`}
               title="ordenar por nome"
               onClick={() => clicaCol("label")}
             >
@@ -200,7 +202,7 @@ function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, onDragStart, 
       {/* faixa de cabeçalho da seção */}
       <tr className="bg-fill">
         <td colSpan={nCols} className="font-semibold uppercase tracking-[0.04em] text-[12px] text-muted">
-          {sec.titulo}
+          <span className="sticky left-0 inline-block">{sec.titulo}</span>
         </td>
       </tr>
 
@@ -211,7 +213,7 @@ function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, onDragStart, 
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); onDrop(ln.key); }}
         >
-          <td>
+          <td className="sticky left-0 z-10 bg-card">
             <span className="inline-flex items-center gap-2 min-w-0">
               <span
                 draggable
@@ -243,7 +245,7 @@ function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, onDragStart, 
 
       {/* total da seção */}
       <tr className="font-semibold">
-        <td>{sec.totalLinha.label}</td>
+        <td className="sticky left-0 z-10 bg-card">{sec.totalLinha.label}</td>
         {meses.map((mk) => {
           const v = sec.totalLinha.valores[mk] || 0;
           return (
@@ -273,7 +275,7 @@ function LinhaSaldo({
   const vUltimo = saldo.valores[ultimoMes] || 0;
   return (
     <tr className="font-semibold border-t-2 border-line">
-      <td className={vUltimo >= 0 ? "text-green" : "text-red"}>{saldo.label}</td>
+      <td className={`sticky left-0 z-10 bg-card ${vUltimo >= 0 ? "text-green" : "text-red"}`}>{saldo.label}</td>
       {meses.map((mk) => {
         const v = saldo.valores[mk] || 0;
         return (
