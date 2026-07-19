@@ -83,11 +83,11 @@ const VAZIO = { tipo: "fixo" as TipoPlano, nome: "", categoria: "", valor: "", m
 
 // erro de coluna ainda não criada (migração do cartão não rodada)
 const faltaColunaCartao = (msg?: string) => /no_cartao|could not find|schema cache/i.test(msg || "");
-const MSG_MIGRACAO_CARTAO = 'Para usar o cartão de crédito, rode em Supabase → SQL Editor a migração db/migrations/2026-06-16-cartao-credito.sql (uma vez só).';
+const MSG_MIGRACAO_CARTAO = 'Para usar o cartão de crédito, aplique as migrações em supabase/migrations/ (aplicadas automaticamente no merge para main; ou rode o SQL do arquivo *_cartao_credito.sql no SQL Editor).';
 const faltaColunaConta = (msg?: string) => /eh_conta_total|could not find|schema cache/i.test(msg || "");
-const MSG_MIGRACAO_CONTA = 'Para orçar a conta variável, rode em Supabase → SQL Editor a migração db/migrations/2026-06-18-orcamento-conta.sql (uma vez só).';
+const MSG_MIGRACAO_CONTA = 'Para orçar a conta variável, aplique as migrações em supabase/migrations/ (aplicadas automaticamente no merge para main; ou rode o SQL do arquivo *_orcamento_conta.sql no SQL Editor).';
 const faltaColunaReceita = (msg?: string) => /eh_receita_total|could not find|schema cache/i.test(msg || "");
-const MSG_MIGRACAO_RECEITA = 'Para planejar a receita prevista, rode em Supabase → SQL Editor a migração db/migrations/2026-06-20-receita-prevista.sql (uma vez só).';
+const MSG_MIGRACAO_RECEITA = 'Para planejar a receita prevista, aplique as migrações em supabase/migrations/ (aplicadas automaticamente no merge para main; ou rode o SQL do arquivo *_receita_prevista.sql no SQL Editor).';
 
 const SQL_HINT = `-- planos: itens; plano_mensal: realizado/pago por mês
 create table if not exists public.planos (
@@ -736,7 +736,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       <Panel title="Quase lá — falta criar as tabelas" sub="passo único de configuração">
         <p className="text-[13.5px] leading-relaxed mb-3">
           Rode em <b>Supabase → SQL Editor → New query → Run</b> a migração{" "}
-          <code className="text-[12px] bg-fill px-1 py-[1px] rounded">db/migrations/2026-06-15-unificar-planejamento.sql</code>{" "}
+          <code className="text-[12px] bg-fill px-1 py-[1px] rounded">supabase/migrations/*_unificar_planejamento.sql</code>{" "}
           (traz seus dados de Orçamento). Em uma base nova, basta o SQL abaixo:
         </p>
         <div className="relative">

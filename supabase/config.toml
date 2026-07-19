@@ -1,0 +1,11 @@
+# Configuração do projeto para a Supabase CLI.
+# Usada pelo workflow .github/workflows/migrations.yml para aplicar,
+# via `supabase db push`, as migrações de supabase/migrations/ no banco.
+#
+# O project_id abaixo é apenas o nome local do projeto para a CLI — a
+# conexão real com o banco vem do secret SUPABASE_DB_URL no GitHub Actions.
+project_id = "controle-financeiro-web"
+
+[db]
+# Versão do Postgres do projeto no Supabase.
+major_version = 15

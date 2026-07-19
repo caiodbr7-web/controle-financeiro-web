@@ -393,11 +393,12 @@ export function Categorias({ reload }: Props) {
     return (
       <Panel title="Categorias">
         <div className="text-muted text-[13.5px] leading-relaxed">
-          Não foi possível carregar as categorias. Se esta é a primeira vez, rode as migrações{" "}
-          <code className="bg-fill px-[5px] py-[1px] rounded">db/migrations/2026-06-29-categorias.sql</code>{" "}
+          Não foi possível carregar as categorias. Se esta é a primeira vez, aplique as migrações em{" "}
+          <code className="bg-fill px-[5px] py-[1px] rounded">supabase/migrations/</code>{" "}
+          (aplicadas automaticamente no merge para <b>main</b>; os arquivos são{" "}
+          <code className="bg-fill px-[5px] py-[1px] rounded">*_categorias.sql</code>{" "}
           e{" "}
-          <code className="bg-fill px-[5px] py-[1px] rounded">db/migrations/2026-07-19-subcategorias.sql</code>{" "}
-          no Supabase e recarregue a página.
+          <code className="bg-fill px-[5px] py-[1px] rounded">*_subcategorias.sql</code>) e recarregue a página.
         </div>
       </Panel>
     );
