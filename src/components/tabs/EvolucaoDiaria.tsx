@@ -8,8 +8,13 @@ import { Panel, Kpi, Seg, Select } from "../ui";
 import { useChart, useTheme, ChartTip } from "../../lib/theme";
 import {
   BRL0, brlShort, dvLabel, dvGasto, mesComp, dvDiasNoMes, diaDoMov, ehParcelaAnterior,
-  mvSeriesMensal, mvOrigemOk, MODOS, deltaTxt,
+  catKey, mvSeriesMensal, mvOrigemOk, MODOS, deltaTxt,
 } from "../../lib/finance";
+
+// categorias tratadas como "gasto de casa fixo" — somadas numa faixa própria,
+// independente de terem caído no cartão ou em conta.
+const CASA_FIXO = new Set(["Moradia - Cotas Mensais", "Moradia - Aluguel + IPTU"]);
+const ehCasaFixo = (d: Lancamento) => CASA_FIXO.has(catKey(d));
 
 interface Props {
   dados: Lancamento[]; allDados: Lancamento[]; months: string[];
@@ -30,20 +35,23 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
   const mesAtual = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
 
   // cores do split da curva diária (bem separadas p/ o empilhamento)
-  const corCartao = dark ? "#a78bfa" : "#6d28d9";  // roxo
-  const corParc = cc.parcela;                       // ciano
-  const corConta = dark ? "#fb7185" : "#c2334a";    // rosa
+  const corParc = cc.parcela;                       // ciano — parcelamentos
+  const corCasa = dark ? "#34d399" : "#059669";     // verde — casa fixo
+  const corCartao = dark ? "#a78bfa" : "#6d28d9";   // roxo  — cartão (não casa)
+  const corGeral = dark ? "#fb7185" : "#c2334a";    // rosa  — gastos gerais (não casa)
 
-  /* ---------- primeiro gráfico: mês selecionado, quebrado em Cartão · Contas · Parcelas ---------- */
+  /* ---------- primeiro gráfico: mês selecionado, quebrado em 4 faixas ---------- */
   const [heroMes, setHeroMes] = useState("");
   const [janela, setJanela] = useState(3);
 
-  // séries diárias por COMPETÊNCIA, separando: compras do próprio mês no CARTÃO,
-  // compras do próprio mês em CONTA (Pix/boleto/débito) e PARCELAS/compras de
-  // meses anteriores (o platô já comprometido no dia 1). Estornos entram à parte.
+  // séries diárias por COMPETÊNCIA, separando as compras do PRÓPRIO mês em três
+  // faixas — CASA FIXO (Moradia · cotas/aluguel+IPTU, cartão ou conta), CARTÃO
+  // (não casa fixo) e GASTOS GERAIS (não casa fixo, em conta) — mais as
+  // PARCELAS/compras de meses anteriores (o platô do dia 1). Estornos à parte.
   const compSeries = useMemo(() => {
+    const casa: Record<string, number[]> = {};
     const cartao: Record<string, number[]> = {};
-    const conta: Record<string, number[]> = {};
+    const geral: Record<string, number[]> = {};
     const cred: Record<string, number[]> = {};
     const parc: Record<string, number> = {};
     const parcRows: Record<string, Lancamento[]> = {};
@@ -63,18 +71,19 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
       if (g < 0) {
         (cred[k] = cred[k] || new Array(31).fill(0))[dia - 1] += Math.abs(g);
       } else {
-        const ehCartao = String(d.origem || "").startsWith("Cartao");
-        const alvo = ehCartao ? cartao : conta;
+        const alvo = ehCasaFixo(d) ? casa
+          : String(d.origem || "").startsWith("Cartao") ? cartao : geral;
         (alvo[k] = alvo[k] || new Array(31).fill(0))[dia - 1] += g;
       }
     }
-    return { cartao, conta, cred, parc, parcRows, diaRows };
+    return { casa, cartao, geral, cred, parc, parcRows, diaRows };
   }, [dados]);
 
   const mesesOpc = useMemo(() => {
     const ks = new Set([
-      ...Object.keys(compSeries.cartao), ...Object.keys(compSeries.conta),
-      ...Object.keys(compSeries.cred), ...Object.keys(compSeries.parc),
+      ...Object.keys(compSeries.casa), ...Object.keys(compSeries.cartao),
+      ...Object.keys(compSeries.geral), ...Object.keys(compSeries.cred),
+      ...Object.keys(compSeries.parc),
     ]);
     ks.add(mesAtual);
     return [...ks].filter((k) => k <= mesAtual).sort().reverse();
@@ -87,18 +96,18 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
 
   const hero = useMemo(() => {
     if (!heroMes) return null;
-    const { cartao, conta, cred, parc } = compSeries;
+    const { casa, cartao, geral, cred, parc } = compSeries;
     const r2 = (v: number) => Math.round(v * 100) / 100;
     const cumDe = (m: Record<string, number[]>, k: string) => {
       const nd = dvDiasNoMes(k); const out: number[] = []; let s = 0;
       for (let j = 0; j < nd; j++) { s += m[k]?.[j] || 0; out.push(r2(s)); }
       return out;
     };
-    // total líquido de um mês num dia j: platô + cartão + conta − estornos
+    // total líquido de um mês num dia j: platô + casa fixo + cartão + geral − estornos
     const totCum = (k: string) => {
       const p = parc[k] || 0;
-      const ca = cumDe(cartao, k), co = cumDe(conta, k), cr = cumDe(cred, k);
-      return ca.map((_, j) => r2(p + ca[j] + co[j] - cr[j]));
+      const cf = cumDe(casa, k), ca = cumDe(cartao, k), ge = cumDe(geral, k), cr = cumDe(cred, k);
+      return ca.map((_, j) => r2(p + cf[j] + ca[j] + ge[j] - cr[j]));
     };
 
     const nd = dvDiasNoMes(heroMes);
@@ -109,7 +118,8 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
 
     // benchmark: média do total acumulado dos N meses ANTERIORES ao selecionado
     const keysAll = new Set([
-      ...Object.keys(cartao), ...Object.keys(conta), ...Object.keys(cred), ...Object.keys(parc),
+      ...Object.keys(casa), ...Object.keys(cartao), ...Object.keys(geral),
+      ...Object.keys(cred), ...Object.keys(parc),
     ]);
     const base = [...keysAll].filter((k) => k < heroMes).sort().slice(-janela);
     const bench: (number | null)[] = [];
@@ -123,42 +133,46 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
     const benchAtRef = bench[refDay - 1] ?? null;
 
     const parcSel = r2(parc[heroMes] || 0);
+    const casaArr = cumDe(casa, heroMes);
     const cartaoArr = cumDe(cartao, heroMes);
-    const contaArr = cumDe(conta, heroMes);
+    const geralArr = cumDe(geral, heroMes);
     const credArr = cumDe(cred, heroMes);
     const totArr = totCum(heroMes);
 
-    const cartaoNome = "Cartão";
-    const contaNome = "Contas (Pix, boleto, débito)";
-    const parcNome = "Parcelas de meses anteriores";
+    const parcNome = "Parcelamentos";
+    const casaNome = "Gastos casa fixo";
+    const cartaoNome = "Cartão (não casa fixo)";
+    const geralNome = "Gastos gerais (não casa fixo)";
     const benchNome = `Média ${janela}m`;
     const temCred = credArr[refDay - 1] > 0;
 
-    // empilha: Parcelas (base) + Cartão + Contas; estornos como termo separado.
-    // no mês atual, dias após hoje ficam nulos.
+    // empilha: Parcelamentos (base) + Casa fixo + Cartão + Gastos gerais;
+    // estornos como termo separado. no mês atual, dias após hoje ficam nulos.
     const chart = Array.from({ length: nd }, (_, i) => {
       const futuro = isAtual && i + 1 > refDay;
       return {
         dia: i + 1,
         [parcNome]: futuro ? null : parcSel,
+        [casaNome]: futuro ? null : casaArr[i],
         [cartaoNome]: futuro ? null : cartaoArr[i],
-        [contaNome]: futuro ? null : contaArr[i],
+        [geralNome]: futuro ? null : geralArr[i],
         [benchNome]: bench[i],
         "Total gasto": futuro ? null : totArr[i],
         ...(temCred ? { "Estornos do mês": futuro ? null : -credArr[i] } : {}),
       };
     });
 
+    const casaAtual = r2(casaArr[refDay - 1] || 0);
     const cartaoAtual = r2(cartaoArr[refDay - 1] || 0);
-    const contaAtual = r2(contaArr[refDay - 1] || 0);
+    const geralAtual = r2(geralArr[refDay - 1] || 0);
     const credAtual = r2(credArr[refDay - 1] || 0);
     const totAtual = r2(totArr[refDay - 1] || 0);
     const delta = benchAtRef != null ? r2(totAtual - benchAtRef) : null;
 
     return {
       heroMes, isAtual, completo, comparavel, nd, refDay, chart,
-      cartaoNome, contaNome, parcNome, benchNome, temCred,
-      parcSel, cartaoAtual, contaAtual, credAtual, totAtual,
+      parcNome, casaNome, cartaoNome, geralNome, benchNome, temCred,
+      parcSel, casaAtual, cartaoAtual, geralAtual, credAtual, totAtual,
       benchAtRef, benchFim, delta, temBench: base.length > 0,
     };
   }, [compSeries, heroMes, janela, mesAtual, hoje]);
@@ -195,16 +209,17 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
 
   const splitStats = [
     { t: "Gasto do mês", v: BRL0(hero.totAtual), s: hero.isAtual ? `até hoje · dia ${hero.refDay}/${hero.nd}` : "fatura + extrato do mês", c: "", dot: "" },
-    { t: "no cartão", v: BRL0(hero.cartaoAtual), s: "compras do próprio mês", c: "", dot: corCartao },
-    { t: "em conta", v: BRL0(hero.contaAtual), s: "Pix, boleto, débito", c: "", dot: corConta },
-    { t: "parcelas de antes", v: BRL0(hero.parcSel), s: "comprometido no dia 1", c: "", dot: corParc },
+    { t: "parcelamentos", v: BRL0(hero.parcSel), s: "comprometido no dia 1", c: "", dot: corParc },
+    { t: "casa fixo", v: BRL0(hero.casaAtual), s: "cotas + aluguel/IPTU", c: "", dot: corCasa },
+    { t: "cartão (não casa)", v: BRL0(hero.cartaoAtual), s: "compras do próprio mês", c: "", dot: corCartao },
+    { t: "gastos gerais", v: BRL0(hero.geralAtual), s: "não casa fixo · em conta", c: "", dot: corGeral },
   ];
 
   return (
     <div>
       <Panel
         title="Gasto acumulado ao longo do mês"
-        sub="(por competência · quebrado em cartão · contas · parcelas — os três somados = gasto do mês)"
+        sub="(por competência · quebrado em parcelamentos · casa fixo · cartão · gastos gerais — os quatro somados = gasto do mês)"
         right={
           <div className="flex items-center gap-2 flex-wrap">
             <Seg size="sm" value={String(janela)} onChange={(v) => setJanela(+v)} options={JANELAS} />
@@ -230,8 +245,9 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
                 <YAxis tick={cc.tickSm} tickFormatter={(v) => brlShort(v)} width={56} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTip labelPrefix="Dia " />} />
                 <Area type="monotone" dataKey={hero.parcNome} stackId="gasto" stroke={corParc} strokeWidth={1.4} fill={corParc} fillOpacity={0.16} dot={false} isAnimationActive={false} />
+                <Area type="monotone" dataKey={hero.casaNome} stackId="gasto" stroke={corCasa} strokeWidth={1.8} fill={corCasa} fillOpacity={0.18} dot={false} connectNulls={false} isAnimationActive={false} />
                 <Area type="monotone" dataKey={hero.cartaoNome} stackId="gasto" stroke={corCartao} strokeWidth={1.8} fill={corCartao} fillOpacity={0.18} dot={false} connectNulls={false} isAnimationActive={false} />
-                <Area type="monotone" dataKey={hero.contaNome} stackId="gasto" stroke={corConta} strokeWidth={1.8} fill={corConta} fillOpacity={0.18} dot={false} connectNulls={false} isAnimationActive={false} />
+                <Area type="monotone" dataKey={hero.geralNome} stackId="gasto" stroke={corGeral} strokeWidth={1.8} fill={corGeral} fillOpacity={0.18} dot={false} connectNulls={false} isAnimationActive={false} />
                 {hero.temCred && (
                   <Line type="monotone" dataKey="Estornos do mês" stroke="transparent" dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
                 )}
@@ -255,13 +271,16 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3">
           <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
-            <span className="w-[10px] h-[3px] rounded-full" style={{ background: corParc }} />Parcelas
+            <span className="w-[10px] h-[3px] rounded-full" style={{ background: corParc }} />Parcelamentos
+          </span>
+          <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
+            <span className="w-[10px] h-[3px] rounded-full" style={{ background: corCasa }} />Casa fixo
           </span>
           <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
             <span className="w-[10px] h-[3px] rounded-full" style={{ background: corCartao }} />Cartão
           </span>
           <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
-            <span className="w-[10px] h-[3px] rounded-full" style={{ background: corConta }} />Contas
+            <span className="w-[10px] h-[3px] rounded-full" style={{ background: corGeral }} />Gastos gerais
           </span>
           <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
             <span className="w-[10px] h-0 border-t-2 border-dashed" style={{ borderColor: cc.media }} />Média {janela}m
@@ -275,8 +294,9 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
           )}
         </div>
         <div className="text-muted text-[12.5px] mt-3 leading-relaxed">
-          A curva é o gasto do mês empilhado em três faixas: <b style={{ color: corParc }}>parcelas de meses anteriores</b> (o platô já comprometido no dia 1),
-          <b style={{ color: corCartao }}> cartão</b> e <b style={{ color: corConta }}>contas</b> (Pix, boleto, débito) do próprio mês — os três somados são o gasto total daquele mês.
+          A curva é o gasto do mês empilhado em quatro faixas: <b style={{ color: corParc }}>parcelamentos</b> (o platô de meses anteriores, já comprometido no dia 1),
+          <b style={{ color: corCasa }}> casa fixo</b> (cotas mensais + aluguel/IPTU),
+          <b style={{ color: corCartao }}> cartão</b> (não casa fixo) e <b style={{ color: corGeral }}>gastos gerais</b> (não casa fixo, em conta) — os quatro somados são o gasto total daquele mês.
           A <b className="text-amber">linha tracejada</b> é a média dos últimos {janela} meses no mesmo ponto do mês. <span className="text-accent">Clique num dia para ver os lançamentos.</span>
         </div>
       </Panel>
