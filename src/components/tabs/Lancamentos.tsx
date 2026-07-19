@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
-import type { Lancamento } from "../../types";
+import { useState, useMemo, useEffect, type Dispatch, type SetStateAction } from "react";
+import type { Lancamento, Enqueue } from "../../types";
 import { Kpi, Select, Seg } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
@@ -13,7 +13,7 @@ import {
 import { baixarCsv } from "../../lib/csv";
 import { useToast } from "../Toast";
 
-interface Props { dados: Lancamento[]; months: string[]; reload: () => void; }
+interface Props { dados: Lancamento[]; months: string[]; reload: () => void; enqueue: Enqueue; }
 
 const PERIODOS = [
   { v: "all", label: "Tudo" }, { v: "12", label: "12m" }, { v: "6", label: "6m" }, { v: "3", label: "3m" },
@@ -28,8 +28,9 @@ const VISOES = [
 type VisaoLanc = (typeof VISOES)[number]["v"];
 const PAGINA = 200;
 
-export function Lancamentos({ dados, months }: Props) {
+export function Lancamentos({ dados, months, enqueue }: Props) {
   const { toast } = useToast();
+  const erroMsg = (e: unknown) => (e as { message?: string })?.message || String(e);
   const [busca, setBusca] = useState("");
   const [periodo, setPeriodo] = useState("all");
   const [fComp, setFComp] = useState("");
@@ -44,7 +45,6 @@ export function Lancamentos({ dados, months }: Props) {
   const [salvosClasse, setSalvosClasse] = useState<Record<number, string>>({});
   const [visiveis, setVisiveis] = useState(PAGINA);
   const [sel, setSel] = useState<Set<number>>(new Set()); // ids selecionados p/ edição em massa
-  const [bulkBusy, setBulkBusy] = useState(false);
   const [rev, setRev] = useState(0); // bump força recompute dos memos após editar em memória
 
   const bancos = useMemo(() => [...new Set(dados.map((d) => d.banco))].sort(), [dados]);
@@ -102,41 +102,62 @@ export function Lancamentos({ dados, months }: Props) {
     return { aporte, rinvest, internaSemPar };
   }, [dados, rev]);
 
-  async function salvarCat(d: Lancamento, valor: string) {
-    setSalvos((s) => ({ ...s, [d.id]: "salvando…" }));
-    const { error } = await sb.from("lancamentos").update({ categoria_manual: valor || null }).eq("id", d.id);
-    if (error) { setSalvos((s) => ({ ...s, [d.id]: "" })); toast({ message: "Erro ao salvar categoria: " + error.message, variant: "error" }); return; }
-    d.categoria_manual = valor || null;
-    setSalvos((s) => ({ ...s, [d.id]: "✓" }));
-    setTimeout(() => setSalvos((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
+  // helper: aplica na hora (in-place + rev), enfileira a escrita e, se falhar,
+  // reverte o objeto e avisa. `set` é o mapa de feedback ("salvando…/✓").
+  function editar(
+    d: Lancamento,
+    aplicar: () => void,
+    reverter: () => void,
+    persist: () => Promise<void>,
+    set: Dispatch<SetStateAction<Record<number, string>>>,
+    rotuloErro: string,
+  ) {
+    aplicar();
+    setRev((r) => r + 1);
+    set((s) => ({ ...s, [d.id]: "salvando…" }));
+    enqueue(persist)
+      .then(() => {
+        set((s) => ({ ...s, [d.id]: "✓" }));
+        setTimeout(() => set((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
+      })
+      .catch((e: unknown) => {
+        reverter();
+        setRev((r) => r + 1);
+        set((s) => { const n = { ...s }; delete n[d.id]; return n; });
+        toast({ message: rotuloErro + erroMsg(e), variant: "error" });
+      });
+  }
+
+  function salvarCat(d: Lancamento, valor: string) {
+    const novo = valor || null, prev = d.categoria_manual;
+    editar(d,
+      () => { d.categoria_manual = novo; },
+      () => { d.categoria_manual = prev; },
+      async () => { const { error } = await sb.from("lancamentos").update({ categoria_manual: novo }).eq("id", d.id); if (error) throw error; },
+      setSalvos, "Erro ao salvar categoria: ");
   }
 
   // correção manual da CLASSE → grava em `classe_manual` (override). A re-tradução respeita.
   // Espelha o efetivo `d.classe` na hora só p/ a UI refletir; o efetivo real é recomputado no banco.
-  async function salvarClasse(d: Lancamento, valor: string) {
+  function salvarClasse(d: Lancamento, valor: string) {
     const manual = valor || null;
-    setSalvosClasse((s) => ({ ...s, [d.id]: "salvando…" }));
-    // grava override + (quando definido) o efetivo `classe`, p/ refletir já nos dashboards
+    const prevManual = d.classe_manual, prevClasse = d.classe;
     const patch = manual ? { classe_manual: manual, classe: manual } : { classe_manual: null };
-    const { error } = await sb.from("lancamentos").update(patch).eq("id", d.id);
-    if (error) { setSalvosClasse((s) => ({ ...s, [d.id]: "" })); toast({ message: "Erro ao salvar classe: " + error.message, variant: "error" }); return; }
-    d.classe_manual = manual;
-    if (manual) d.classe = manual; // override aplicado: reflete já no efetivo p/ a UI
-    setRev((r) => r + 1);
-    setSalvosClasse((s) => ({ ...s, [d.id]: "✓" }));
-    setTimeout(() => setSalvosClasse((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
+    editar(d,
+      () => { d.classe_manual = manual; if (manual) d.classe = manual; },
+      () => { d.classe_manual = prevManual; d.classe = prevClasse; },
+      async () => { const { error } = await sb.from("lancamentos").update(patch).eq("id", d.id); if (error) throw error; },
+      setSalvosClasse, "Erro ao salvar classe: ");
   }
 
   // correção manual de "entre contas próprias" → grava em `interna_manual` (boolean override).
-  async function salvarInterna(d: Lancamento, valor: boolean) {
-    setSalvosClasse((s) => ({ ...s, [d.id]: "salvando…" }));
-    const { error } = await sb.from("lancamentos").update({ interna_manual: valor, interna: valor }).eq("id", d.id);
-    if (error) { setSalvosClasse((s) => ({ ...s, [d.id]: "" })); toast({ message: "Erro ao salvar: " + error.message, variant: "error" }); return; }
-    d.interna_manual = valor;
-    d.interna = valor; // reflete já no efetivo p/ a UI
-    setRev((r) => r + 1);
-    setSalvosClasse((s) => ({ ...s, [d.id]: "✓" }));
-    setTimeout(() => setSalvosClasse((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
+  function salvarInterna(d: Lancamento, valor: boolean) {
+    const prevManual = d.interna_manual, prevInterna = d.interna;
+    editar(d,
+      () => { d.interna_manual = valor; d.interna = valor; },
+      () => { d.interna_manual = prevManual; d.interna = prevInterna; },
+      async () => { const { error } = await sb.from("lancamentos").update({ interna_manual: valor, interna: valor }).eq("id", d.id); if (error) throw error; },
+      setSalvosClasse, "Erro ao salvar: ");
   }
 
   // ---------- seleção + edição em massa ----------
@@ -149,17 +170,35 @@ export function Lancamentos({ dados, months }: Props) {
     });
 
   // aplica um patch (override + efetivo) a TODOS os selecionados, em lotes de 500.
-  async function bulkUpdate(patch: Record<string, unknown>, apply: (d: Lancamento) => void, label: string) {
+  // edição em massa OTIMISTA: aplica na hora aos selecionados, limpa a seleção e
+  // enfileira a escrita (em lotes de 500). Se falhar, reverte os objetos.
+  function bulkUpdate(patch: Record<string, unknown>, apply: (d: Lancamento) => void, label: string) {
     const ids = [...sel];
     if (!ids.length) return;
-    setBulkBusy(true);
-    for (let i = 0; i < ids.length; i += 500) {
-      const { error } = await sb.from("lancamentos").update(patch).in("id", ids.slice(i, i + 500));
-      if (error) { setBulkBusy(false); toast({ message: "Erro na edição em massa: " + error.message, variant: "error" }); return; }
-    }
-    dados.forEach((d) => { if (sel.has(d.id)) apply(d); });
-    setBulkBusy(false); setRev((r) => r + 1); setSel(new Set());
-    toast({ message: `${ids.length.toLocaleString("pt-BR")} ${label}`, variant: "success" });
+    const keys = Object.keys(patch) as (keyof Lancamento)[];
+    const afetados = dados.filter((d) => sel.has(d.id));
+    // snapshot só das chaves que vão mudar, p/ rollback em caso de erro
+    const snap = afetados.map((d) => {
+      const antes: Partial<Lancamento> = {};
+      keys.forEach((k) => { (antes as Record<string, unknown>)[k as string] = d[k]; });
+      return { d, antes };
+    });
+    afetados.forEach(apply);
+    setRev((r) => r + 1);
+    setSel(new Set());
+    const persist = async () => {
+      for (let i = 0; i < ids.length; i += 500) {
+        const { error } = await sb.from("lancamentos").update(patch).in("id", ids.slice(i, i + 500));
+        if (error) throw error;
+      }
+    };
+    enqueue(persist)
+      .then(() => toast({ message: `${ids.length.toLocaleString("pt-BR")} ${label}`, variant: "success" }))
+      .catch((e: unknown) => {
+        snap.forEach(({ d, antes }) => Object.assign(d, antes));
+        setRev((r) => r + 1);
+        toast({ message: "Erro na edição em massa: " + erroMsg(e), variant: "error" });
+      });
   }
   // classe_manual + classe efetivo (reflete já nos dashboards; o sync mantém via coalesce).
   const bulkClasse = (v: string) => {
@@ -339,10 +378,10 @@ export function Lancamentos({ dados, months }: Props) {
             <option value="">Definir classe…</option>
             {CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
           </Select>
-          <button className="btn-ghost" disabled={bulkBusy} onClick={() => bulkInterna(true)}>Marcar “entre contas”</button>
-          <button className="btn-ghost" disabled={bulkBusy} onClick={() => bulkInterna(false)}>Desmarcar “entre contas”</button>
+          <button className="btn-ghost" onClick={() => bulkInterna(true)}>Marcar “entre contas”</button>
+          <button className="btn-ghost" onClick={() => bulkInterna(false)}>Desmarcar “entre contas”</button>
           <span className="text-[11.5px] text-muted">Receita/Gasto só contam se “entre contas” estiver desmarcado.</span>
-          <button className="btn-ghost ml-auto" disabled={bulkBusy} onClick={() => setSel(new Set())}>Limpar seleção</button>
+          <button className="btn-ghost ml-auto" onClick={() => setSel(new Set())}>Limpar seleção</button>
         </div>
       )}
 

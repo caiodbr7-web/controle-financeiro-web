@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Lancamento } from "../types";
+import type { Lancamento, Mutate } from "../types";
 import { BRL, catKey, corCategoria, dataCompleta } from "../lib/finance";
 import { ehInterna } from "../lib/lancClasses";
 import { CategoryPicker } from "./CategoryPicker";
@@ -8,7 +8,7 @@ import { useToast } from "./Toast";
 
 export interface ModalData { title: string; rows: Lancamento[]; }
 
-export function Modal({ data, onClose, reload }: { data: ModalData | null; onClose: () => void; reload?: () => void }) {
+export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClose: () => void; mutate?: Mutate }) {
   const { toast } = useToast();
   const [salvos, setSalvos] = useState<Record<number, string>>({});
   const [rev, setRev] = useState(0); // força recomputar a agregação após editar uma categoria
@@ -20,16 +20,28 @@ export function Modal({ data, onClose, reload }: { data: ModalData | null; onClo
   }, [onClose]);
 
   // edição de categoria direto do pop-up → grava em `categoria_manual` (override).
-  // Espelha já no objeto p/ a UI (agregação + dashboards via reload) refletirem na hora.
-  async function salvarCat(d: Lancamento, valor: string) {
-    setSalvos((s) => ({ ...s, [d.id]: "salvando…" }));
-    const { error } = await sb.from("lancamentos").update({ categoria_manual: valor || null }).eq("id", d.id);
-    if (error) { setSalvos((s) => ({ ...s, [d.id]: "" })); toast({ message: "Erro ao salvar categoria: " + error.message, variant: "error" }); return; }
-    d.categoria_manual = valor || null;
+  // OTIMISTA: reflete na hora (objeto local + dashboards via patch) e a escrita
+  // vai para a fila em background — sem `reload` bloqueante.
+  function salvarCat(d: Lancamento, valor: string) {
+    const novo = valor || null;
+    d.categoria_manual = novo; // espelha na tabela do próprio pop-up
     setRev((r) => r + 1);
-    reload?.();
-    setSalvos((s) => ({ ...s, [d.id]: "✓" }));
-    setTimeout(() => setSalvos((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
+    setSalvos((s) => ({ ...s, [d.id]: "salvando…" }));
+    const persist = async () => {
+      const { error } = await sb.from("lancamentos").update({ categoria_manual: novo }).eq("id", d.id);
+      if (error) throw error;
+    };
+    const finalizar = () => {
+      setSalvos((s) => ({ ...s, [d.id]: "✓" }));
+      setTimeout(() => setSalvos((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
+    };
+    const p = mutate
+      ? mutate({ ids: [d.id], patch: { categoria_manual: novo }, persist })
+      : persist();
+    p.then(finalizar).catch((e: unknown) => {
+      setSalvos((s) => ({ ...s, [d.id]: "" }));
+      toast({ message: "Erro ao salvar categoria: " + ((e as { message?: string })?.message || e), variant: "error" });
+    });
   }
 
   if (!data) return null;

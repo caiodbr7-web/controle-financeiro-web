@@ -1,7 +1,13 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { sb } from "../lib/supabase";
 import { mesAtual } from "../lib/projecao";
 import type { Lancamento } from "../types";
+import { enfileirar, pendentesFila, assinarFila } from "../lib/mutationQueue";
+
+/** Hook: `true` enquanto houver escritas pendentes na fila do banco. */
+export function useSaving(): boolean {
+  return useSyncExternalStore(assinarFila, () => pendentesFila() > 0, () => false);
+}
 
 // ---------------------------------------------------------------------------
 // Fonte por período — evita DUPLA CONTAGEM entre PDF e Open Banking.
@@ -57,8 +63,61 @@ export function useLancamentos(ativo: boolean) {
   const [status, setStatus] = useState("");
   const [carregou, setCarregou] = useState(false); // já completou a 1ª carga?
 
-  const reload = useCallback(async () => {
-    setStatus("atualizando…");
+  // espelho síncrono de `allDados` p/ snapshots de rollback sem depender do
+  // ciclo de render (a mutação otimista precisa do valor ANTERIOR na hora).
+  const ref = useRef<Lancamento[]>([]);
+  const commit = useCallback((updater: (prev: Lancamento[]) => Lancamento[]) => {
+    setAllDados((prev) => { const next = updater(prev); ref.current = next; return next; });
+  }, []);
+
+  // Patch otimista local: aplica `patch` às linhas `ids` na memória, na hora.
+  // É a base da UI não-bloqueante — a tela reflete a mudança sem esperar o banco.
+  const patchLocal = useCallback((ids: number[], patch: Partial<Lancamento>) => {
+    const alvo = new Set(ids);
+    commit((prev) => prev.map((d) => (alvo.has(d.id) ? { ...d, ...patch } : d)));
+  }, [commit]);
+
+  // Mutação otimista + persistência em fila (background) + rollback em falha.
+  //  1) aplica o patch local imediatamente (UI responde na hora);
+  //  2) enfileira a escrita no banco (não bloqueia o clique);
+  //  3) se a escrita falhar, reverte SOMENTE as chaves do patch para o valor
+  //     anterior (não sobrescreve edições concorrentes de outros campos).
+  const mutate = useCallback((opts: {
+    ids: number[];
+    patch: Partial<Lancamento>;
+    persist: () => Promise<void>;
+    onError?: (e: unknown) => void;
+  }): Promise<void> => {
+    const alvo = new Set(opts.ids);
+    const chaves = Object.keys(opts.patch) as (keyof Lancamento)[];
+    // snapshot dos valores anteriores (só das chaves que vão mudar)
+    const antes = new Map<number, Partial<Lancamento>>();
+    ref.current.forEach((d) => {
+      if (!alvo.has(d.id)) return;
+      const prevVals: Partial<Lancamento> = {};
+      chaves.forEach((k) => { (prevVals as Record<string, unknown>)[k as string] = d[k]; });
+      antes.set(d.id, prevVals);
+    });
+    patchLocal(opts.ids, opts.patch);
+    return enfileirar(opts.persist).catch((e) => {
+      // rollback: restaura só as chaves do patch a partir do snapshot
+      commit((prev) => prev.map((d) => {
+        const p = antes.get(d.id);
+        return p ? { ...d, ...p } : d;
+      }));
+      opts.onError?.(e);
+      throw e;
+    });
+  }, [patchLocal, commit]);
+
+  // Enfileira uma escrita arbitrária no banco (tabelas que não são `lancamentos`,
+  // ex.: regras). Não mexe no estado local — quem chama cuida da sua própria UI.
+  const enqueue = useCallback((persist: () => Promise<void>) => enfileirar(persist), []);
+
+  // Recarrega tudo do banco (fonte da verdade). `silencioso` evita o texto
+  // "atualizando…" — usado p/ reconciliação em background depois de escritas.
+  const reload = useCallback(async (silencioso = false) => {
+    if (!silencioso) setStatus("atualizando…");
     // corte de fonte depende do usuário logado (alguns sincronizam tudo via OF)
     const { data: u } = await sb.auth.getUser();
     const corte = corteParaEmail(u.user?.email);
@@ -69,19 +128,19 @@ export function useLancamentos(ativo: boolean) {
         .from("lancamentos").select("*")
         .order("competencia", { ascending: false }).order("origem").order("id")
         .range(de, de + PAGINA - 1);
-      if (error) { setStatus("erro: " + error.message); return; }
+      if (error) { if (!silencioso) setStatus("erro: " + error.message); return; }
       todos = todos.concat((data || []) as Lancamento[]);
       if (!data || data.length < PAGINA) break;
       de += PAGINA;
     }
     // corte de fonte por período (PDF até o corte, Open Banking a partir dele)
-    setAllDados(todos.filter((d) => lancVisivel(d, corte)));
-    setStatus("");
+    commit(() => todos.filter((d) => lancVisivel(d, corte)));
+    if (!silencioso) setStatus("");
     setCarregou(true);
-  }, []);
+  }, [commit]);
 
   useEffect(() => { if (ativo) reload(); }, [ativo, reload]);
 
   // loading = primeira carga ainda não concluída (para mostrar skeleton)
-  return { allDados, status, reload, loading: ativo && !carregou };
+  return { allDados, status, reload, loading: ativo && !carregou, patchLocal, mutate, enqueue };
 }

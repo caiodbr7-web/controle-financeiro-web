@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import type { Lancamento } from "../../types";
+import { useState, useMemo, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { Lancamento, PatchLocal, Mutate, Enqueue } from "../../types";
 import { Kpi } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
@@ -8,7 +8,11 @@ import { ehInterna } from "../../lib/lancClasses";
 import { sugerirGrupo, type FonteSugestao, type Regra, type VinculoPlano } from "../../lib/classificador";
 import { useToast } from "../Toast";
 
-interface Props { dados: Lancamento[]; allDados: Lancamento[]; openModal: (t: string, r: Lancamento[]) => void; reload: () => void; }
+interface Props {
+  dados: Lancamento[]; allDados: Lancamento[];
+  openModal: (t: string, r: Lancamento[]) => void; reload: () => void;
+  patchLocal: PatchLocal; mutate: Mutate; enqueue: Enqueue;
+}
 
 interface Grupo { key: string; ex: string; ids: number[]; rows: Lancamento[]; total: number; n: number; sugestao: string; fonte: FonteSugestao; conhecido: boolean; internaSug: boolean; receita: boolean; rotuloReceita: string; }
 
@@ -30,13 +34,15 @@ const FONTE_BADGE: Record<FonteSugestao, { label: string; cls: string } | null> 
 // snapshot p/ desfazer: o que era nulo + a regra que existia antes
 interface Snap { ids: number[]; key: string; prevRegra?: string }
 
-export function Classificar({ dados, allDados, openModal, reload }: Props) {
+export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   const { toast } = useToast();
   const [escolhas, setEscolhas] = useState<Record<string, string>>({});
   // grupos que o usuário (ou a sugestão) marcou como "entre contas próprias".
   // É só uma ESCOLHA pendente: nada é gravado até apertar Aplicar / Aplicar conhecidos.
   const [escolhaInterna, setEscolhaInterna] = useState<Record<string, boolean>>({});
-  const [busy, setBusy] = useState(false);
+  // ações agora são OTIMISTAS: a UI atualiza na hora e a escrita vai p/ a fila
+  // em background — nada trava o produto, então não há mais estado `busy`.
+  const busy = false;
   const [regras, setRegras] = useState<Record<string, string>>({}); // padrao(estab) -> categoria (p/ salvar/desfazer)
   const [regrasList, setRegrasList] = useState<Regra[]>([]);         // regras completas (p/ casar por palavra-chave)
   const [planos, setPlanos] = useState<VinculoPlano[]>([]);          // vínculos do Planejamento
@@ -63,26 +69,31 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
     })();
   }, []);
 
-  // mantém o mapa (p/ desfazer) e a lista (p/ casar) em sincronia com a regra aprendida
-  const aprenderRegra = (key: string, categoria: string) => {
+  // ---- regras aprendidas (padrão do estabelecimento -> categoria) ----
+  // O aprendizado é LOCAL e imediato (mexe só nas sugestões futuras); a escrita
+  // no banco vai para a fila, separada, para não bloquear a ação principal.
+  const aprenderRegraLocal = (key: string, categoria: string) => {
     setRegras((r) => ({ ...r, [key]: categoria }));
     setRegrasList((l) => [...l.filter((x) => x.padrao !== key), { padrao: key, categoria, prioridade: 100, match_type: "contains" }]);
   };
-  async function salvarRegra(key: string, categoria: string) {
-    if (!key || !categoria) return;
-    await sb.from("regras").upsert({ padrao: key, categoria }, { onConflict: "user_id,padrao" });
-    aprenderRegra(key, categoria);
-  }
-  async function restaurarRegra(key: string, prev?: string) {
-    if (prev) {
-      await sb.from("regras").upsert({ padrao: key, categoria: prev }, { onConflict: "user_id,padrao" });
-      aprenderRegra(key, prev);
-    } else {
-      await sb.from("regras").delete().eq("padrao", key);
-      setRegras((r) => { const n = { ...r }; delete n[key]; return n; });
-      setRegrasList((l) => l.filter((x) => x.padrao !== key));
-    }
-  }
+  const esquecerRegraLocal = (key: string) => {
+    setRegras((r) => { const n = { ...r }; delete n[key]; return n; });
+    setRegrasList((l) => l.filter((x) => x.padrao !== key));
+  };
+  // restaura a regra local ao estado anterior (usado no rollback / desfazer)
+  const restaurarRegraLocal = (key: string, prev?: string) =>
+    prev ? aprenderRegraLocal(key, prev) : esquecerRegraLocal(key);
+  // escritas no banco (sem tocar no estado local — quem chama já cuidou disso)
+  const salvarRegraDB = (key: string, categoria: string) =>
+    sb.from("regras").upsert({ padrao: key, categoria }, { onConflict: "user_id,padrao" }).then(() => {});
+  const restaurarRegraDB = (key: string, prev?: string) =>
+    (prev
+      ? sb.from("regras").upsert({ padrao: key, categoria: prev }, { onConflict: "user_id,padrao" })
+      : sb.from("regras").delete().eq("padrao", key)
+    ).then(() => {});
+
+  const erroToast = (e: unknown) =>
+    toast({ message: "Erro ao salvar: " + ((e as { message?: string })?.message || e), variant: "error" });
 
   // histórico já classificado: estabelecimento -> categoria mais usada (aprende do passado)
   const histMap = useMemo(() => {
@@ -160,72 +171,81 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
   const conhecidos = useMemo(() => [...conhecidosCat, ...conhecidosInterna], [conhecidosCat, conhecidosInterna]);
   const sugeridos = grupos.filter((g) => !escolhaInterna[g.key] && !g.conhecido && escolhas[g.key]).length;
 
-  async function atualizarIds(ids: number[], categoria: string | null) {
+  // escrita crua no banco (chunked): categoria_manual dos lançamentos
+  async function dbCategoria(ids: number[], categoria: string | null) {
     for (let i = 0; i < ids.length; i += 200) {
-      const chunk = ids.slice(i, i + 200);
-      const { error } = await sb.from("lancamentos").update({ categoria_manual: categoria }).in("id", chunk);
+      const { error } = await sb.from("lancamentos").update({ categoria_manual: categoria }).in("id", ids.slice(i, i + 200));
       if (error) throw error;
     }
   }
-
-  // desfaz uma aplicação: volta os lançamentos a "sem categoria" e restaura as regras
-  const desfazer = useCallback(async (snap: Snap[]) => {
-    setBusy(true);
-    try {
-      for (const s of snap) { await atualizarIds(s.ids, null); await restaurarRegra(s.key, s.prevRegra); }
-      await reload();
-      toast({ message: "Classificação desfeita.", variant: "info" });
-    } catch (e: any) { toast({ message: "Erro ao desfazer: " + (e?.message || e), variant: "error" }); }
-    finally { setBusy(false); }
-  }, [reload, toast]);
-
-  // aplica uma categoria a um conjunto de grupos, com toast de desfazer
-  async function aplicar(alvo: { g: Grupo; cat: string }[], rotulo: string) {
-    if (!alvo.length || busy) return;
-    const snap: Snap[] = alvo.map(({ g }) => ({ ids: g.ids, key: g.key, prevRegra: regras[g.key] }));
-    setBusy(true);
-    try {
-      for (const { g, cat } of alvo) { await atualizarIds(g.ids, cat); await salvarRegra(g.key, cat); }
-      await reload();
-      setSel(new Set());
-      toast({ message: rotulo, variant: "success", action: { label: "Desfazer", onClick: () => desfazer(snap) } });
-    } catch (e: any) { toast({ message: "Erro: " + (e?.message || e), variant: "error" }); }
-    finally { setBusy(false); }
-  }
-
-  async function atualizarInterna(ids: number[], valor: boolean | null) {
+  // escrita crua no banco (chunked): interna_manual + interna efetivo
+  async function dbInterna(ids: number[], valor: boolean | null) {
     for (let i = 0; i < ids.length; i += 200) {
-      const chunk = ids.slice(i, i + 200);
       const { error } = await sb.from("lancamentos")
         .update({ interna_manual: valor, interna: valor ?? false })
-        .in("id", chunk);
+        .in("id", ids.slice(i, i + 200));
       if (error) throw error;
     }
+  }
+
+  // desfaz uma aplicação: volta os lançamentos a "sem categoria" e restaura as
+  // regras — tudo otimista (some/reaparece na hora) + escrita em fila.
+  const desfazer = (snap: Snap[]) => {
+    snap.forEach((s) => {
+      restaurarRegraLocal(s.key, s.prevRegra);
+      mutate({
+        ids: s.ids,
+        patch: { categoria_manual: null },
+        persist: async () => { await dbCategoria(s.ids, null); await restaurarRegraDB(s.key, s.prevRegra); },
+        onError: erroToast,
+      });
+    });
+    toast({ message: "Classificação desfeita.", variant: "info" });
+  };
+
+  // aplica uma categoria a um conjunto de grupos, com toast de desfazer.
+  // OTIMISTA: a linha recebe a categoria na hora (e sai da lista de pendências);
+  // a gravação no banco vai para a fila e, se falhar, o patch é revertido.
+  function aplicar(alvo: { g: Grupo; cat: string }[], rotulo: string) {
+    if (!alvo.length) return;
+    const snap: Snap[] = alvo.map(({ g }) => ({ ids: g.ids, key: g.key, prevRegra: regras[g.key] }));
+    alvo.forEach(({ g, cat }) => {
+      const prevRegra = regras[g.key];
+      aprenderRegraLocal(g.key, cat);
+      mutate({
+        ids: g.ids,
+        patch: { categoria_manual: cat },
+        persist: async () => { await dbCategoria(g.ids, cat); await salvarRegraDB(g.key, cat); },
+        onError: (e) => { restaurarRegraLocal(g.key, prevRegra); erroToast(e); },
+      });
+    });
+    setSel(new Set());
+    toast({ message: rotulo, variant: "success", action: { label: "Desfazer", onClick: () => desfazer(snap) } });
   }
 
   // desfaz a marcação "entre contas próprias": volta interna_manual a null e interna a false
-  const desfazerInterna = useCallback(async (ids: number[]) => {
-    setBusy(true);
-    try {
-      await atualizarInterna(ids, null);
-      await reload();
-      toast({ message: "Marcação desfeita.", variant: "info" });
-    } catch (e: any) { toast({ message: "Erro ao desfazer: " + (e?.message || e), variant: "error" }); }
-    finally { setBusy(false); }
-  }, [reload, toast]);
+  const desfazerInterna = (ids: number[]) => {
+    mutate({
+      ids,
+      patch: { interna_manual: null, interna: false },
+      persist: () => dbInterna(ids, null),
+      onError: erroToast,
+    });
+    toast({ message: "Marcação desfeita.", variant: "info" });
+  };
 
   // marca um conjunto de grupos como "entre contas próprias", com toast de desfazer
-  async function marcarInterna(alvo: Grupo[], rotulo: string) {
-    if (!alvo.length || busy) return;
+  function marcarInterna(alvo: Grupo[], rotulo: string) {
+    if (!alvo.length) return;
     const ids = alvo.flatMap((g) => g.ids);
-    setBusy(true);
-    try {
-      await atualizarInterna(ids, true);
-      await reload();
-      setSel(new Set());
-      toast({ message: rotulo, variant: "success", action: { label: "Desfazer", onClick: () => desfazerInterna(ids) } });
-    } catch (e: any) { toast({ message: "Erro: " + (e?.message || e), variant: "error" }); }
-    finally { setBusy(false); }
+    mutate({
+      ids,
+      patch: { interna_manual: true, interna: true },
+      persist: () => dbInterna(ids, true),
+      onError: erroToast,
+    });
+    setSel(new Set());
+    toast({ message: rotulo, variant: "success", action: { label: "Desfazer", onClick: () => desfazerInterna(ids) } });
   }
 
   const marcarInternaUm = (g: Grupo) =>
@@ -238,29 +258,46 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
 
   // aplica em lote resoluções MISTAS numa só passada, com um único desfazer que
   // reverte tudo: categorias (catAlvo) + marcações "entre contas próprias" (internaAlvo).
-  async function aplicarLote(catAlvo: { g: Grupo; cat: string }[], internaAlvo: Grupo[], rotulo: string) {
-    if ((!catAlvo.length && !internaAlvo.length) || busy) return;
+  function aplicarLote(catAlvo: { g: Grupo; cat: string }[], internaAlvo: Grupo[], rotulo: string) {
+    if (!catAlvo.length && !internaAlvo.length) return;
     const snap: Snap[] = catAlvo.map(({ g }) => ({ ids: g.ids, key: g.key, prevRegra: regras[g.key] }));
     const internaIds = internaAlvo.flatMap((g) => g.ids);
-    setBusy(true);
-    try {
-      for (const { g, cat } of catAlvo) { await atualizarIds(g.ids, cat); await salvarRegra(g.key, cat); }
-      if (internaIds.length) await atualizarInterna(internaIds, true);
-      await reload();
-      setSel(new Set());
-      const desfazerLote = async () => {
-        setBusy(true);
-        try {
-          for (const s of snap) { await atualizarIds(s.ids, null); await restaurarRegra(s.key, s.prevRegra); }
-          if (internaIds.length) await atualizarInterna(internaIds, null);
-          await reload();
-          toast({ message: "Classificação desfeita.", variant: "info" });
-        } catch (e: any) { toast({ message: "Erro ao desfazer: " + (e?.message || e), variant: "error" }); }
-        finally { setBusy(false); }
-      };
-      toast({ message: rotulo, variant: "success", action: { label: "Desfazer", onClick: desfazerLote } });
-    } catch (e: any) { toast({ message: "Erro: " + (e?.message || e), variant: "error" }); }
-    finally { setBusy(false); }
+    catAlvo.forEach(({ g, cat }) => {
+      const prevRegra = regras[g.key];
+      aprenderRegraLocal(g.key, cat);
+      mutate({
+        ids: g.ids,
+        patch: { categoria_manual: cat },
+        persist: async () => { await dbCategoria(g.ids, cat); await salvarRegraDB(g.key, cat); },
+        onError: (e) => { restaurarRegraLocal(g.key, prevRegra); erroToast(e); },
+      });
+    });
+    if (internaIds.length) mutate({
+      ids: internaIds,
+      patch: { interna_manual: true, interna: true },
+      persist: () => dbInterna(internaIds, true),
+      onError: erroToast,
+    });
+    setSel(new Set());
+    const desfazerLote = () => {
+      snap.forEach((s) => {
+        restaurarRegraLocal(s.key, s.prevRegra);
+        mutate({
+          ids: s.ids,
+          patch: { categoria_manual: null },
+          persist: async () => { await dbCategoria(s.ids, null); await restaurarRegraDB(s.key, s.prevRegra); },
+          onError: erroToast,
+        });
+      });
+      if (internaIds.length) mutate({
+        ids: internaIds,
+        patch: { interna_manual: null, interna: false },
+        persist: () => dbInterna(internaIds, null),
+        onError: erroToast,
+      });
+      toast({ message: "Classificação desfeita.", variant: "info" });
+    };
+    toast({ message: rotulo, variant: "success", action: { label: "Desfazer", onClick: desfazerLote } });
   }
 
   const aplicarUm = (g: Grupo) => {

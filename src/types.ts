@@ -83,6 +83,22 @@ export interface InvestimentoHistTipo {
   posicoes: number | null;       // nº de posições da categoria no dia
 }
 
+// ---------------------------------------------------------------------------
+// Helpers de mutação otimista + fila de escrita (ver src/lib/mutationQueue.ts e
+// src/hooks/useLancamentos.ts). Passados às abas p/ ações não-bloqueantes.
+// ---------------------------------------------------------------------------
+/** Aplica um patch às linhas `ids` na memória, na hora (sem esperar o banco). */
+export type PatchLocal = (ids: number[], patch: Partial<Lancamento>) => void;
+/** Mutação otimista: patch local imediato + persistência em fila + rollback. */
+export type Mutate = (opts: {
+  ids: number[];
+  patch: Partial<Lancamento>;
+  persist: () => Promise<void>;
+  onError?: (e: unknown) => void;
+}) => Promise<void>;
+/** Enfileira uma escrita arbitrária no banco (não mexe no estado local). */
+export type Enqueue = (persist: () => Promise<void>) => Promise<void>;
+
 export type Visao = "ALL" | "pessoal" | "corporativo";
 export type Modo = "cartao" | "ambos" | "conta";
 export type Aba = "inicio" | "geral" | "mensal" | "diario" | "planejamento" | "classificar" | "lanc" | "adicionar" | "openbanking" | "investimentos" | "categorias";
