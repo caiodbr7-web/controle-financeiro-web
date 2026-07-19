@@ -4,6 +4,7 @@ import {
   ehGasto as ehGastoClasse,
   ehReceita as ehReceitaClasse,
   ehTransfer as ehTransferClasse,
+  precisaClassificar as precisaClassificarClasse,
   valorGasto as valorGastoClasse,
   valorReceita as valorReceitaClasse,
   valorAporte as valorAporteClasse,
@@ -60,6 +61,8 @@ export const mesCurto = (c: string) => {
 export const ehGasto = ehGastoClasse;
 export const ehReceita = ehReceitaClasse;
 export const ehTransfer = ehTransferClasse;
+// pendência de classificação (fonte única): não categorizado e não-interno.
+export const precisaClassificar = precisaClassificarClasse;
 // helpers de valor reexportados acima (de lancClasses; respeitam `interna`):
 //  valorGasto    — Gasto (+) menos Estorno/Credito (−), 0 se interna/Aporte
 //  valorReceita  — Receita real (exclui interna e Receita Investimento)
