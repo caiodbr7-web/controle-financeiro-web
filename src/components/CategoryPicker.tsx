@@ -7,11 +7,19 @@ import { semAcento } from "../lib/texto";
 /* ---------- seletor de categoria com busca + teclado + cores ----------
    Substitui o <select> nativo no Classificar e em Lançamentos. Abre num portal
    (fixed) para não ser cortado pelo overflow das tabelas. Totalmente navegável
-   por teclado: digite p/ filtrar, ↑/↓ move, Enter escolhe, Esc fecha. */
+   por teclado: digite p/ filtrar, ↑/↓ move, Enter escolhe, Esc fecha.
+
+   SUBCATEGORIAS: cada categoria pode ter subs (opcionais). Elas aparecem
+   indentadas logo abaixo da categoria-mãe e também são escolhíveis — escolher
+   uma sub define categoria + sub de uma vez; escolher a categoria "seca"
+   limpa a sub. A busca também encontra subs (pelo nome da sub ou da mãe). */
+
+interface Opcao { cat: string; sub: string | null }
 
 interface Props {
   value: string;                       // categoria atual ("" = sem categoria)
-  onSelect: (c: string) => void;       // categoria escolhida ("" limpa)
+  subValue?: string | null;            // subcategoria atual (opcional)
+  onSelect: (c: string, sub?: string | null) => void; // escolhida ("" limpa)
   placeholder?: string;
   size?: "sm" | "md";
   className?: string;
@@ -20,7 +28,7 @@ interface Props {
 }
 
 export function CategoryPicker({
-  value, onSelect, placeholder = "— escolher —", size = "sm", className = "", autoOpen = false, onClose,
+  value, subValue = null, onSelect, placeholder = "— escolher —", size = "sm", className = "", autoOpen = false, onClose,
 }: Props) {
   const [aberto, setAberto] = useState(autoOpen);
   const [q, setQ] = useState("");
@@ -30,11 +38,20 @@ export function CategoryPicker({
   const inputRef = useRef<HTMLInputElement>(null);
   const { categorias } = useCategorias();
 
-  const lista = useMemo(() => {
+  const lista = useMemo<Opcao[]>(() => {
     const t = semAcento(q).toLowerCase().trim();
-    const base = ["", ...categorias.map((c) => c.nome)]; // "" = sem categoria (limpar)
+    const base: Opcao[] = [{ cat: "", sub: null }]; // "" = sem categoria (limpar)
+    for (const c of categorias) {
+      base.push({ cat: c.nome, sub: null });
+      for (const s of c.subs) base.push({ cat: c.nome, sub: s.nome });
+    }
     if (!t) return base;
-    return base.filter((c) => (c === "" ? "sem categoria" : semAcento(c).toLowerCase()).includes(t));
+    return base.filter((o) => {
+      const alvo = o.cat === ""
+        ? "sem categoria"
+        : semAcento(o.sub ? `${o.cat} ${o.sub}` : o.cat).toLowerCase();
+      return alvo.includes(t);
+    });
   }, [q, categorias]);
 
   function posicionar() {
@@ -63,10 +80,10 @@ export function CategoryPicker({
   useEffect(() => { setHi((h) => Math.min(h, Math.max(0, lista.length - 1))); }, [lista.length]);
 
   function fechar() { setAberto(false); setQ(""); setHi(0); onClose?.(); }
-  function escolher(c: string) { onSelect(c); fechar(); }
+  function escolher(o: Opcao) { onSelect(o.cat, o.sub); fechar(); }
 
   function abrir() {
-    const idx = lista.indexOf(value);
+    const idx = lista.findIndex((o) => o.cat === value && (o.sub || null) === (subValue || null));
     setHi(idx > 0 ? idx : 0);
     setAberto(true);
   }
@@ -79,6 +96,7 @@ export function CategoryPicker({
   }
 
   const pad = size === "sm" ? "py-[6px] pl-[8px] pr-[26px] text-[13px] min-w-[140px]" : "py-[8px] pl-3 pr-[28px] text-[13.5px] min-w-[150px]";
+  const rotulo = value ? (subValue ? `${value} › ${subValue}` : value) : placeholder;
 
   return (
     <>
@@ -89,7 +107,7 @@ export function CategoryPicker({
         className={`select-chev relative inline-flex items-center gap-[7px] bg-card text-txt border border-line rounded-[8px] cursor-pointer outline-none focus-visible:border-muted hover:border-muted/70 transition-colors ${pad} ${className}`}
       >
         {value && <span className="w-[9px] h-[9px] rounded-full shrink-0" style={{ background: corCategoria(value) }} />}
-        <span className={`truncate ${value ? "" : "text-muted"}`}>{value || placeholder}</span>
+        <span className={`truncate ${value ? "" : "text-muted"}`}>{rotulo}</span>
       </button>
 
       {aberto && rect && createPortal(
@@ -114,23 +132,26 @@ export function CategoryPicker({
             />
             <div className="max-h-[260px] overflow-auto scroll-thin">
               {lista.length === 0 && <div className="text-muted text-[12.5px] px-2 py-2">Nada encontrado</div>}
-              {lista.map((c, i) => (
-                <button
-                  key={c || "__none__"}
-                  type="button"
-                  onMouseEnter={() => setHi(i)}
-                  onClick={() => escolher(c)}
-                  className={`w-full flex items-center gap-[9px] px-2 py-[7px] rounded-[8px] text-left text-[13px] border-0 cursor-pointer transition-colors ${
-                    i === hi ? "bg-fill" : "bg-transparent"
-                  }`}
-                >
-                  {c
-                    ? <span className="w-[10px] h-[10px] rounded-full shrink-0" style={{ background: corCategoria(c) }} />
-                    : <span className="w-[10px] h-[10px] rounded-full shrink-0 border border-line" />}
-                  <span className={c ? "" : "text-muted"}>{c || "Sem categoria"}</span>
-                  {c === value && <span className="ml-auto text-accent text-[12px]">✓</span>}
-                </button>
-              ))}
+              {lista.map((o, i) => {
+                const selecionada = o.cat === value && (o.sub || null) === (subValue || null);
+                return (
+                  <button
+                    key={o.cat ? `${o.cat}//${o.sub || ""}` : "__none__"}
+                    type="button"
+                    onMouseEnter={() => setHi(i)}
+                    onClick={() => escolher(o)}
+                    className={`w-full flex items-center gap-[9px] px-2 py-[7px] rounded-[8px] text-left text-[13px] border-0 cursor-pointer transition-colors ${
+                      i === hi ? "bg-fill" : "bg-transparent"
+                    } ${o.sub ? "pl-[26px]" : ""}`}
+                  >
+                    {o.cat
+                      ? <span className={`rounded-full shrink-0 ${o.sub ? "w-[7px] h-[7px] opacity-70" : "w-[10px] h-[10px]"}`} style={{ background: corCategoria(o.cat) }} />
+                      : <span className="w-[10px] h-[10px] rounded-full shrink-0 border border-line" />}
+                    <span className={o.cat ? "" : "text-muted"}>{o.sub || o.cat || "Sem categoria"}</span>
+                    {selecionada && <span className="ml-auto text-accent text-[12px]">✓</span>}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </>,

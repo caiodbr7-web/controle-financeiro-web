@@ -17,6 +17,7 @@ export interface Lancamento {
   moeda_origem?: string | null; // ISO da moeda estrangeira original (ex.: 'USD')
   natureza: string | null; // Pessoal / Corporativo
   categoria_manual: string | null;
+  subcategoria_manual?: string | null; // sub opcional, subordinada a categoria_manual
   criado_em?: string;
   atualizado_em?: string;
   // origem do dado (PDF ou Pluggy/Open Finance)

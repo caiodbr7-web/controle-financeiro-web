@@ -128,12 +128,13 @@ export function Lancamentos({ dados, months, enqueue }: Props) {
       });
   }
 
-  function salvarCat(d: Lancamento, valor: string) {
-    const novo = valor || null, prev = d.categoria_manual;
+  function salvarCat(d: Lancamento, valor: string, sub?: string | null) {
+    const novo = valor || null, novoSub = (novo && sub) || null;
+    const prev = d.categoria_manual, prevSub = d.subcategoria_manual ?? null;
     editar(d,
-      () => { d.categoria_manual = novo; },
-      () => { d.categoria_manual = prev; },
-      async () => { const { error } = await sb.from("lancamentos").update({ categoria_manual: novo }).eq("id", d.id); if (error) throw error; },
+      () => { d.categoria_manual = novo; d.subcategoria_manual = novoSub; },
+      () => { d.categoria_manual = prev; d.subcategoria_manual = prevSub; },
+      async () => { const { error } = await sb.from("lancamentos").update({ categoria_manual: novo, subcategoria_manual: novoSub }).eq("id", d.id); if (error) throw error; },
       setSalvos, "Erro ao salvar categoria: ");
   }
 
@@ -247,7 +248,7 @@ export function Lancamentos({ dados, months, enqueue }: Props) {
   // célula de categoria (compartilhada entre tabela e cartões)
   const catCell = (d: Lancamento) => (
     <span className="inline-flex items-center gap-2">
-      <CategoryPicker value={d.categoria_manual || ""} onSelect={(v) => salvarCat(d, v)} />
+      <CategoryPicker value={d.categoria_manual || ""} subValue={d.subcategoria_manual || null} onSelect={(v, s) => salvarCat(d, v, s)} />
       {salvos[d.id] && <span className="text-[12px] text-green">{salvos[d.id]}</span>}
     </span>
   );

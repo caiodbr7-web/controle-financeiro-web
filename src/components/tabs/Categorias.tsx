@@ -86,25 +86,33 @@ export function Categorias({ reload }: Props) {
   const { toast } = useToast();
   const confirm = useConfirm();
 
-  // nº de lançamentos por categoria (categoria_manual) — tally direto do banco
+  // nº de lançamentos por categoria (categoria_manual) e por sub — tally direto do banco
   const [contagem, setContagem] = useState<Record<string, number>>({});
+  const [contagemSub, setContagemSub] = useState<Record<string, number>>({}); // chave "cat//sub"
   const recarregarContagem = useMemo(() => async () => {
     const PAG = 1000;
     const tally: Record<string, number> = {};
+    const tallySub: Record<string, number> = {};
     let de = 0;
     while (true) {
       const { data, error } = await sb
-        .from("lancamentos").select("categoria_manual").not("categoria_manual", "is", null)
+        .from("lancamentos").select("categoria_manual,subcategoria_manual").not("categoria_manual", "is", null)
         .range(de, de + PAG - 1);
       if (error || !data) break;
-      for (const r of data as { categoria_manual: string | null }[]) {
+      for (const r of data as { categoria_manual: string | null; subcategoria_manual?: string | null }[]) {
         const c = r.categoria_manual;
-        if (c) tally[c] = (tally[c] || 0) + 1;
+        if (!c) continue;
+        tally[c] = (tally[c] || 0) + 1;
+        if (r.subcategoria_manual) {
+          const k = `${c}//${r.subcategoria_manual}`;
+          tallySub[k] = (tallySub[k] || 0) + 1;
+        }
       }
       if (data.length < PAG) break;
       de += PAG;
     }
     setContagem(tally);
+    setContagemSub(tallySub);
   }, []);
   useEffect(() => { recarregarContagem(); }, [recarregarContagem, categorias.length]);
 
@@ -221,18 +229,28 @@ export function Categorias({ reload }: Props) {
     setEditSubId(null);
   };
 
-  const excluirSubCat = async (s: Subcategoria) => {
+  const excluirSubCat = async (c: Categoria, s: Subcategoria) => {
+    const n = contagemSub[`${c.nome}//${s.nome}`] || 0;
     const ok = await confirm({
       title: `Apagar subcategoria “${s.nome}”?`,
       danger: true,
       confirmLabel: "Apagar",
-      message: <>Essa ação não pode ser desfeita.</>,
+      message: n > 0 ? (
+        <>
+          <b>{n}</b> {n === 1 ? "transação usa" : "transações usam"} esta subcategoria.
+          {" "}Ao apagar, {n === 1 ? "ela volta" : "elas voltam"} a ter só a categoria <b>{c.nome}</b>.
+          <br />Essa ação não pode ser desfeita.
+        </>
+      ) : (
+        <>Essa ação não pode ser desfeita.</>
+      ),
     });
     if (!ok) return;
     setBusy(true);
     await excluirSub(s.id);
     setBusy(false);
     toast({ message: `Subcategoria “${s.nome}” apagada.`, variant: "info" });
+    if (n > 0) { reload(); recarregarContagem(); }
   };
 
   const moverSub = async (c: Categoria, idx: number, dir: -1 | 1) => {
@@ -326,6 +344,7 @@ export function Categorias({ reload }: Props) {
           <div className="mt-[6px] ml-[48px] pl-3 border-l border-line flex flex-col gap-[4px]">
             {c.subs.map((s, si) => {
               const edSub = editSubId === s.id;
+              const nSub = contagemSub[`${c.nome}//${s.nome}`] || 0;
               return (
                 <div key={s.id} className="flex items-center gap-2">
                   <Setas
@@ -354,8 +373,13 @@ export function Categorias({ reload }: Props) {
                       {s.nome}
                     </button>
                   )}
+                  {nSub > 0 && (
+                    <span className="shrink-0 text-[10.5px] text-muted tabular-nums px-[7px] py-[1px] rounded-full bg-fill">
+                      {nSub} {nSub === 1 ? "transação" : "transações"}
+                    </span>
+                  )}
                   <button
-                    onClick={() => excluirSubCat(s)}
+                    onClick={() => excluirSubCat(c, s)}
                     disabled={busy}
                     title="Apagar subcategoria"
                     className="shrink-0 w-[26px] h-[26px] rounded-[8px] flex items-center justify-center text-muted hover:text-red hover:bg-red/10 bg-transparent border-0 cursor-pointer transition-colors"

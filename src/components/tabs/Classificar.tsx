@@ -37,6 +37,8 @@ interface Snap { ids: number[]; key: string; prevRegra?: string }
 export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   const { toast } = useToast();
   const [escolhas, setEscolhas] = useState<Record<string, string>>({});
+  // subcategoria escolhida por grupo (opcional; sempre subordinada à categoria escolhida)
+  const [escolhasSub, setEscolhasSub] = useState<Record<string, string>>({});
   // grupos que o usuário (ou a sugestão) marcou como "entre contas próprias".
   // É só uma ESCOLHA pendente: nada é gravado até apertar Aplicar / Aplicar conhecidos.
   const [escolhaInterna, setEscolhaInterna] = useState<Record<string, boolean>>({});
@@ -52,6 +54,7 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   const [pickerKey, setPickerKey] = useState<string | null>(null); // linha com o seletor forçado aberto
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [bulkCat, setBulkCat] = useState("");
+  const [bulkSub, setBulkSub] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -171,10 +174,12 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   const conhecidos = useMemo(() => [...conhecidosCat, ...conhecidosInterna], [conhecidosCat, conhecidosInterna]);
   const sugeridos = grupos.filter((g) => !escolhaInterna[g.key] && !g.conhecido && escolhas[g.key]).length;
 
-  // escrita crua no banco (chunked): categoria_manual dos lançamentos
-  async function dbCategoria(ids: number[], categoria: string | null) {
+  // escrita crua no banco (chunked): categoria_manual (+ subcategoria) dos lançamentos
+  async function dbCategoria(ids: number[], categoria: string | null, sub: string | null = null) {
     for (let i = 0; i < ids.length; i += 200) {
-      const { error } = await sb.from("lancamentos").update({ categoria_manual: categoria }).in("id", ids.slice(i, i + 200));
+      const { error } = await sb.from("lancamentos")
+        .update({ categoria_manual: categoria, subcategoria_manual: categoria ? sub : null })
+        .in("id", ids.slice(i, i + 200));
       if (error) throw error;
     }
   }
@@ -195,7 +200,7 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
       restaurarRegraLocal(s.key, s.prevRegra);
       mutate({
         ids: s.ids,
-        patch: { categoria_manual: null },
+        patch: { categoria_manual: null, subcategoria_manual: null },
         persist: async () => { await dbCategoria(s.ids, null); await restaurarRegraDB(s.key, s.prevRegra); },
         onError: erroToast,
       });
@@ -203,19 +208,19 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
     toast({ message: "Classificação desfeita.", variant: "info" });
   };
 
-  // aplica uma categoria a um conjunto de grupos, com toast de desfazer.
-  // OTIMISTA: a linha recebe a categoria na hora (e sai da lista de pendências);
+  // aplica uma categoria (e sub opcional) a um conjunto de grupos, com toast de
+  // desfazer. OTIMISTA: a linha recebe a categoria na hora (e sai das pendências);
   // a gravação no banco vai para a fila e, se falhar, o patch é revertido.
-  function aplicar(alvo: { g: Grupo; cat: string }[], rotulo: string) {
+  function aplicar(alvo: { g: Grupo; cat: string; sub?: string | null }[], rotulo: string) {
     if (!alvo.length) return;
     const snap: Snap[] = alvo.map(({ g }) => ({ ids: g.ids, key: g.key, prevRegra: regras[g.key] }));
-    alvo.forEach(({ g, cat }) => {
+    alvo.forEach(({ g, cat, sub }) => {
       const prevRegra = regras[g.key];
       aprenderRegraLocal(g.key, cat);
       mutate({
         ids: g.ids,
-        patch: { categoria_manual: cat },
-        persist: async () => { await dbCategoria(g.ids, cat); await salvarRegraDB(g.key, cat); },
+        patch: { categoria_manual: cat, subcategoria_manual: sub || null },
+        persist: async () => { await dbCategoria(g.ids, cat, sub || null); await salvarRegraDB(g.key, cat); },
         onError: (e) => { restaurarRegraLocal(g.key, prevRegra); erroToast(e); },
       });
     });
@@ -258,17 +263,17 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
 
   // aplica em lote resoluções MISTAS numa só passada, com um único desfazer que
   // reverte tudo: categorias (catAlvo) + marcações "entre contas próprias" (internaAlvo).
-  function aplicarLote(catAlvo: { g: Grupo; cat: string }[], internaAlvo: Grupo[], rotulo: string) {
+  function aplicarLote(catAlvo: { g: Grupo; cat: string; sub?: string | null }[], internaAlvo: Grupo[], rotulo: string) {
     if (!catAlvo.length && !internaAlvo.length) return;
     const snap: Snap[] = catAlvo.map(({ g }) => ({ ids: g.ids, key: g.key, prevRegra: regras[g.key] }));
     const internaIds = internaAlvo.flatMap((g) => g.ids);
-    catAlvo.forEach(({ g, cat }) => {
+    catAlvo.forEach(({ g, cat, sub }) => {
       const prevRegra = regras[g.key];
       aprenderRegraLocal(g.key, cat);
       mutate({
         ids: g.ids,
-        patch: { categoria_manual: cat },
-        persist: async () => { await dbCategoria(g.ids, cat); await salvarRegraDB(g.key, cat); },
+        patch: { categoria_manual: cat, subcategoria_manual: sub || null },
+        persist: async () => { await dbCategoria(g.ids, cat, sub || null); await salvarRegraDB(g.key, cat); },
         onError: (e) => { restaurarRegraLocal(g.key, prevRegra); erroToast(e); },
       });
     });
@@ -284,7 +289,7 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
         restaurarRegraLocal(s.key, s.prevRegra);
         mutate({
           ids: s.ids,
-          patch: { categoria_manual: null },
+          patch: { categoria_manual: null, subcategoria_manual: null },
           persist: async () => { await dbCategoria(s.ids, null); await restaurarRegraDB(s.key, s.prevRegra); },
           onError: erroToast,
         });
@@ -303,16 +308,17 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   const aplicarUm = (g: Grupo) => {
     if (escolhaInterna[g.key]) { marcarInternaUm(g); return; }
     const cat = escolhas[g.key]; if (!cat) return;
-    aplicar([{ g, cat }], `“${g.ex.slice(0, 24)}” → ${cat}`);
+    const sub = escolhasSub[g.key] || null;
+    aplicar([{ g, cat, sub }], `“${g.ex.slice(0, 24)}” → ${cat}${sub ? ` › ${sub}` : ""}`);
   };
   const aplicarTodas = () => {
     const internaAlvo = grupos.filter((g) => escolhaInterna[g.key]);
-    const catAlvo = grupos.filter((g) => !escolhaInterna[g.key] && escolhas[g.key]).map((g) => ({ g, cat: escolhas[g.key] }));
+    const catAlvo = grupos.filter((g) => !escolhaInterna[g.key] && escolhas[g.key]).map((g) => ({ g, cat: escolhas[g.key], sub: escolhasSub[g.key] || null }));
     const n = internaAlvo.length + catAlvo.length;
     aplicarLote(catAlvo, internaAlvo, `${n} estabelecimento${n > 1 ? "s" : ""} resolvido${n > 1 ? "s" : ""} ✓`);
   };
   const aplicarConhecidos = () => {
-    const catAlvo = conhecidosCat.map((g) => ({ g, cat: escolhas[g.key] }));
+    const catAlvo = conhecidosCat.map((g) => ({ g, cat: escolhas[g.key], sub: escolhasSub[g.key] || null }));
     const n = conhecidos.length;
     aplicarLote(catAlvo, conhecidosInterna, `${n} conhecido${n > 1 ? "s" : ""} aplicado${n > 1 ? "s" : ""} ✓`);
   };
@@ -340,11 +346,11 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   const aplicarSelecionados = () => {
     const alvo = grupos
       .filter((g) => sel.has(g.key))
-      .map((g) => ({ g, cat: bulkCat || escolhas[g.key] }))
+      .map((g) => ({ g, cat: bulkCat || escolhas[g.key], sub: bulkCat ? bulkSub : escolhasSub[g.key] || null }))
       .filter((x) => x.cat);
     if (!alvo.length) return;
-    aplicar(alvo, bulkCat ? `${alvo.length} selecionados → ${bulkCat}` : `${alvo.length} selecionados classificados ✓`);
-    setBulkCat("");
+    aplicar(alvo, bulkCat ? `${alvo.length} selecionados → ${bulkCat}${bulkSub ? ` › ${bulkSub}` : ""}` : `${alvo.length} selecionados classificados ✓`);
+    setBulkCat(""); setBulkSub(null);
   };
 
   // ---------- teclado: ↑/↓ navega · Enter abre seletor · espaço seleciona · A aplica ----------
@@ -417,7 +423,7 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
             </label>
             {sel.size > 0 && (
               <div className="flex flex-wrap items-center gap-2 ml-auto">
-                <CategoryPicker value={bulkCat} onSelect={setBulkCat} placeholder="Sobrepor categoria…" />
+                <CategoryPicker value={bulkCat} subValue={bulkSub} onSelect={(c, s) => { setBulkCat(c); setBulkSub(s || null); }} placeholder="Sobrepor categoria…" />
                 <button
                   disabled={busy || selAplicaveis === 0}
                   onClick={aplicarSelecionados}
@@ -503,10 +509,15 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
                       <CategoryPicker
                         key={pickerKey === g.key ? `open-${g.key}` : g.key}
                         value={cat}
+                        subValue={escolhasSub[g.key] || null}
                         autoOpen={pickerKey === g.key}
                         onClose={voltarFoco}
                         // escolher uma categoria desmarca "entre contas próprias"
-                        onSelect={(c) => { setEscolhas((s) => ({ ...s, [g.key]: c })); setEscolhaInterna((s) => ({ ...s, [g.key]: false })); }}
+                        onSelect={(c, sub) => {
+                          setEscolhas((s) => ({ ...s, [g.key]: c }));
+                          setEscolhasSub((s) => { const n = { ...s }; if (sub) n[g.key] = sub; else delete n[g.key]; return n; });
+                          setEscolhaInterna((s) => ({ ...s, [g.key]: false }));
+                        }}
                       />
                     </div>
                     <button

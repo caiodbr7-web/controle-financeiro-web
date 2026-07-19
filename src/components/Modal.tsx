@@ -22,13 +22,15 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
   // edição de categoria direto do pop-up → grava em `categoria_manual` (override).
   // OTIMISTA: reflete na hora (objeto local + dashboards via patch) e a escrita
   // vai para a fila em background — sem `reload` bloqueante.
-  function salvarCat(d: Lancamento, valor: string) {
+  function salvarCat(d: Lancamento, valor: string, sub?: string | null) {
     const novo = valor || null;
+    const novoSub = (novo && sub) || null;
     d.categoria_manual = novo; // espelha na tabela do próprio pop-up
+    d.subcategoria_manual = novoSub;
     setRev((r) => r + 1);
     setSalvos((s) => ({ ...s, [d.id]: "salvando…" }));
     const persist = async () => {
-      const { error } = await sb.from("lancamentos").update({ categoria_manual: novo }).eq("id", d.id);
+      const { error } = await sb.from("lancamentos").update({ categoria_manual: novo, subcategoria_manual: novoSub }).eq("id", d.id);
       if (error) throw error;
     };
     const finalizar = () => {
@@ -36,7 +38,7 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
       setTimeout(() => setSalvos((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
     };
     const p = mutate
-      ? mutate({ ids: [d.id], patch: { categoria_manual: novo }, persist })
+      ? mutate({ ids: [d.id], patch: { categoria_manual: novo, subcategoria_manual: novoSub }, persist })
       : persist();
     p.then(finalizar).catch((e: unknown) => {
       setSalvos((s) => ({ ...s, [d.id]: "" }));
@@ -120,7 +122,11 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
                     </td>
                     <td>
                       <span className="inline-flex items-center gap-[6px]">
-                        <CategoryPicker value={d.categoria_manual || d.categoria_auto || ""} onSelect={(v) => salvarCat(d, v)} />
+                        <CategoryPicker
+                          value={d.categoria_manual || d.categoria_auto || ""}
+                          subValue={d.categoria_manual ? d.subcategoria_manual || null : null}
+                          onSelect={(v, s) => salvarCat(d, v, s)}
+                        />
                         {salvos[d.id] && <span className="text-muted text-[11px] whitespace-nowrap">{salvos[d.id]}</span>}
                       </span>
                     </td>
