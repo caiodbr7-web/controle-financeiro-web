@@ -24,7 +24,7 @@ function SeletorCor({ cor, onPick }: { cor: string; onPick: (c: string) => void 
         type="button"
         onClick={() => setAberto((o) => !o)}
         title="Mudar cor"
-        className="w-[18px] h-[18px] rounded-full border border-line cursor-pointer block"
+        className="tap w-[18px] h-[18px] rounded-full border border-line cursor-pointer block"
         style={{ background: cor }}
       />
       {aberto && (
@@ -55,7 +55,7 @@ function Setas({ podeSubir, podeDescer, onSubir, onDescer }: {
         onClick={onSubir}
         disabled={!podeSubir}
         title="Mover para cima"
-        className="w-[20px] h-[15px] flex items-center justify-center text-muted hover:text-txt disabled:opacity-25 disabled:cursor-default bg-transparent border-0 cursor-pointer p-0"
+        className="w-[28px] h-[22px] md:w-[20px] md:h-[15px] flex items-center justify-center text-muted hover:text-txt disabled:opacity-25 disabled:cursor-default bg-transparent border-0 cursor-pointer p-0"
       >
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 15 6-6 6 6" /></svg>
       </button>
@@ -63,7 +63,7 @@ function Setas({ podeSubir, podeDescer, onSubir, onDescer }: {
         onClick={onDescer}
         disabled={!podeDescer}
         title="Mover para baixo"
-        className="w-[20px] h-[15px] flex items-center justify-center text-muted hover:text-txt disabled:opacity-25 disabled:cursor-default bg-transparent border-0 cursor-pointer p-0"
+        className="w-[28px] h-[22px] md:w-[20px] md:h-[15px] flex items-center justify-center text-muted hover:text-txt disabled:opacity-25 disabled:cursor-default bg-transparent border-0 cursor-pointer p-0"
       >
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
       </button>
@@ -332,7 +332,7 @@ export function Categorias({ reload }: Props) {
               onClick={() => excluirCat(c)}
               disabled={busy}
               title="Apagar categoria"
-              className="shrink-0 w-[30px] h-[30px] rounded-[8px] flex items-center justify-center text-muted hover:text-red hover:bg-red/10 bg-transparent border-0 cursor-pointer transition-colors"
+              className="tap shrink-0 w-[30px] h-[30px] rounded-[8px] flex items-center justify-center text-muted hover:text-red hover:bg-red/10 bg-transparent border-0 cursor-pointer transition-colors"
             >
               <IconeLixeira />
             </button>
@@ -382,7 +382,7 @@ export function Categorias({ reload }: Props) {
                     onClick={() => excluirSubCat(c, s)}
                     disabled={busy}
                     title="Apagar subcategoria"
-                    className="shrink-0 w-[26px] h-[26px] rounded-[8px] flex items-center justify-center text-muted hover:text-red hover:bg-red/10 bg-transparent border-0 cursor-pointer transition-colors"
+                    className="tap shrink-0 w-[26px] h-[26px] rounded-[8px] flex items-center justify-center text-muted hover:text-red hover:bg-red/10 bg-transparent border-0 cursor-pointer transition-colors"
                   >
                     <IconeLixeira />
                   </button>

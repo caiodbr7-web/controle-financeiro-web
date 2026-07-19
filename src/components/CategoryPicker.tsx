@@ -104,7 +104,7 @@ export function CategoryPicker({
         ref={btnRef}
         type="button"
         onClick={() => (aberto ? fechar() : abrir())}
-        className={`select-chev relative inline-flex items-center gap-[7px] bg-card text-txt border border-line rounded-[8px] cursor-pointer outline-none focus-visible:border-muted hover:border-muted/70 transition-colors ${pad} ${className}`}
+        className={`tap select-chev relative inline-flex items-center gap-[7px] bg-card text-txt border border-line rounded-[8px] cursor-pointer outline-none focus-visible:border-muted hover:border-muted/70 transition-colors ${pad} ${className}`}
       >
         {value && <span className="w-[9px] h-[9px] rounded-full shrink-0" style={{ background: corCategoria(value) }} />}
         <span className={`truncate ${value ? "" : "text-muted"}`}>{rotulo}</span>

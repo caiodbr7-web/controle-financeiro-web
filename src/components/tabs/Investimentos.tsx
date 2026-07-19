@@ -898,8 +898,8 @@ export function Investimentos() {
     {
       key: "manual", label: "", noCsv: true, render: (i) => (i.manual ? (
         <span className="inline-flex gap-1 whitespace-nowrap">
-          <button onClick={() => setModal({ mode: "edit", inv: i })} title="Editar" className="w-[26px] h-[26px] rounded-[7px] bg-fill text-muted hover:text-txt border-0 cursor-pointer text-[12px] transition-colors">✎</button>
-          <button onClick={() => removerManual(i)} title="Excluir" className="w-[26px] h-[26px] rounded-[7px] bg-fill text-muted hover:text-red border-0 cursor-pointer text-[12px] transition-colors">🗑</button>
+          <button onClick={() => setModal({ mode: "edit", inv: i })} title="Editar" className="tap w-[26px] h-[26px] rounded-[7px] bg-fill text-muted hover:text-txt border-0 cursor-pointer text-[12px] transition-colors">✎</button>
+          <button onClick={() => removerManual(i)} title="Excluir" className="tap w-[26px] h-[26px] rounded-[7px] bg-fill text-muted hover:text-red border-0 cursor-pointer text-[12px] transition-colors">🗑</button>
         </span>
       ) : <span className="text-muted/40">—</span>),
     },
@@ -1137,7 +1137,8 @@ export function Investimentos() {
       {erro && <div className="text-[13px] text-red bg-fill rounded-[10px] px-3 py-2 mb-3">Erro: {erro}</div>}
       {msg && <div className="text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2 mb-3">{msg}</div>}
 
-      <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
+      {/* desktop: tabela completa */}
+      <div className="hidden md:block bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
         <div className="max-h-[620px] overflow-auto scroll-thin">
           <table className="tbl min-w-[1320px] text-[12.5px]">
             <thead><tr>{COLS.map(th)}</tr></thead>
@@ -1154,6 +1155,32 @@ export function Investimentos() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* mobile: cartões (reaproveita os renderizadores das colunas) */}
+      <div className="md:hidden space-y-[10px]">
+        {filtrados.slice(0, MAX).map((i) => {
+          const col = (k: ColDef["key"]) => COLS.find((c) => c.key === k);
+          return (
+            <div key={i.investment_id} className="bg-card border border-line rounded-[14px] shadow-card p-[13px]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 text-[13.5px] font-medium">{col("nome")?.render?.(i)}</div>
+                <div className="text-right shrink-0 tabular-nums text-[13.5px] font-semibold">{col("saldo")?.render?.(i)}</div>
+              </div>
+              <div className="mt-[6px] text-[12px] text-muted flex flex-wrap gap-x-3 gap-y-[2px]">
+                <span className="truncate max-w-full">{instDe(i)}</span>
+                {i.valor_aplicado != null && <span>Aplic. {fmtMoeda(i.valor_aplicado, moedaDe(i))}</span>}
+                {i.lucro != null && <span>Lucro <span className={i.lucro < 0 ? "text-red" : "text-green"}>{fmtMoeda(i.lucro, moedaDe(i))}</span></span>}
+              </div>
+              <div className="mt-[10px] flex flex-wrap items-center gap-2">
+                {col("tipo_manual")?.render?.(i)}
+                {col("liquidez_d1_manual")?.render?.(i)}
+                {i.manual && col("manual")?.render?.(i)}
+              </div>
+            </div>
+          );
+        })}
+        {!filtrados.length && <div className="bg-card border border-line rounded-[14px] p-4 text-muted text-[13px]">Nenhuma posição com esses filtros.</div>}
       </div>
       {filtrados.length > MAX && <div className="text-muted text-[12.5px] mt-2">Mostrando {MAX.toLocaleString("pt-BR")} de {filtrados.length.toLocaleString("pt-BR")} posições. Refine os filtros.</div>}
 

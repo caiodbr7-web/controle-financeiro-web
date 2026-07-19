@@ -31,6 +31,14 @@ const SUB_IMPORT: SubAba[] = [
   { id: "lanc", label: "Lançamentos" },
   { id: "openbanking", label: "Open Banking" },
 ];
+/* sub-abas analíticas — no desktop moram no menu superior; no mobile viram uma
+   barra segmentada dentro do conteúdo (a navegação principal é a barra inferior). */
+const ANALISE_SUB: SubAba[] = [
+  { id: "geral", label: "Visão Geral" },
+  { id: "mensal", label: "Mensal" },
+  { id: "diario", label: "Diário" },
+  { id: "investimentos", label: "Investimentos" },
+];
 /* navegação agrupada: Análise · Planejar · Importação.
    As abas com `subs` agrupam sub-abas internas (renderizadas no conteúdo). */
 type TopAba = SubAba | { grupo: "importacao"; label: string; subs: SubAba[] };
@@ -86,6 +94,28 @@ const VISAO_LABEL: Record<Visao, string> = {
 // abas analíticas que dependem dos lançamentos (mostram skeleton na 1ª carga)
 const ABAS_DADOS = new Set<Aba>(["inicio", "geral", "mensal", "diario", "planejamento", "classificar", "lanc"]);
 
+/* ===== barra de navegação inferior (mobile, < md) =====
+   5 destinos principais em alvos grandes, alcançáveis com o polegar. Cada item
+   ativa quando a aba atual pertence ao seu conjunto (`match`). */
+const NAV_ICON = {
+  inicio: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" /><path d="M9.5 21v-6h5v6" /></svg>
+  ),
+  analise: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20V4" /><path d="M4 20h16" /><path d="M8 16l3.5-4 3 2.5L20 8" /></svg>
+  ),
+  importar: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="m8 11 4 4 4-4" /><path d="M5 21h14" /></svg>
+  ),
+  planejar: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5" /><path d="M3.5 9h17M8 3v3M16 3v3M7.5 13h3M7.5 16.5h6" /></svg>
+  ),
+  categorias: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6.5h13M3 12h18M3 17.5h9" /><circle cx="19.5" cy="6.5" r="1.6" fill="currentColor" stroke="none" /><circle cx="16.5" cy="17.5" r="1.6" fill="currentColor" stroke="none" /></svg>
+  ),
+};
+type NavItem = { key: string; label: string; icon: JSX.Element; target: Aba | "last-analise" | "last-import"; match: Set<Aba>; dot?: boolean };
+
 export default function App() {
   const { logado, erro, demo, entrarGoogle, entrarTeste, sair } = useAuth();
   const { allDados, status, reload, loading, patchLocal, mutate, enqueue } = useLancamentos(!!logado);
@@ -102,8 +132,10 @@ export default function App() {
   // Classificar é a aba inicial do menu Importação: garantir que todo movimento
   // passe pela classificação é o fluxo principal ao abrir Importação.
   const lastImport = useRef<Aba>("classificar");
+  const lastAnalise = useRef<Aba>("geral");
   const navTo = useCallback((id: Aba) => {
     if (SUB_IMPORT.some((s) => s.id === id)) lastImport.current = id;
+    if (ANALISE_SUB.some((s) => s.id === id)) lastAnalise.current = id;
     setAba(id);
   }, []);
 
@@ -170,10 +202,47 @@ export default function App() {
   if (!logado) return <Login onGoogle={entrarGoogle} onTeste={entrarTeste} erro={erro} />;
 
   const tabProps = { dados, allDados, months, openModal, patchLocal, mutate, enqueue };
-  const iconBtn = "w-[28px] h-[28px] rounded-full border border-line bg-transparent text-muted cursor-pointer flex items-center justify-center transition-all shrink-0";
+  const iconBtn = "tap w-[28px] h-[28px] rounded-full border border-line bg-transparent text-muted cursor-pointer flex items-center justify-center transition-all shrink-0";
 
-  // grupo de sub-abas ativo (mostra a barra interna no conteúdo)
-  const subAtivo = SUB_IMPORT.some((s) => s.id === aba) ? SUB_IMPORT : null;
+  // grupos de sub-abas: Importação aparece em todos os tamanhos; Análise só no
+  // mobile (no desktop essas abas moram na navegação superior).
+  const subImportAtivo = SUB_IMPORT.some((s) => s.id === aba);
+  const subAnaliseAtivo = ANALISE_SUB.some((s) => s.id === aba);
+
+  // barra segmentada de sub-abas (reutilizada por Importação e Análise)
+  const subTabBar = (subs: SubAba[], extraCls = "") => (
+    <div className={`inline-flex gap-[2px] bg-soft p-[3px] rounded-[10px] flex-wrap mb-[18px] ${extraCls}`}>
+      {subs.map((s) => {
+        const on = aba === s.id;
+        return (
+          <button
+            key={s.id}
+            onClick={() => navTo(s.id)}
+            aria-current={on ? "page" : undefined}
+            className={`relative whitespace-nowrap border-0 px-[13px] py-[9px] text-[13px] cursor-pointer rounded-[8px] transition-all ${
+              on ? "bg-card text-accent font-bold shadow-card" : "bg-transparent text-muted hover:text-txt font-medium"
+            }`}
+          >
+            {s.label}
+            {s.id === "classificar" && pendClass > 0 && (
+              <span className="absolute top-[5px] right-[3px] w-[5px] h-[5px] rounded-full bg-amber" title={`${pendClass} lançamentos a classificar`} />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // itens da barra inferior (mobile)
+  const navItems: NavItem[] = [
+    { key: "inicio", label: "Início", icon: NAV_ICON.inicio, target: "inicio", match: new Set<Aba>(["inicio"]) },
+    { key: "analise", label: "Análise", icon: NAV_ICON.analise, target: "last-analise", match: new Set<Aba>(ANALISE_SUB.map((s) => s.id)) },
+    { key: "importar", label: "Importar", icon: NAV_ICON.importar, target: "last-import", match: new Set<Aba>(SUB_IMPORT.map((s) => s.id)), dot: pendClass > 0 },
+    { key: "planejar", label: "Planejar", icon: NAV_ICON.planejar, target: "planejamento", match: new Set<Aba>(["planejamento"]) },
+    { key: "categorias", label: "Categorias", icon: NAV_ICON.categorias, target: "categorias", match: new Set<Aba>(["categorias"]) },
+  ];
+  const goNav = (it: NavItem) =>
+    navTo(it.target === "last-analise" ? lastAnalise.current : it.target === "last-import" ? lastImport.current : it.target);
 
   return (
     <div>
@@ -228,7 +297,7 @@ export default function App() {
             </div>
           </div>
 
-          <nav className="flex items-center overflow-x-auto no-scrollbar mt-[1px]">
+          <nav className="hidden md:flex items-center overflow-x-auto no-scrollbar mt-[1px]">
             {GRUPOS.map((grupo, gi) => (
               <Fragment key={gi}>
                 {gi > 0 && <span className="w-px h-[13px] bg-line mx-[7px] shrink-0" aria-hidden />}
@@ -263,7 +332,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="px-4 sm:px-6 lg:px-8 py-5 sm:py-6 max-w-[1380px] mx-auto">
+      <main className="px-4 sm:px-6 lg:px-8 py-5 sm:py-6 max-w-[1380px] mx-auto pb-bottomnav">
         {status && !loading && (
           <div className="inline-flex items-center gap-2 text-muted text-[12.5px] mb-3 bg-fill rounded-full px-[10px] py-[4px]">
             <span className="w-[8px] h-[8px] rounded-full border-2 border-muted/40 border-t-muted animate-spin" />
@@ -275,33 +344,14 @@ export default function App() {
             atualizou de forma otimista; isto só sinaliza que a persistência
             ainda está acontecendo, sem travar nada. */}
         {saving && !status && (
-          <div className="fixed bottom-4 right-4 z-40 inline-flex items-center gap-2 text-muted text-[12.5px] bg-card border border-line shadow-card rounded-full px-[12px] py-[6px]">
+          <div className="fixed bottom-[76px] md:bottom-4 right-4 z-40 inline-flex items-center gap-2 text-muted text-[12.5px] bg-card border border-line shadow-card rounded-full px-[12px] py-[6px]">
             <span className="w-[8px] h-[8px] rounded-full border-2 border-muted/40 border-t-accent animate-spin" />
             salvando…
           </div>
         )}
 
-        {subAtivo && (
-          <div className="inline-flex gap-[2px] bg-soft p-[3px] rounded-[10px] flex-wrap mb-[18px]">
-            {subAtivo.map((s) => {
-              const on = aba === s.id;
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => navTo(s.id)}
-                  className={`relative whitespace-nowrap border-0 px-[13px] py-[7px] text-[13px] cursor-pointer rounded-[8px] transition-all ${
-                    on ? "bg-card text-accent font-bold shadow-card" : "bg-transparent text-muted hover:text-txt font-medium"
-                  }`}
-                >
-                  {s.label}
-                  {s.id === "classificar" && pendClass > 0 && (
-                    <span className="absolute top-[5px] right-[3px] w-[5px] h-[5px] rounded-full bg-amber" title={`${pendClass} lançamentos a classificar`} />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {subImportAtivo && subTabBar(SUB_IMPORT)}
+        {subAnaliseAtivo && subTabBar(ANALISE_SUB, "md:hidden")}
 
         {loading && ABAS_DADOS.has(aba) ? (
           aba === "inicio" ? <SkInicio /> : <SkTabela />
@@ -321,6 +371,34 @@ export default function App() {
         </div>
         )}
       </main>
+
+      {/* ===== navegação inferior (mobile) ===== */}
+      <nav
+        aria-label="Navegação principal"
+        className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-bg/90 backdrop-blur-[14px] border-t border-line pb-safe"
+      >
+        <div className="flex items-stretch justify-around max-w-[560px] mx-auto px-1">
+          {navItems.map((it) => {
+            const ativo = it.match.has(aba);
+            return (
+              <button
+                key={it.key}
+                onClick={() => goNav(it)}
+                aria-current={ativo ? "page" : undefined}
+                className={`relative flex-1 flex flex-col items-center justify-center gap-[3px] py-[8px] min-h-[58px] bg-transparent border-0 cursor-pointer transition-colors ${
+                  ativo ? "text-accent" : "text-muted"
+                }`}
+              >
+                <span className="relative">
+                  {it.icon}
+                  {it.dot && <span className="absolute -top-[2px] -right-[3px] w-[7px] h-[7px] rounded-full bg-amber ring-2 ring-bg" title={`${pendClass} a classificar`} />}
+                </span>
+                <span className={`text-[10.5px] leading-none tracking-tight ${ativo ? "font-bold" : "font-medium"}`}>{it.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
       <Modal data={modal} onClose={() => setModal(null)} mutate={mutate} />
       <CommandPalette open={paletaAberta} onClose={() => setPaletaAberta(false)} commands={comandos} />

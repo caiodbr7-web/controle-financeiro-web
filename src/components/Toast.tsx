@@ -61,7 +61,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={{ toast, dismiss }}>
       {children}
-      <div className="fixed z-[100] left-1/2 -translate-x-1/2 bottom-[18px] flex flex-col items-center gap-[10px] w-[calc(100vw-32px)] max-w-[420px] pointer-events-none">
+      <div className="fixed z-[100] left-1/2 -translate-x-1/2 bottom-[84px] md:bottom-[18px] flex flex-col items-center gap-[10px] w-[calc(100vw-32px)] max-w-[420px] pointer-events-none">
         {itens.map((t) => {
           const v = t.variant || "info";
           return (
@@ -85,7 +85,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <button
                 onClick={() => dismiss(t.id)}
                 aria-label="Fechar"
-                className="shrink-0 w-[22px] h-[22px] rounded-full bg-transparent text-muted hover:text-txt border-0 cursor-pointer flex items-center justify-center text-[12px]"
+                className="tap shrink-0 w-[22px] h-[22px] rounded-full bg-transparent text-muted hover:text-txt border-0 cursor-pointer flex items-center justify-center text-[12px]"
               >
                 ✕
               </button>

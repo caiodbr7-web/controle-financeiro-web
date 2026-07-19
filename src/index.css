@@ -74,6 +74,29 @@ body {
   transition: background-color 0.4s ease, color 0.4s ease;
 }
 
+@layer utilities {
+  /* ===== mobile: reserva espaço p/ a barra de navegação inferior (fixed) =====
+     A bottom nav só existe < md; abaixo desse ponto o conteúdo precisa de um
+     respiro extra no rodapé (altura da barra + safe-area do notch/gestos). */
+  @media (max-width: 767px) {
+    .pb-bottomnav { padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); }
+  }
+  /* alvo de toque confortável (≥44px) sem alterar o visual: aumenta só a área
+     sensível via pseudo-elemento. Aplique em botões/ícones pequenos no mobile. */
+  .tap { position: relative; }
+  .tap::after {
+    content: "";
+    position: absolute;
+    inset: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  @media (min-width: 768px) { .tap::after { display: none; } }
+  /* safe-area do rodapé (usado pela própria barra inferior) */
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+}
+
 ::selection {
   background: rgb(var(--c-accent) / 0.18);
 }
