@@ -97,7 +97,34 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
             </tbody>
           </table>
           <h4 className="text-[11px] text-muted uppercase tracking-[.05em] mt-[18px] mb-2 font-semibold">Transações ({data.rows.length})</h4>
-          <div className="max-h-[420px] overflow-auto scroll-thin">
+          {/* mobile: cartões (sem rolagem horizontal) */}
+          <div className="md:hidden max-h-[420px] overflow-auto scroll-thin divide-y divide-line -mx-2">
+            {ord.map((d) => (
+              <div key={d.id} className="px-2 py-[11px]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-medium truncate" title={d.descricao}>{d.descricao}</div>
+                    <div className="text-muted text-[11.5px] truncate">
+                      {dataCompleta(d)} · {d.origem} · {d.classe || "—"}
+                      {ehInterna(d) && <span className="text-violet ml-1" title="Entre contas próprias">⇄</span>}
+                      {d.subtipo && <span className="ml-1">· {d.subtipo}</span>}
+                    </div>
+                  </div>
+                  <div className={`tabular-nums text-[13px] font-medium shrink-0 ${d.valor < 0 ? "text-red" : "text-green"}`}>{BRL(d.valor)}</div>
+                </div>
+                <div className="mt-[8px] flex items-center gap-[6px]">
+                  <CategoryPicker
+                    value={d.categoria_manual || d.categoria_auto || ""}
+                    subValue={d.categoria_manual ? d.subcategoria_manual || null : null}
+                    onSelect={(v, s) => salvarCat(d, v, s)}
+                  />
+                  {salvos[d.id] && <span className="text-muted text-[11px] whitespace-nowrap">{salvos[d.id]}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block max-h-[420px] overflow-auto scroll-thin">
             <table className="tbl min-w-[620px]">
               <thead><tr>
                 <th>Data</th>
