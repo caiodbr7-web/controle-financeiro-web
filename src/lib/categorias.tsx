@@ -181,8 +181,8 @@ export function CategoriasProvider({ children }: { children: ReactNode }) {
   const excluir = useCallback(async (id: number) => {
     const alvo = categorias.find((c) => c.id === id);
     if (!alvo) return;
-    // os lançamentos da categoria voltam a "sem categoria"...
-    await sb.from("lancamentos").update({ categoria_manual: null }).eq("categoria_manual", alvo.nome);
+    // os lançamentos da categoria voltam a "sem categoria" (sub inclusa)...
+    await sb.from("lancamentos").update({ categoria_manual: null, subcategoria_manual: null }).eq("categoria_manual", alvo.nome);
     // ...e as regras que apontavam p/ ela são removidas (não re-sugerir categoria morta)
     await sb.from("regras").delete().eq("categoria", alvo.nome);
     await sb.from("categorias").delete().eq("id", id);
@@ -222,14 +222,24 @@ export function CategoriasProvider({ children }: { children: ReactNode }) {
       return { ok: false, erro: "Já existe uma subcategoria com esse nome." };
     const { error } = await sb.from("subcategorias").update({ nome: n }).eq("id", subId);
     if (error) return { ok: false, erro: error.message };
+    // propaga o novo nome p/ os lançamentos já classificados nessa sub (best-effort)
+    await sb.from("lancamentos").update({ subcategoria_manual: n })
+      .eq("categoria_manual", cat.nome).eq("subcategoria_manual", atual.nome);
     await recarregar();
     return { ok: true };
   }, [categorias, recarregar]);
 
   const excluirSub = useCallback(async (subId: number) => {
+    const cat = categorias.find((c) => c.subs.some((s) => s.id === subId));
+    const alvo = cat?.subs.find((s) => s.id === subId);
+    // os lançamentos da sub voltam a só ter a categoria-mãe
+    if (cat && alvo) {
+      await sb.from("lancamentos").update({ subcategoria_manual: null })
+        .eq("categoria_manual", cat.nome).eq("subcategoria_manual", alvo.nome);
+    }
     await sb.from("subcategorias").delete().eq("id", subId);
     await recarregar();
-  }, [recarregar]);
+  }, [categorias, recarregar]);
 
   const reordenarSub = useCallback(async (categoriaId: number, subIds: number[]) => {
     const cat = categorias.find((c) => c.id === categoriaId);
