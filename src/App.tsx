@@ -3,7 +3,7 @@ import type { Aba, Lancamento, Visao } from "./types";
 import { useAuth } from "./hooks/useAuth";
 import { useLancamentos } from "./hooks/useLancamentos";
 import { useTheme, type ThemePref } from "./lib/theme";
-import { ehGasto } from "./lib/finance";
+import { precisaClassificar } from "./lib/finance";
 import { Login } from "./components/Login";
 import { Logo } from "./components/Logo";
 import { Modal, type ModalData } from "./components/Modal";
@@ -97,8 +97,10 @@ export default function App() {
   // método ativo da aba Adicionar (arquivo manual × banco via Open Finance)
   const [addMetodo, setAddMetodo] = useState<MetodoAdd>("arquivo");
 
-  // lembra a última sub-aba visitada de cada grupo com sub-abas
-  const lastImport = useRef<Aba>("adicionar");
+  // lembra a última sub-aba visitada de cada grupo com sub-abas.
+  // Classificar é a aba inicial do menu Importação: garantir que todo movimento
+  // passe pela classificação é o fluxo principal ao abrir Importação.
+  const lastImport = useRef<Aba>("classificar");
   const navTo = useCallback((id: Aba) => {
     if (SUB_IMPORT.some((s) => s.id === id)) lastImport.current = id;
     setAba(id);
@@ -138,7 +140,7 @@ export default function App() {
 
   // pendência global de classificação (pontinho na navegação)
   const pendClass = useMemo(
-    () => allDados.reduce((s, d) => s + (ehGasto(d.classe) && !d.categoria_manual ? 1 : 0), 0),
+    () => allDados.reduce((s, d) => s + (precisaClassificar(d) ? 1 : 0), 0),
     [allDados]
   );
 

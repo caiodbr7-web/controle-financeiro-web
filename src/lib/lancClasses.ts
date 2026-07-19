@@ -54,6 +54,17 @@ export const ehTransfer = (c: string | null): boolean => String(c || "").startsW
 /** Movimento entre contas próprias (transf. interna, pagamento de fatura, aporte/resgate). */
 export const ehInterna = (d: { interna?: boolean | null }): boolean => d.interna === true;
 
+/**
+ * Um movimento "precisa passar pela classificação" enquanto o usuário não o
+ * resolveu de uma das duas formas: (a) atribuiu uma CATEGORIA (`categoria_manual`)
+ * ou (b) confirmou que é ENTRE CONTAS PRÓPRIAS (interna). Vale para gasto, receita
+ * e transferências — tudo que não estiver contabilizado como categoria nem como
+ * interno aparece como pendência na aba Classificar. (Fonte única desta regra.)
+ */
+export function precisaClassificar(d: { categoria_manual?: string | null; interna?: boolean | null }): boolean {
+  return !d.categoria_manual && !ehInterna(d);
+}
+
 // ---- contrato dos dashboards (INCLUI a regra do `interna`) -----------------
 // Estes são os ÚNICOS critérios que os dashboards de gasto/receita devem usar.
 

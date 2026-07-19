@@ -6,11 +6,11 @@ import { useChart, ChartTip } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
   BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dataCompleta,
-  dvDiasNoMes, dvLabel, MES_ABREV, mesCurto, mesComp, diaDoMov, ehParcelaAnterior,
-  normEstab, valorAporte, valorReceitaInvest,
+  dvDiasNoMes, dvLabel, mesComp, diaDoMov, ehParcelaAnterior,
+  normEstab, valorAporte, valorReceitaInvest, precisaClassificar,
 } from "../../lib/finance";
 import { ehInterna } from "../../lib/lancClasses";
-import { type Plano, projetar, contribNoMes, ehReceitaTipo } from "../../lib/projecao";
+import { type Plano, projetar } from "../../lib/projecao";
 
 interface Props {
   dados: Lancamento[];
@@ -39,19 +39,6 @@ function BigVal({
       {sub && <div className="text-[11.5px] text-muted mt-[3px]">{sub}</div>}
       {extra}
     </Tag>
-  );
-}
-
-function ActionRow({ label, detail, onClick, tone = "amber" }: { label: string; detail?: string; onClick: () => void; tone?: "amber" | "red" }) {
-  return (
-    <button onClick={onClick} className="w-full flex items-center gap-3 px-0 py-[11px] bg-transparent border-0 cursor-pointer text-left group">
-      <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${tone === "red" ? "bg-red" : "bg-amber"}`} />
-      <span className="min-w-0 flex-1">
-        <span className="block text-[13.5px] font-medium group-hover:text-accent transition-colors">{label}</span>
-        {detail && <span className="block text-[11.5px] text-muted mt-[1px]">{detail}</span>}
-      </span>
-      <span className="text-muted text-[16px] leading-none shrink-0" aria-hidden>›</span>
-    </button>
   );
 }
 
@@ -236,23 +223,14 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   const pend = useMemo(() => {
     const grupos = new Set<string>(); let classTotal = 0, classN = 0;
     allDados.forEach((d) => {
-      if (ehGasto(d.classe) && !d.categoria_manual) { grupos.add(normEstab(d.descricao)); classTotal += Math.abs(d.valor); classN++; }
+      if (precisaClassificar(d)) { grupos.add(normEstab(d.descricao)); classTotal += Math.abs(d.valor); classN++; }
     });
-    const comps = [...new Set(allDados.map((d) => d.competencia))].sort();
-    const ult = comps[comps.length - 1];
-    const bancos = ["Nubank", "PicPay", "Itau"].filter((b) => allDados.some((d) => d.banco === b));
-    let arqFaltam = 0;
-    if (ult) bancos.forEach((b) => {
-      if (!allDados.some((d) => d.competencia === ult && d.banco === b && String(d.origem || "").startsWith("Cartao"))) arqFaltam++;
-      if (!allDados.some((d) => d.competencia === ult && d.banco === b && String(d.origem || "").startsWith("Conta"))) arqFaltam++;
-    });
-    return { classGrupos: grupos.size, classTotal, classN, arqFaltam, arqMes: ult ? mesCurto(ult) : "" };
+    return { classGrupos: grupos.size, classTotal, classN };
   }, [allDados]);
 
   /* ---------- planos: budget do mês selecionado + pendência de preenchimento ---------- */
   const [planosRaw, setPlanosRaw] = useState<Plano[] | null>(null);
   const [budget, setBudget] = useState<number | null>(null);
-  const [orc, setOrc] = useState<{ pend: number; total: number } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -265,7 +243,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
 
   useEffect(() => {
     if (!planosRaw) return;
-    if (!planosRaw.length) { setBudget(null); setOrc(null); return; }
+    if (!planosRaw.length) { setBudget(null); return; }
     (async () => {
       try {
         const card = planosRaw.find((p) => (p as any).eh_cartao_total) || null;
@@ -284,21 +262,13 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
           const g = proj[0]?.gerais ?? 0;
           setBudget(g > 0 ? g : null);
         }
-
-        // pendência de planejamento: contas do mês civil atual ainda sem valor preenchido
-        const gastos = planosRaw.filter((p) => !ehReceitaTipo(p.tipo) && contribNoMes(p, mesAtual) !== 0);
-        if (!gastos.length) { setOrc(null); }
-        else {
-          const ok = new Set(Object.keys(ovr[mesAtual] || {}).map(Number));
-          setOrc({ pend: gastos.filter((p) => !ok.has(p.id)).length, total: gastos.length });
-        }
-      } catch { setBudget(null); setOrc(null); }
+      } catch { setBudget(null); }
     })();
   }, [planosRaw, selKey, mesAtual]);
 
   if (!calc) return <div className="text-muted p-4">Sem dados ainda — importe os primeiros PDFs para começar.</div>;
 
-  const temPend = pend.classGrupos > 0 || (orc?.pend || 0) > 0 || pend.arqFaltam > 0;
+  const temPend = pend.classGrupos > 0;
   const roxo = cc.roxoLinha("1");
 
   // clique num dia do gráfico → detalhamento dos lançamentos daquele dia.
@@ -467,29 +437,27 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
       {/* ---------- pendências ---------- */}
       {temPend && (
         <Panel title="Pendências" className="!mb-0 mt-[18px]">
-          <div className="divide-y divide-line">
-            {pend.classGrupos > 0 && (
-              <ActionRow
-                label={`Classificar ${pend.classGrupos} ${pend.classGrupos === 1 ? "estabelecimento" : "estabelecimentos"}`}
-                detail={`${pend.classN} lançamentos · ${BRL0(pend.classTotal)}`}
-                onClick={() => go("classificar")}
-              />
-            )}
-            {(orc?.pend || 0) > 0 && (
-              <ActionRow
-                label={`Planejamento: ${orc!.pend} ${orc!.pend === 1 ? "conta sem valor" : "contas sem valor"} em ${MES_ABREV[hoje.getMonth()]}`}
-                detail={`${orc!.total - orc!.pend} de ${orc!.total} preenchidas`}
-                onClick={() => go("planejamento")}
-              />
-            )}
-            {pend.arqFaltam > 0 && (
-              <ActionRow
-                label={`${pend.arqFaltam} ${pend.arqFaltam === 1 ? "documento pendente" : "documentos pendentes"} · ${pend.arqMes}`}
-                detail="faturas/extratos ainda não importados"
-                onClick={() => go("lanc")}
-              />
-            )}
-          </div>
+          <button
+            onClick={() => go("classificar")}
+            className="w-full text-left flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-amber/30 bg-amber/[0.07] px-[18px] py-[16px] cursor-pointer group hover:bg-amber/10 transition-colors"
+          >
+            <span className="flex items-center gap-[10px] min-w-0">
+              <span className="w-[9px] h-[9px] rounded-full shrink-0 bg-amber" />
+              <span className="min-w-0">
+                <span className="block text-[13px] text-muted font-medium">Classificações pendentes</span>
+                <span className="block text-[26px] sm:text-[30px] font-semibold tracking-tight tabular-nums leading-none mt-[3px] text-amber">
+                  {pend.classGrupos}
+                </span>
+                <span className="block text-[12px] text-muted mt-[4px]">
+                  {pend.classGrupos === 1 ? "estabelecimento" : "estabelecimentos"} · {pend.classN} {pend.classN === 1 ? "lançamento" : "lançamentos"} · {BRL0(pend.classTotal)}
+                </span>
+              </span>
+            </span>
+            <span className="ml-auto inline-flex items-center gap-[6px] rounded-full bg-amber/15 text-amber px-[14px] py-[7px] text-[13px] font-semibold group-hover:bg-amber/25 transition-colors">
+              Classificar
+              <span className="text-[15px] leading-none" aria-hidden>›</span>
+            </span>
+          </button>
         </Panel>
       )}
 

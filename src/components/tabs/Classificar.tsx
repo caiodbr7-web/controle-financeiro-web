@@ -3,7 +3,7 @@ import type { Lancamento } from "../../types";
 import { Kpi } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
-import { BRL0, ehGasto, normEstab } from "../../lib/finance";
+import { BRL0, ehGasto, normEstab, precisaClassificar } from "../../lib/finance";
 import { sugerirGrupo, type FonteSugestao, type Regra, type VinculoPlano } from "../../lib/classificador";
 import { useToast } from "../Toast";
 
@@ -91,8 +91,7 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
   const grupos = useMemo<Grupo[]>(() => {
     const map = new Map<string, Grupo>();
     dados.forEach((d) => {
-      if (!ehGasto(d.classe)) return;
-      if (d.categoria_manual) return;
+      if (!precisaClassificar(d)) return;
       const k = normEstab(d.descricao);
       let g = map.get(k);
       if (!g) { g = { key: k, ex: d.descricao, ids: [], rows: [], total: 0, n: 0, sugestao: "", fonte: "nenhuma", conhecido: false }; map.set(k, g); }
@@ -154,6 +153,49 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
     } catch (e: any) { toast({ message: "Erro: " + (e?.message || e), variant: "error" }); }
     finally { setBusy(false); }
   }
+
+  async function atualizarInterna(ids: number[], valor: boolean | null) {
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200);
+      const { error } = await sb.from("lancamentos")
+        .update({ interna_manual: valor, interna: valor ?? false })
+        .in("id", chunk);
+      if (error) throw error;
+    }
+  }
+
+  // desfaz a marcação "entre contas próprias": volta interna_manual a null e interna a false
+  const desfazerInterna = useCallback(async (ids: number[]) => {
+    setBusy(true);
+    try {
+      await atualizarInterna(ids, null);
+      await reload();
+      toast({ message: "Marcação desfeita.", variant: "info" });
+    } catch (e: any) { toast({ message: "Erro ao desfazer: " + (e?.message || e), variant: "error" }); }
+    finally { setBusy(false); }
+  }, [reload, toast]);
+
+  // marca um conjunto de grupos como "entre contas próprias", com toast de desfazer
+  async function marcarInterna(alvo: Grupo[], rotulo: string) {
+    if (!alvo.length || busy) return;
+    const ids = alvo.flatMap((g) => g.ids);
+    setBusy(true);
+    try {
+      await atualizarInterna(ids, true);
+      await reload();
+      setSel(new Set());
+      toast({ message: rotulo, variant: "success", action: { label: "Desfazer", onClick: () => desfazerInterna(ids) } });
+    } catch (e: any) { toast({ message: "Erro: " + (e?.message || e), variant: "error" }); }
+    finally { setBusy(false); }
+  }
+
+  const marcarInternaUm = (g: Grupo) =>
+    marcarInterna([g], `“${g.ex.slice(0, 24)}” → entre contas próprias`);
+  const marcarInternaSelecionados = () => {
+    const alvo = grupos.filter((g) => sel.has(g.key));
+    if (!alvo.length) return;
+    marcarInterna(alvo, `${alvo.length} marcados como entre contas próprias`);
+  };
 
   const aplicarUm = (g: Grupo) => {
     const cat = escolhas[g.key]; if (!cat) return;
@@ -222,6 +264,7 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
       <div className="text-muted text-[12.5px] mb-3 leading-relaxed">
         Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto pro menor. Defina a <b>categoria</b> (use <b>Corporativo</b> para trabalho)
         e clique <b>Aplicar</b> — vale pra todos os lançamentos do grupo, vira sugestão e dá pra <b>desfazer</b>.
+        <br />Agora aparecem também <b>receitas e transferências</b> ainda sem classificação — e, se um grupo for movimentação entre suas contas, use o botão <b>⇄ entre contas próprias</b> para tirá-lo da lista sem categorizar.
         <br />Os <b className="text-green">conhecidos</b> (🔗 vínculo do Planejamento e 🧠 o que você já classificou) vão todos de uma vez em <b>Aplicar conhecidos</b>. Os <b className="text-accent">sugeridos</b> (⚙️ motor do app e 🏦 categoria do banco) vêm pré-preenchidos pra você confirmar.
         <span className="hidden sm:inline"> Pelo teclado: <kbd className="kbd">↑</kbd><kbd className="kbd">↓</kbd> navega, <kbd className="kbd">Enter</kbd> escolhe categoria, <kbd className="kbd">espaço</kbd> seleciona, <kbd className="kbd">A</kbd> aplica.</span>
       </div>
@@ -257,6 +300,14 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
                     : "Aplica a categoria de cada linha selecionada · escolha uma categoria acima para sobrepor todas"}
                 >
                   Aplicar aos {selAplicaveis}
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={marcarInternaSelecionados}
+                  className="btn-ghost !py-[7px] !px-3 !text-[12.5px]"
+                  title="Marca os selecionados como transferências entre contas próprias (interna)"
+                >
+                  ⇄ Marcar entre contas próprias
                 </button>
                 <button onClick={() => setSel(new Set())} className="btn-ghost !py-[7px] !px-3 !text-[12.5px]">Limpar</button>
               </div>
@@ -319,6 +370,14 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
                       className="btn bg-accent hover:bg-accent2 text-onaccent text-[12px] rounded-[8px] px-3 py-[6px] border-0 disabled:opacity-40"
                     >
                       Aplicar
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => marcarInternaUm(g)}
+                      className="btn-ghost !text-[12px] !px-2 !py-[6px]"
+                      title="Marcar como transferência entre contas próprias (interna)"
+                    >
+                      ⇄
                     </button>
                   </div>
                 </div>
