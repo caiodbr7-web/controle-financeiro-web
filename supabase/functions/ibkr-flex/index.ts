@@ -188,7 +188,14 @@ async function snapshot(admin: any, userId: string, agora: string) {
     }
     const linhasTipo = [...porTipo.entries()].map(([tipo, v]) => ({ user_id: userId, dia, tipo, ...v, atualizado_em: agora }));
     if (linhasTipo.length) {
-      try { await admin.from("pluggy_investments_hist_tipo").upsert(linhasTipo, { onConflict: "user_id,dia,tipo" }); } catch { /* tabela opcional */ }
+      // Substitui a quebra do dia inteira: apaga as linhas do dia antes de
+      // reinserir. Sem isso, um upsert por (user_id, dia, tipo) deixa presas
+      // categorias que sumiram ou trocaram de classificação (reclassificação,
+      // posição fechada), inflando o dia e criando o degrau na área stackada.
+      try {
+        await admin.from("pluggy_investments_hist_tipo").delete().eq("user_id", userId).eq("dia", dia);
+        await admin.from("pluggy_investments_hist_tipo").insert(linhasTipo);
+      } catch { /* tabela opcional */ }
     }
   } catch { /* histórico é best-effort */ }
 }

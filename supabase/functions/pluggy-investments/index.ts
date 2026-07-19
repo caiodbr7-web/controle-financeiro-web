@@ -205,10 +205,13 @@ Deno.serve(async (req) => {
           user_id: userId, dia, tipo, ...v, atualizado_em: agora,
         }));
         if (linhasTipo.length) {
-          // tabela opcional: se a migração ainda não rodou, ignora o erro
-          await sb
-            .from("pluggy_investments_hist_tipo")
-            .upsert(linhasTipo, { onConflict: "user_id,dia,tipo" });
+          // Substitui a quebra do dia inteira: apaga as linhas do dia antes de
+          // reinserir. Sem isso, um upsert por (user_id, dia, tipo) deixa presas
+          // categorias que sumiram ou trocaram de classificação (reclassificação,
+          // posição fechada), inflando o dia e criando o degrau na área stackada.
+          // Tabela opcional: se a migração ainda não rodou, ignora o erro.
+          await sb.from("pluggy_investments_hist_tipo").delete().eq("user_id", userId).eq("dia", dia);
+          await sb.from("pluggy_investments_hist_tipo").insert(linhasTipo);
         }
       }
     } catch { /* histórico é best-effort; não derruba a sincronização */ }

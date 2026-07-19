@@ -1,0 +1,46 @@
+-- ============================================================
+--  Investimentos: limpar categorias FANTASMA do histórico por tipo
+--
+--  Contexto: até esta correção, o snapshot diário por categoria
+--  (pluggy_investments_hist_tipo) era gravado só com UPSERT em
+--  (user_id, dia, tipo) e NUNCA deletava. Assim, categorias que sumiam
+--  ou trocavam de classificação (reclassificação via tipo_manual, posição
+--  fechada no IBKR) ficavam presas naquele dia, SOMANDO em cima do valor
+--  real. Isso inflava os dias passados e criava o "degrau" de queda no fim
+--  da área stackada (o último ponto, recalculado ao vivo, vinha limpo e
+--  mais baixo que o histórico contaminado).
+--
+--  A partir da correção nas edge functions, cada sync APAGA a quebra do dia
+--  antes de reinserir — não acumula mais lixo. Falta limpar o que já ficou.
+--
+--  Como não guardamos as posições brutas de cada dia passado, não dá para
+--  reconstruir a quebra correta retroativamente. A opção segura é ZERAR o
+--  histórico por tipo: a série volta a crescer LIMPA a cada sync e, enquanto
+--  houver menos de 2 dias, o front estima a quebra pela composição atual
+--  (o total diário continua intacto em pluggy_investments_hist).
+--
+--  COMO RODAR:
+--    Supabase -> SQL Editor -> New query -> cole -> Run
+-- ============================================================
+
+-- Opção adotada: zerar a quebra por tipo (o total diário NÃO é tocado).
+delete from public.pluggy_investments_hist_tipo
+where user_id = auth.uid();
+
+-- ------------------------------------------------------------
+--  Alternativa (NÃO execute junto): remover só os dias comprovadamente
+--  inflados — aqueles em que a soma das categorias passou do total do dia.
+--  Mantém os dias consistentes. Descomente se preferir preservar histórico.
+-- ------------------------------------------------------------
+-- delete from public.pluggy_investments_hist_tipo t
+-- where t.user_id = auth.uid()
+--   and t.dia in (
+--     select ht.dia
+--     from public.pluggy_investments_hist_tipo ht
+--     join public.pluggy_investments_hist h
+--       on h.user_id = ht.user_id and h.dia = ht.dia
+--     where ht.user_id = auth.uid()
+--     group by ht.dia, h.valor_total
+--     -- tolerância de 1 centavo p/ arredondamento
+--     having sum(ht.valor_total) > h.valor_total + 0.01
+--   );
