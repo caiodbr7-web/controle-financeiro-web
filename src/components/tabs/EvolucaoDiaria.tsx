@@ -13,7 +13,7 @@ import {
 
 // categorias tratadas como "gasto de casa fixo" — somadas numa faixa própria,
 // independente de terem caído no cartão ou em conta.
-const CASA_FIXO = new Set(["Moradia - Cotas Mensais", "Moradia - Aluguel + IPTU"]);
+const CASA_FIXO = new Set(["Moradia - Contas Mensais", "Moradia - Aluguel + IPTU"]);
 const ehCasaFixo = (d: Lancamento) => CASA_FIXO.has(catKey(d));
 
 interface Props {
@@ -210,7 +210,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
   const splitStats = [
     { t: "Gasto do mês", v: BRL0(hero.totAtual), s: hero.isAtual ? `até hoje · dia ${hero.refDay}/${hero.nd}` : "fatura + extrato do mês", c: "", dot: "" },
     { t: "parcelamentos", v: BRL0(hero.parcSel), s: "comprometido no dia 1", c: "", dot: corParc },
-    { t: "casa fixo", v: BRL0(hero.casaAtual), s: "cotas + aluguel/IPTU", c: "", dot: corCasa },
+    { t: "casa fixo", v: BRL0(hero.casaAtual), s: "contas mensais + aluguel/IPTU", c: "", dot: corCasa },
     { t: "cartão (não casa)", v: BRL0(hero.cartaoAtual), s: "compras do próprio mês", c: "", dot: corCartao },
     { t: "gastos gerais", v: BRL0(hero.geralAtual), s: "não casa fixo · em conta", c: "", dot: corGeral },
   ];
@@ -295,7 +295,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
         </div>
         <div className="text-muted text-[12.5px] mt-3 leading-relaxed">
           A curva é o gasto do mês empilhado em quatro faixas: <b style={{ color: corParc }}>parcelamentos</b> (o platô de meses anteriores, já comprometido no dia 1),
-          <b style={{ color: corCasa }}> casa fixo</b> (cotas mensais + aluguel/IPTU),
+          <b style={{ color: corCasa }}> casa fixo</b> (contas mensais + aluguel/IPTU),
           <b style={{ color: corCartao }}> cartão</b> (não casa fixo) e <b style={{ color: corGeral }}>gastos gerais</b> (não casa fixo, em conta) — os quatro somados são o gasto total daquele mês.
           A <b className="text-amber">linha tracejada</b> é a média dos últimos {janela} meses no mesmo ponto do mês. <span className="text-accent">Clique num dia para ver os lançamentos.</span>
         </div>
