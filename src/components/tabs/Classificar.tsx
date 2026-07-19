@@ -3,14 +3,14 @@ import type { Lancamento } from "../../types";
 import { Kpi } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
-import { BRL0, ehGasto, ehTransfer, normEstab, precisaClassificar } from "../../lib/finance";
+import { BRL0, ehGasto, ehReceita, ehTransfer, normEstab, precisaClassificar } from "../../lib/finance";
 import { ehInterna } from "../../lib/lancClasses";
 import { sugerirGrupo, type FonteSugestao, type Regra, type VinculoPlano } from "../../lib/classificador";
 import { useToast } from "../Toast";
 
 interface Props { dados: Lancamento[]; allDados: Lancamento[]; openModal: (t: string, r: Lancamento[]) => void; reload: () => void; }
 
-interface Grupo { key: string; ex: string; ids: number[]; rows: Lancamento[]; total: number; n: number; sugestao: string; fonte: FonteSugestao; conhecido: boolean; internaSug: boolean; }
+interface Grupo { key: string; ex: string; ids: number[]; rows: Lancamento[]; total: number; n: number; sugestao: string; fonte: FonteSugestao; conhecido: boolean; internaSug: boolean; receita: boolean; rotuloReceita: string; }
 
 // pistas de que um grupo é "provavelmente entre contas próprias" pelos próprios
 // lançamentos (classe de transferência ou subtipo de movimento interno).
@@ -113,7 +113,7 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
       if (!precisaClassificar(d)) return;
       const k = normEstab(d.descricao);
       let g = map.get(k);
-      if (!g) { g = { key: k, ex: d.descricao, ids: [], rows: [], total: 0, n: 0, sugestao: "", fonte: "nenhuma", conhecido: false, internaSug: false }; map.set(k, g); }
+      if (!g) { g = { key: k, ex: d.descricao, ids: [], rows: [], total: 0, n: 0, sugestao: "", fonte: "nenhuma", conhecido: false, internaSug: false, receita: false, rotuloReceita: "Receita" }; map.set(k, g); }
       g.ids.push(d.id); g.rows.push(d); g.total += Math.abs(d.valor); g.n++;
     });
     const arr = [...map.values()].map((g) => {
@@ -122,7 +122,13 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
       const top = Object.keys(sug).sort((a, b) => sug[b] - sug[a])[0] || "";
       const s = sugerirGrupo(g.key, g.ex, top, { regras: regrasList, planos, histMap });
       const internaSug = histInternaSet.has(g.key) || rowsParecemInternas(g.rows);
-      return { ...g, sugestao: s.categoria, fonte: s.fonte, conhecido: s.conhecido, internaSug };
+      // grupo de receita: só entra receita (nenhum gasto). Rótulo = subtipo mais
+      // frequente (ex.: "Salario"), com fallback "Receita".
+      const receita = g.rows.some((d) => ehReceita(d.classe)) && !g.rows.some((d) => ehGasto(d.classe));
+      const subCnt: Record<string, number> = {};
+      g.rows.forEach((d) => { if (d.subtipo) subCnt[d.subtipo] = (subCnt[d.subtipo] || 0) + 1; });
+      const rotuloReceita = Object.keys(subCnt).sort((a, b) => subCnt[b] - subCnt[a])[0] || "Receita";
+      return { ...g, sugestao: s.categoria, fonte: s.fonte, conhecido: s.conhecido, internaSug, receita, rotuloReceita };
     });
     arr.sort((a, b) => b.total - a.total);
     return arr;
@@ -280,6 +286,18 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
   // alterna a escolha "entre contas próprias" de um grupo (sem gravar nada ainda)
   const toggleInterna = (key: string) =>
     setEscolhaInterna((s) => ({ ...s, [key]: !s[key] }));
+
+  // confirma um grupo de RECEITA sem exigir categoria de despesa: grava o subtipo
+  // (ex.: "Salario") como categoria_manual, tirando-o das pendências. Reaproveita o
+  // fluxo `aplicar` — aprende a regra (pré-preenche no próximo mês) e dá desfazer.
+  const confirmarReceita = (g: Grupo) =>
+    aplicar([{ g, cat: g.rotuloReceita }], `“${g.ex.slice(0, 24)}” → ${g.rotuloReceita}`);
+  const confirmarReceitasSelecionados = () => {
+    const alvo = grupos.filter((g) => sel.has(g.key) && g.receita).map((g) => ({ g, cat: g.rotuloReceita }));
+    if (!alvo.length) return;
+    aplicar(alvo, `${alvo.length} receita${alvo.length > 1 ? "s" : ""} confirmada${alvo.length > 1 ? "s" : ""} ✓`);
+  };
+  const selReceitas = grupos.filter((g) => sel.has(g.key) && g.receita).length;
   // bulkCat (quando escolhido) sobrepõe todos; senão, usa a categoria de cada linha.
   // pula os selecionados que ainda não têm categoria nenhuma.
   const aplicarSelecionados = () => {
@@ -336,7 +354,7 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
       <div className="text-muted text-[12.5px] mb-3 leading-relaxed">
         Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto pro menor. Defina a <b>categoria</b> (use <b>Corporativo</b> para trabalho)
         e clique <b>Aplicar</b> — vale pra todos os lançamentos do grupo, vira sugestão e dá pra <b>desfazer</b>.
-        <br />Agora aparecem também <b>receitas e transferências</b> ainda sem classificação. O botão <b>⇄</b> marca o grupo como <b className="text-violet">entre contas próprias</b> — é só uma escolha: <b>nada é gravado até você clicar em Aplicar</b>.
+        <br />Agora aparecem também <b>receitas e transferências</b> ainda sem classificação. O botão <b>⇄</b> marca o grupo como <b className="text-violet">entre contas próprias</b> — é só uma escolha: <b>nada é gravado até você clicar em Aplicar</b>. Para <b className="text-green">receitas</b> (ex.: salário), use <b>✓ Receita</b> para confirmar sem precisar de categoria de despesa.
         <br />Os que já sabemos serem <b className="text-violet">🔁 provavelmente entre contas</b> (histórico ou transferência) já vêm <b>pré-marcados</b> e entram, junto com os <b className="text-green">conhecidos</b> (🔗 vínculo e 🧠 histórico), no botão <b>Aplicar conhecidos</b>. Os <b className="text-accent">sugeridos</b> (⚙️ motor e 🏦 banco) vêm pré-preenchidos pra você confirmar.
         <span className="hidden sm:inline"> Pelo teclado: <kbd className="kbd">↑</kbd><kbd className="kbd">↓</kbd> navega, <kbd className="kbd">Enter</kbd> escolhe categoria, <kbd className="kbd">espaço</kbd> seleciona, <kbd className="kbd">E</kbd> entre contas, <kbd className="kbd">A</kbd> aplica.</span>
       </div>
@@ -381,6 +399,16 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
                 >
                   ⇄ Marcar entre contas próprias
                 </button>
+                {selReceitas > 0 && (
+                  <button
+                    disabled={busy}
+                    onClick={confirmarReceitasSelecionados}
+                    className="btn-ghost !py-[7px] !px-3 !text-[12.5px]"
+                    title="Confirma as receitas selecionadas (usa o subtipo como rótulo, ex.: Salário)"
+                  >
+                    ✓ Confirmar {selReceitas} receita{selReceitas > 1 ? "s" : ""}
+                  </button>
+                )}
                 <button onClick={() => setSel(new Set())} className="btn-ghost !py-[7px] !px-3 !text-[12.5px]">Limpar</button>
               </div>
             )}
@@ -428,7 +456,9 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
                         ? <span className="ml-2 inline-flex items-center rounded-full bg-violet/15 text-violet px-[7px] py-[1px] text-[10.5px] font-semibold">🔁 {g.internaSug ? "provavelmente entre contas" : "entre contas próprias"}</span>
                         : cat
                           ? (FONTE_BADGE[g.fonte] && <span className={`ml-2 inline-flex items-center rounded-full px-[7px] py-[1px] text-[10.5px] font-semibold ${FONTE_BADGE[g.fonte]!.cls}`}>{FONTE_BADGE[g.fonte]!.label}</span>)
-                          : <span className="ml-2 inline-flex items-center rounded-full bg-amber/10 text-amber px-[7px] py-[1px] text-[10.5px] font-semibold">sem sugestão</span>}
+                          : g.receita
+                            ? <span className="ml-2 inline-flex items-center rounded-full bg-green/10 text-green px-[7px] py-[1px] text-[10.5px] font-semibold">💰 receita{g.rotuloReceita !== "Receita" ? ` · ${g.rotuloReceita}` : ""}</span>
+                            : <span className="ml-2 inline-flex items-center rounded-full bg-amber/10 text-amber px-[7px] py-[1px] text-[10.5px] font-semibold">sem sugestão</span>}
                     </div>
                   </button>
                   <div className="flex items-center gap-2 shrink-0 ml-auto" onMouseDown={(e) => e.stopPropagation()}>
@@ -449,6 +479,16 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
                     >
                       Aplicar
                     </button>
+                    {g.receita && !interna && !cat && (
+                      <button
+                        disabled={busy}
+                        onClick={() => confirmarReceita(g)}
+                        className="text-[12px] rounded-[8px] px-2 py-[6px] border border-green/40 bg-green/10 text-green transition-colors whitespace-nowrap"
+                        title={`Confirmar como receita (${g.rotuloReceita}) sem escolher categoria de despesa`}
+                      >
+                        ✓ Receita
+                      </button>
+                    )}
                     <button
                       disabled={busy}
                       onClick={() => toggleInterna(g.key)}
