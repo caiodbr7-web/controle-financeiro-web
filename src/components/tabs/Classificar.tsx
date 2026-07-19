@@ -298,6 +298,10 @@ export function Classificar({ dados, allDados, openModal, reload }: Props) {
   }
   function onKey(e: ReactKeyboardEvent) {
     if (!grupos.length || pickerKey) return;
+    // não sequestra a digitação quando o foco está num campo editável (ex.: o
+    // seletor de categoria aberto por clique) — deixa a tecla ir pro input.
+    const alvo = e.target as HTMLElement;
+    if (alvo && (alvo.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName))) return;
     const g = grupos[activeIdx];
     if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); setActiveIdx((i) => { const n = Math.min(i + 1, grupos.length - 1); rolarParaAtivo(n); return n; }); }
     else if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); setActiveIdx((i) => { const n = Math.max(i - 1, 0); rolarParaAtivo(n); return n; }); }
