@@ -1,14 +1,14 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ComposedChart, Bar,
+  ComposedChart, Bar, Area,
 } from "recharts";
 import type { Lancamento, Modo } from "../../types";
-import { Panel, Kpi, Seg } from "../ui";
-import { useChart, ChartTip } from "../../lib/theme";
+import { Panel, Kpi, Seg, Select } from "../ui";
+import { useChart, useTheme, ChartTip } from "../../lib/theme";
 import {
-  BRL0, brlShort, dvSeries, dvDiasNoMes, dvLabel, dvGasto, mesComp,
-  mvLimiteParcial, mvSeriesMensal, mvOrigemOk, MODOS, deltaTxt,
+  BRL0, brlShort, dvLabel, dvGasto, mesComp, dvDiasNoMes, diaDoMov, ehParcelaAnterior,
+  mvSeriesMensal, mvOrigemOk, MODOS, deltaTxt,
 } from "../../lib/finance";
 
 interface Props {
@@ -21,59 +21,163 @@ const MODO_OPTS: { v: Modo; label: string }[] = [
 const MESES_OPTS = [
   { v: "3", label: "3m" }, { v: "6", label: "6m" }, { v: "12", label: "12m" }, { v: "all", label: "Tudo" },
 ];
-const ALPHA = (i: number, n: number) => (0.2 + 0.45 * (n > 1 ? i / (n - 1) : 1)).toFixed(3);
+const JANELAS = [{ v: "3", label: "3m" }, { v: "6", label: "6m" }, { v: "12", label: "12m" }];
 
 export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
+  const cc = useChart();
+  const { dark } = useTheme();
+  const hoje = new Date();
+  const mesAtual = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
+
+  // cores do split da curva diária (bem separadas p/ o empilhamento)
+  const corCartao = dark ? "#a78bfa" : "#6d28d9";  // roxo
+  const corParc = cc.parcela;                       // ciano
+  const corConta = dark ? "#fb7185" : "#c2334a";    // rosa
+
+  /* ---------- primeiro gráfico: mês selecionado, quebrado em Cartão · Contas · Parcelas ---------- */
+  const [heroMes, setHeroMes] = useState("");
+  const [janela, setJanela] = useState(3);
+
+  // séries diárias por COMPETÊNCIA, separando: compras do próprio mês no CARTÃO,
+  // compras do próprio mês em CONTA (Pix/boleto/débito) e PARCELAS/compras de
+  // meses anteriores (o platô já comprometido no dia 1). Estornos entram à parte.
+  const compSeries = useMemo(() => {
+    const cartao: Record<string, number[]> = {};
+    const conta: Record<string, number[]> = {};
+    const cred: Record<string, number[]> = {};
+    const parc: Record<string, number> = {};
+    const parcRows: Record<string, Lancamento[]> = {};
+    const diaRows: Record<string, Lancamento[][]> = {};
+    for (const d of dados) {
+      const g = dvGasto(d);
+      if (!g) continue;
+      const k = mesComp(d);
+      if (!/^\d{4}-\d{2}$/.test(k)) continue;
+      if (ehParcelaAnterior(d)) {
+        parc[k] = (parc[k] || 0) + g;
+        (parcRows[k] = parcRows[k] || []).push(d);
+        continue;
+      }
+      const dia = Math.min(diaDoMov(d), dvDiasNoMes(k));
+      (diaRows[k] = diaRows[k] || Array.from({ length: 31 }, () => []))[dia - 1].push(d);
+      if (g < 0) {
+        (cred[k] = cred[k] || new Array(31).fill(0))[dia - 1] += Math.abs(g);
+      } else {
+        const ehCartao = String(d.origem || "").startsWith("Cartao");
+        const alvo = ehCartao ? cartao : conta;
+        (alvo[k] = alvo[k] || new Array(31).fill(0))[dia - 1] += g;
+      }
+    }
+    return { cartao, conta, cred, parc, parcRows, diaRows };
+  }, [dados]);
+
+  const mesesOpc = useMemo(() => {
+    const ks = new Set([
+      ...Object.keys(compSeries.cartao), ...Object.keys(compSeries.conta),
+      ...Object.keys(compSeries.cred), ...Object.keys(compSeries.parc),
+    ]);
+    ks.add(mesAtual);
+    return [...ks].filter((k) => k <= mesAtual).sort().reverse();
+  }, [compSeries, mesAtual]);
+
+  useEffect(() => {
+    if (heroMes && mesesOpc.includes(heroMes)) return;
+    setHeroMes(mesesOpc[0] || mesAtual);
+  }, [mesesOpc, heroMes, mesAtual]);
+
+  const hero = useMemo(() => {
+    if (!heroMes) return null;
+    const { cartao, conta, cred, parc } = compSeries;
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    const cumDe = (m: Record<string, number[]>, k: string) => {
+      const nd = dvDiasNoMes(k); const out: number[] = []; let s = 0;
+      for (let j = 0; j < nd; j++) { s += m[k]?.[j] || 0; out.push(r2(s)); }
+      return out;
+    };
+    // total líquido de um mês num dia j: platô + cartão + conta − estornos
+    const totCum = (k: string) => {
+      const p = parc[k] || 0;
+      const ca = cumDe(cartao, k), co = cumDe(conta, k), cr = cumDe(cred, k);
+      return ca.map((_, j) => r2(p + ca[j] + co[j] - cr[j]));
+    };
+
+    const nd = dvDiasNoMes(heroMes);
+    const isAtual = heroMes === mesAtual;
+    const completo = heroMes < mesAtual;
+    const refDay = isAtual ? Math.min(hoje.getDate(), nd) : nd;
+    const comparavel = completo || isAtual;
+
+    // benchmark: média do total acumulado dos N meses ANTERIORES ao selecionado
+    const keysAll = new Set([
+      ...Object.keys(cartao), ...Object.keys(conta), ...Object.keys(cred), ...Object.keys(parc),
+    ]);
+    const base = [...keysAll].filter((k) => k < heroMes).sort().slice(-janela);
+    const bench: (number | null)[] = [];
+    for (let j = 0; j < 31; j++) {
+      let s = 0, c = 0;
+      base.forEach((k) => { const a = totCum(k); const v = j < a.length ? a[j] : a[a.length - 1]; if (v != null) { s += v; c++; } });
+      bench.push(c ? r2(s / c) : null);
+    }
+    let benchFim = 0;
+    for (let j = nd - 1; j >= 0; j--) if (bench[j] != null) { benchFim = bench[j] as number; break; }
+    const benchAtRef = bench[refDay - 1] ?? null;
+
+    const parcSel = r2(parc[heroMes] || 0);
+    const cartaoArr = cumDe(cartao, heroMes);
+    const contaArr = cumDe(conta, heroMes);
+    const credArr = cumDe(cred, heroMes);
+    const totArr = totCum(heroMes);
+
+    const cartaoNome = "Cartão";
+    const contaNome = "Contas (Pix, boleto, débito)";
+    const parcNome = "Parcelas de meses anteriores";
+    const benchNome = `Média ${janela}m`;
+    const temCred = credArr[refDay - 1] > 0;
+
+    // empilha: Parcelas (base) + Cartão + Contas; estornos como termo separado.
+    // no mês atual, dias após hoje ficam nulos.
+    const chart = Array.from({ length: nd }, (_, i) => {
+      const futuro = isAtual && i + 1 > refDay;
+      return {
+        dia: i + 1,
+        [parcNome]: futuro ? null : parcSel,
+        [cartaoNome]: futuro ? null : cartaoArr[i],
+        [contaNome]: futuro ? null : contaArr[i],
+        [benchNome]: bench[i],
+        "Total gasto": futuro ? null : totArr[i],
+        ...(temCred ? { "Estornos do mês": futuro ? null : -credArr[i] } : {}),
+      };
+    });
+
+    const cartaoAtual = r2(cartaoArr[refDay - 1] || 0);
+    const contaAtual = r2(contaArr[refDay - 1] || 0);
+    const credAtual = r2(credArr[refDay - 1] || 0);
+    const totAtual = r2(totArr[refDay - 1] || 0);
+    const delta = benchAtRef != null ? r2(totAtual - benchAtRef) : null;
+
+    return {
+      heroMes, isAtual, completo, comparavel, nd, refDay, chart,
+      cartaoNome, contaNome, parcNome, benchNome, temCred,
+      parcSel, cartaoAtual, contaAtual, credAtual, totAtual,
+      benchAtRef, benchFim, delta, temBench: base.length > 0,
+    };
+  }, [compSeries, heroMes, janela, mesAtual, hoje]);
+
+  const abrirDia = (dia?: number | string | null) => {
+    if (!hero) return;
+    const n = typeof dia === "string" ? parseInt(dia, 10) : dia;
+    if (!n || n < 1 || n > hero.nd) return;
+    if (hero.isAtual && n > hero.refDay) return;
+    const rows = compSeries.diaRows[hero.heroMes]?.[n - 1] || [];
+    if (!rows.length) return;
+    openModal(`Lançamentos · dia ${n} · ${dvLabel(hero.heroMes)}`, rows);
+  };
+
+  /* ---------- segundo gráfico: evolução mensal (barras + média móvel) ---------- */
   const [modo, setModo] = useState<Modo>("cartao");
   const [mesesSel, setMesesSel] = useState("6");
   const meta = MODOS[modo];
-  const cc = useChart();
 
-  const calc = useMemo(() => {
-    const { keys, map } = dvSeries(dados, months, modo);
-    const limParcial = mvLimiteParcial(allDados, modo);
-    const completos = keys.filter((k) => k < limParcial);
-    const n = mesesSel === "all" ? completos.length : parseInt(mesesSel, 10) || 6;
-    const show = mesesSel === "all" ? completos : completos.slice(-n);
-
-    const cums: Record<string, (number | null)[]> = {};
-    completos.forEach((k) => {
-      const nd = dvDiasNoMes(k); const c: (number | null)[] = []; let s = 0;
-      for (let j = 0; j < 31; j++) { if (j < nd) { s += map[k][j]; c.push(Math.round(s * 100) / 100); } else c.push(null); }
-      cums[k] = c;
-    });
-    const base3 = completos.slice(-3);
-    const bench: (number | null)[] = [];
-    for (let j = 0; j < 31; j++) {
-      let sum = 0, cnt = 0;
-      base3.forEach((k) => { const nd = dvDiasNoMes(k); const v = j < nd ? cums[k][j] : cums[k][nd - 1]; if (v != null) { sum += v; cnt++; } });
-      bench.push(cnt ? Math.round((sum / cnt) * 100) / 100 : null);
-    }
-    const data = Array.from({ length: 31 }, (_, i) => {
-      const row: any = { dia: i + 1 };
-      show.forEach((k) => { row[dvLabel(k)] = cums[k][i]; });
-      row["Média 3 meses"] = bench[i];
-      return row;
-    });
-
-    // grandes números
-    let modeTot = 0, diasTot = 0, cardTot = 0, contaTot = 0;
-    const showSet = new Set(show);
-    show.forEach((k) => { modeTot += (cums[k][dvDiasNoMes(k) - 1] as number) || 0; diasTot += dvDiasNoMes(k); });
-    dados.forEach((d) => {
-      const g = dvGasto(d); if (!g) return; const k = mesComp(d); if (!showSet.has(k)) return;
-      const o = String(d.origem || ""); if (o.startsWith("Cartao")) cardTot += g; else if (o.startsWith("Conta")) contaTot += g;
-    });
-    const splitTot = cardTot + contaTot;
-    const pctCard = splitTot ? (cardTot / splitTot) * 100 : 0, pctConta = splitTot ? (contaTot / splitTot) * 100 : 0;
-    const mediaDia = diasTot ? modeTot / diasTot : 0, mediaMes = show.length ? modeTot / show.length : 0;
-
-    let benchFim = 0; for (let j = 30; j >= 0; j--) { if (bench[j] != null) { benchFim = bench[j] as number; break; } }
-
-    return { show, data, mediaDia, mediaMes, pctCard, pctConta, cardTot, contaTot, benchFim };
-  }, [dados, allDados, months, modo, mesesSel]);
-
-  // seção mensal (barras + linha média móvel)
   const mensal = useMemo(() => {
     const { keys, tot } = mvSeriesMensal(dados, allDados, months, modo);
     const avg = keys.map((k, i) => { const p = keys.slice(Math.max(0, i - 3), i); return p.length ? p.reduce((s, x) => s + tot[x], 0) / p.length : null; });
@@ -87,61 +191,105 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
     return { data, patamar, ultVal, ultLabel: ult >= 0 ? dvLabel(keys[ult]) : "—", baseAnt };
   }, [dados, allDados, months, modo, mesesSel]);
 
-  const stats = [
-    { t: "Gasto médio / dia", v: BRL0(calc.mediaDia), s: `${meta.rotulo.toLowerCase()} · ${calc.show.length} ${calc.show.length === 1 ? "mês" : "meses"}`, c: "" },
-    { t: "% no cartão", v: `${calc.pctCard.toFixed(0)}%`, s: `${BRL0(calc.cardTot)} do total`, c: "text-accent" },
-    { t: "% em conta", v: `${calc.pctConta.toFixed(0)}%`, s: `${BRL0(calc.contaTot)} · Pix, boleto, débito`, c: "text-violet" },
-    { t: "Gasto médio / mês", v: BRL0(calc.mediaMes), s: `${meta.rotulo.toLowerCase()} · meses completos`, c: "text-amber" },
+  if (!hero) return <div className="text-muted p-4">Sem dados ainda — importe os primeiros PDFs para começar.</div>;
+
+  const splitStats = [
+    { t: "Gasto do mês", v: BRL0(hero.totAtual), s: hero.isAtual ? `até hoje · dia ${hero.refDay}/${hero.nd}` : "fatura + extrato do mês", c: "", dot: "" },
+    { t: "no cartão", v: BRL0(hero.cartaoAtual), s: "compras do próprio mês", c: "", dot: corCartao },
+    { t: "em conta", v: BRL0(hero.contaAtual), s: "Pix, boleto, débito", c: "", dot: corConta },
+    { t: "parcelas de antes", v: BRL0(hero.parcSel), s: "comprometido no dia 1", c: "", dot: corParc },
   ];
 
   return (
     <div>
       <Panel
         title="Gasto acumulado ao longo do mês"
-        sub="(por competência · dia a dia pela data da compra · parcelas de meses anteriores no dia 1 · só meses completos)"
+        sub="(por competência · quebrado em cartão · contas · parcelas — os três somados = gasto do mês)"
         right={
           <div className="flex items-center gap-2 flex-wrap">
-            <Seg size="sm" value={mesesSel} onChange={setMesesSel} options={MESES_OPTS} />
-            <Seg size="sm" value={modo} onChange={(v) => setModo(v as Modo)} options={MODO_OPTS} />
+            <Seg size="sm" value={String(janela)} onChange={(v) => setJanela(+v)} options={JANELAS} />
+            <Select value={heroMes} onChange={setHeroMes} className="!py-[6px] text-[12.5px]">
+              {mesesOpc.map((k) => <option key={k} value={k}>{dvLabel(k)}{k === mesAtual ? " (atual)" : ""}</option>)}
+            </Select>
           </div>
         }
       >
+        <div className="text-muted text-[12.5px] font-medium mt-1">
+          {dvLabel(hero.heroMes)} {hero.completo ? "· fatura fechada" : "· em curso"} vs média {janela}m
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-[18px] items-stretch mt-2">
-          <div className="h-[300px] md:h-[440px] min-w-0">
+          <div className="h-[300px] md:h-[440px] min-w-0 cursor-pointer">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={calc.data} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
+              <ComposedChart
+                data={hero.chart}
+                margin={{ top: 8, right: 12, left: 4, bottom: 4 }}
+                onClick={(s: any) => abrirDia(s?.activeLabel ?? (s?.activeTooltipIndex != null ? s.activeTooltipIndex + 1 : null))}
+              >
                 <CartesianGrid stroke={cc.grid} vertical={false} />
                 <XAxis dataKey="dia" tick={cc.tickSm} minTickGap={6} axisLine={false} tickLine={false} />
                 <YAxis tick={cc.tickSm} tickFormatter={(v) => brlShort(v)} width={56} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTip labelPrefix="Dia " />} />
-                {calc.show.map((k, i) => (
-                  <Line key={dvLabel(k)} type="monotone" dataKey={dvLabel(k)}
-                    stroke={cc.roxoLinha(ALPHA(i, calc.show.length))} strokeWidth={1.6} dot={false} connectNulls={false} isAnimationActive={false} />
-                ))}
-                <Line type="monotone" dataKey="Média 3 meses" stroke={cc.media} strokeWidth={4.5} dot={false} connectNulls isAnimationActive={false} />
-              </LineChart>
+                <Area type="monotone" dataKey={hero.parcNome} stackId="gasto" stroke={corParc} strokeWidth={1.4} fill={corParc} fillOpacity={0.16} dot={false} isAnimationActive={false} />
+                <Area type="monotone" dataKey={hero.cartaoNome} stackId="gasto" stroke={corCartao} strokeWidth={1.8} fill={corCartao} fillOpacity={0.18} dot={false} connectNulls={false} isAnimationActive={false} />
+                <Area type="monotone" dataKey={hero.contaNome} stackId="gasto" stroke={corConta} strokeWidth={1.8} fill={corConta} fillOpacity={0.18} dot={false} connectNulls={false} isAnimationActive={false} />
+                {hero.temCred && (
+                  <Line type="monotone" dataKey="Estornos do mês" stroke="transparent" dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                )}
+                <Line type="monotone" dataKey="Total gasto" stroke="transparent" dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey={hero.benchNome} stroke={cc.media} strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls isAnimationActive={false} />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
           <div className="grid grid-cols-2 gap-3 md:flex md:flex-col md:h-full">
-            {stats.map((s) => (
+            {splitStats.map((s) => (
               <div key={s.t} className="md:flex-1 flex flex-col justify-center bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card min-w-0">
-                <div className="text-muted text-[12px] font-medium">{s.t}</div>
+                <div className="flex items-center gap-[6px] text-muted text-[12px] font-medium">
+                  {s.dot && <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: s.dot }} />}
+                  {s.t}
+                </div>
                 <div className={`text-[22px] sm:text-[28px] font-semibold mt-[5px] tracking-tight tabular-nums ${s.c}`}>{s.v}</div>
                 <div className="text-[11.5px] mt-[3px] text-muted">{s.s}</div>
               </div>
             ))}
           </div>
         </div>
-        <div className="text-muted text-[12.5px] mt-4 leading-relaxed">
-          A <b className="text-amber">linha laranja grossa</b> é a <b>média dos últimos 3 meses completos</b>, dia a dia — onde você deveria estar.
-          As linhas roxas são os meses completos (mais fortes = mais recentes). Meses parciais (mês atual e faturas por vir) ficam de fora.
-          Parcelas e compras de meses anteriores contam no dia 1 — por isso as curvas já nascem num platô, o pedaço do mês que já estava comprometido.
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3">
+          <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
+            <span className="w-[10px] h-[3px] rounded-full" style={{ background: corParc }} />Parcelas
+          </span>
+          <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
+            <span className="w-[10px] h-[3px] rounded-full" style={{ background: corCartao }} />Cartão
+          </span>
+          <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
+            <span className="w-[10px] h-[3px] rounded-full" style={{ background: corConta }} />Contas
+          </span>
+          <span className="inline-flex items-center gap-[6px] text-[11.5px] text-muted">
+            <span className="w-[10px] h-0 border-t-2 border-dashed" style={{ borderColor: cc.media }} />Média {janela}m
+          </span>
+          {hero.delta != null && hero.comparavel && (
+            <span className={`inline-flex items-center gap-1 rounded-full px-[10px] py-[3px] text-[12px] font-semibold ${
+              hero.delta <= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"
+            }`}>
+              {hero.delta <= 0 ? "▼" : "▲"} {BRL0(Math.abs(hero.delta))} {hero.delta <= 0 ? "abaixo" : "acima"} da média{hero.isAtual ? " (no mesmo dia)" : ""}
+            </span>
+          )}
+        </div>
+        <div className="text-muted text-[12.5px] mt-3 leading-relaxed">
+          A curva é o gasto do mês empilhado em três faixas: <b style={{ color: corParc }}>parcelas de meses anteriores</b> (o platô já comprometido no dia 1),
+          <b style={{ color: corCartao }}> cartão</b> e <b style={{ color: corConta }}>contas</b> (Pix, boleto, débito) do próprio mês — os três somados são o gasto total daquele mês.
+          A <b className="text-amber">linha tracejada</b> é a média dos últimos {janela} meses no mesmo ponto do mês. <span className="text-accent">Clique num dia para ver os lançamentos.</span>
         </div>
       </Panel>
 
       <Panel
         title="Evolução mensal do gasto"
         sub="(só meses completos · média móvel de 3 meses)"
+        right={
+          <div className="flex items-center gap-2 flex-wrap">
+            <Seg size="sm" value={mesesSel} onChange={setMesesSel} options={MESES_OPTS} />
+            <Seg size="sm" value={modo} onChange={(v) => setModo(v as Modo)} options={MODO_OPTS} />
+          </div>
+        }
       >
         <div className="grid grid-cols-2 md:grid-cols-3 gap-[14px] mt-3 mb-2">
           <Kpi title="Patamar (média 3m)" value={BRL0(mensal.patamar)} sub="média dos últimos 3 meses completos" color="text-accent" />
