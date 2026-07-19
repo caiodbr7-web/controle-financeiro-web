@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { Aba, Lancamento, Visao } from "./types";
 import { useAuth } from "./hooks/useAuth";
-import { useLancamentos } from "./hooks/useLancamentos";
+import { useLancamentos, useSaving } from "./hooks/useLancamentos";
 import { useTheme, type ThemePref } from "./lib/theme";
 import { precisaClassificar } from "./lib/finance";
 import { Login } from "./components/Login";
@@ -88,7 +88,8 @@ const ABAS_DADOS = new Set<Aba>(["inicio", "geral", "mensal", "diario", "planeja
 
 export default function App() {
   const { logado, erro, demo, entrarGoogle, entrarTeste, sair } = useAuth();
-  const { allDados, status, reload, loading } = useLancamentos(!!logado);
+  const { allDados, status, reload, loading, patchLocal, mutate, enqueue } = useLancamentos(!!logado);
+  const saving = useSaving();
   const { pref, cycle } = useTheme();
   const [visao, setVisao] = useState<Visao>("pessoal");
   const [aba, setAba] = useState<Aba>("inicio");
@@ -168,7 +169,7 @@ export default function App() {
   if (logado === null) return <div className="p-8 text-muted">Carregando…</div>;
   if (!logado) return <Login onGoogle={entrarGoogle} onTeste={entrarTeste} erro={erro} />;
 
-  const tabProps = { dados, allDados, months, openModal };
+  const tabProps = { dados, allDados, months, openModal, patchLocal, mutate, enqueue };
   const iconBtn = "w-[28px] h-[28px] rounded-full border border-line bg-transparent text-muted cursor-pointer flex items-center justify-center transition-all shrink-0";
 
   // grupo de sub-abas ativo (mostra a barra interna no conteúdo)
@@ -270,6 +271,16 @@ export default function App() {
           </div>
         )}
 
+        {/* indicador global de escritas em background (fila do banco): a UI já
+            atualizou de forma otimista; isto só sinaliza que a persistência
+            ainda está acontecendo, sem travar nada. */}
+        {saving && !status && (
+          <div className="fixed bottom-4 right-4 z-40 inline-flex items-center gap-2 text-muted text-[12.5px] bg-card border border-line shadow-card rounded-full px-[12px] py-[6px]">
+            <span className="w-[8px] h-[8px] rounded-full border-2 border-muted/40 border-t-accent animate-spin" />
+            salvando…
+          </div>
+        )}
+
         {subAtivo && (
           <div className="inline-flex gap-[2px] bg-soft p-[3px] rounded-[10px] flex-wrap mb-[18px]">
             {subAtivo.map((s) => {
@@ -301,7 +312,7 @@ export default function App() {
           {aba === "mensal" && <ResumoMensal {...tabProps} />}
           {aba === "diario" && <EvolucaoDiaria {...tabProps} />}
           {aba === "planejamento" && <Planejamento lancamentos={dados} />}
-          {aba === "classificar" && <Classificar dados={dados} allDados={allDados} openModal={openModal} reload={reload} />}
+          {aba === "classificar" && <Classificar dados={dados} allDados={allDados} openModal={openModal} reload={reload} patchLocal={patchLocal} mutate={mutate} enqueue={enqueue} />}
           {aba === "lanc" && <Lancamentos {...tabProps} reload={reload} />}
           {aba === "adicionar" && <Adicionar reload={reload} metodo={addMetodo} onMetodo={setAddMetodo} allDados={allDados} />}
           {aba === "openbanking" && <OpenBanking />}
@@ -311,7 +322,7 @@ export default function App() {
         )}
       </main>
 
-      <Modal data={modal} onClose={() => setModal(null)} reload={reload} />
+      <Modal data={modal} onClose={() => setModal(null)} mutate={mutate} />
       <CommandPalette open={paletaAberta} onClose={() => setPaletaAberta(false)} commands={comandos} />
     </div>
   );
