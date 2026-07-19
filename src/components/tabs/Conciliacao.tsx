@@ -288,7 +288,33 @@ function PlacarMes({
         </div>
       </div>
 
-      <div className="overflow-x-auto scroll-thin">
+      {/* mobile: um bloco por linha (Gastos/Receitas) com PDF × OF empilhados */}
+      <div className="md:hidden grid gap-[10px]">
+        {linhas.map((l) => {
+          const dif = l.pdf - l.of;
+          const cls = Math.abs(dif) < 0.005 ? "text-green" : "text-amber";
+          return (
+            <div key={l.rotulo} className="border border-line rounded-[12px] p-[12px]">
+              <div className="flex items-center justify-between mb-[6px]">
+                <span className="text-[13px] font-semibold">{l.rotulo}</span>
+                <span className={`tabular-nums text-[13px] font-semibold ${cls}`}>{(dif >= 0 ? "+" : "−") + BRL(Math.abs(dif))}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[12.5px] tabular-nums">
+                <div>
+                  <div className="text-muted text-[11px]">PDF / arquivos ({l.nPdf})</div>
+                  <div>{BRL(l.pdf)}</div>
+                </div>
+                <div>
+                  <div className="text-muted text-[11px]">Open Finance ({l.nOf})</div>
+                  <div>{BRL(l.of)}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden md:block overflow-x-auto scroll-thin">
         <table className="tbl min-w-[560px] text-[13px]">
           <thead>
             <tr>
@@ -340,8 +366,53 @@ function TabelaPares({
 }: {
   pares: Par[]; confFiltro: "" | Conf; setConfFiltro: (c: "" | Conf) => void; contagem: Record<Conf, number>;
 }) {
+  // mobile: um cartão por par (OF em cima, PDF embaixo) no lugar da tabela larga
+  const cards = (
+    <div className="md:hidden divide-y divide-line">
+      <div className="p-[10px]">
+        <Select value={confFiltro} onChange={(v) => setConfFiltro(v as "" | Conf)} className="!py-[5px] !text-[12.5px]">
+          <option value="">Confiança (todas)</option>
+          <option value="alta">Alta ({contagem.alta})</option>
+          <option value="media">Média ({contagem.media})</option>
+          <option value="baixa">Baixa ({contagem.baixa})</option>
+        </Select>
+      </div>
+      {pares.map((p) => (
+        <div key={p.of.id} className="p-[13px]">
+          <div className="flex items-center justify-between gap-3 mb-[8px]">
+            <span className="inline-flex items-center gap-[6px] min-w-0">
+              <span className={`font-semibold text-[13px] ${CONF_CLS[p.conf]}`}>{CONF_LABEL[p.conf]}</span>
+              {VIA_INFO[p.via] && (
+                <span title={VIA_INFO[p.via]!.title}
+                  className="inline-block text-[10.5px] font-medium text-muted bg-fill border border-line rounded-[6px] px-1.5 py-[1px]">
+                  {VIA_INFO[p.via]!.label}
+                </span>
+              )}
+            </span>
+            <span className="tabular-nums text-[13.5px] font-semibold shrink-0">{BRL(Math.abs(p.of.valor))}</span>
+          </div>
+          <div className="grid gap-[6px]">
+            {([["OF", p.of], ["PDF", p.pdf]] as const).map(([rot, d]) => (
+              <div key={rot} className="flex items-start gap-2 min-w-0">
+                <span className="shrink-0 text-[10px] font-bold uppercase text-muted bg-fill border border-line rounded-[5px] px-[5px] py-[1px] mt-[2px] w-[34px] text-center">{rot}</span>
+                <div className="min-w-0">
+                  <div className="text-[12.5px] font-medium truncate" title={d.descricao}>{d.descricao}</div>
+                  <div className="text-muted text-[11px]">{fmtData(d)} · {d.origem}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {p.dias !== 0 && <div className="text-[11px] text-muted mt-[6px]">Δ {p.dias} dia(s) entre as fontes</div>}
+        </div>
+      ))}
+      {!pares.length && <div className="p-4 text-center text-muted text-[13px]">Nenhum par nesse filtro.</div>}
+    </div>
+  );
+
   return (
-    <table className="tbl min-w-[1000px] text-[12.5px]">
+    <>
+    {cards}
+    <table className="hidden md:table tbl min-w-[1000px] text-[12.5px]">
       <thead>
         <tr>
           <th className="sticky top-0 bg-card z-[1]">
@@ -387,12 +458,33 @@ function TabelaPares({
         )}
       </tbody>
     </table>
+    </>
   );
 }
 
 function TabelaSimples({ rows }: { rows: Lancamento[] }) {
   return (
-    <table className="tbl min-w-[760px] text-[12.5px]">
+    <>
+    {/* mobile: cartões */}
+    <div className="md:hidden divide-y divide-line">
+      {rows.map((d) => (
+        <div key={d.id} className="p-[13px] flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium truncate" title={d.descricao}>{d.descricao}</div>
+            <div className="text-muted text-[11.5px] truncate">{fmtData(d)} · {d.banco} · {d.origem}</div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className={`tabular-nums text-[13px] font-medium ${d.valor < 0 ? "text-red" : "text-green"}`}>
+              {fmtMoeda(d.valor, d.moeda)}
+              {dicaMoedaOrigem(d) && <span className="text-muted text-[10.5px] ml-1">({dicaMoedaOrigem(d)})</span>}
+            </div>
+            <div className="text-[11px] text-muted">{d.classe}</div>
+          </div>
+        </div>
+      ))}
+      {!rows.length && <div className="p-4 text-center text-muted text-[13px]">Nada aqui.</div>}
+    </div>
+    <table className="hidden md:table tbl min-w-[760px] text-[12.5px]">
       <thead>
         <tr>
           <th className="sticky top-0 bg-card z-[1]">Data</th>
@@ -422,5 +514,6 @@ function TabelaSimples({ rows }: { rows: Lancamento[] }) {
         )}
       </tbody>
     </table>
+    </>
   );
 }

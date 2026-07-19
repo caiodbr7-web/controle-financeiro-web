@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Lancamento } from "../../types";
 import { Kpi, Select } from "../ui";
@@ -241,7 +241,8 @@ export function OpenBanking() {
       {erro && <div className="text-[13px] text-red bg-fill rounded-[10px] px-3 py-2 mb-3">Erro: {erro}</div>}
       {status && <div className="text-muted text-[12.5px] mb-3">{status}</div>}
 
-      <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
+      {/* desktop: tabela completa de validação (todas as colunas) */}
+      <div className="hidden md:block bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
         <div className="max-h-[620px] overflow-auto scroll-thin">
           <table className="tbl min-w-[1800px] text-[12.5px]">
             <thead><tr>{COLS.map(th)}</tr></thead>
@@ -258,6 +259,42 @@ export function OpenBanking() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* mobile: cartões expansíveis — resumo no topo; tocar abre TODOS os campos
+          (mantém o propósito de validação coluna a coluna, sem tabela de 1800px) */}
+      <div className="md:hidden bg-card border border-line rounded-[18px] shadow-card divide-y divide-line overflow-hidden">
+        {filtrados.slice(0, MAX).map((d) => (
+          <details key={d.id} className="group">
+            <summary className="p-[13px] cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[13.5px] font-medium truncate" title={d.descricao}>{cell(d.descricao)}</div>
+                  <div className="text-[11.5px] text-muted truncate">{dataCompleta(d)} · {d.banco} · {d.origem}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className={`tabular-nums text-[13.5px] font-medium ${d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}`}>
+                    {fmtMoeda(d.valor, d.moeda)}
+                  </div>
+                  <div className="text-[11px] text-muted">{cell(d.classe)}</div>
+                </div>
+              </div>
+              <div className="mt-[6px] text-[11px] text-accent group-open:hidden">todos os campos ▾</div>
+              <div className="mt-[6px] text-[11px] text-accent hidden group-open:block">recolher ▴</div>
+            </summary>
+            <div className="px-[13px] pb-[13px] grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-[5px] text-[12px]">
+              {COLS.map((c) => (
+                <Fragment key={String(c.key)}>
+                  <span className="text-muted whitespace-nowrap">{c.label}</span>
+                  <span className={`min-w-0 break-words text-right ${c.mono ? "font-mono text-[11px]" : ""}`}>
+                    {c.render ? c.render(d) : cell(d[c.key])}
+                  </span>
+                </Fragment>
+              ))}
+            </div>
+          </details>
+        ))}
+        {!filtrados.length && <div className="p-4 text-muted text-[13px]">Nenhum lançamento com esses filtros.</div>}
       </div>
       {filtrados.length > MAX && <div className="text-muted text-[12.5px] mt-2">Mostrando {MAX} de {filtrados.length} lançamentos. Refine os filtros.</div>}
     </div>

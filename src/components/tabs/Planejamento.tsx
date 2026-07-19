@@ -119,7 +119,7 @@ interface Mensal { valor_real: number | null; pago: boolean; }
 
 function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
-    <label className="flex flex-col gap-1 text-[11.5px] text-muted">
+    <label className="flex flex-col gap-1 text-[11.5px] text-muted w-full sm:w-auto">
       {label}
       <div className="text-txt">{children}</div>
     </label>
@@ -417,14 +417,34 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     if (err?.error) { toast({ message: "Erro ao reordenar: " + err.error.message, variant: "error" }); carregar(); }
   }
 
-  // botão-alça de arrasto exibido no início de cada linha de item
+  // reordenar por botão (▲/▼): alternativa de TOQUE ao arrastar — troca com o
+  // vizinho do mesmo grupo reusando a mesma lógica/persistência do drag&drop.
+  async function moverItem(p: Plano, dir: -1 | 1) {
+    const g = grupoDe(p);
+    const grupo = planos.filter((x) => grupoDe(x) === g);
+    const i = grupo.findIndex((x) => x.id === p.id);
+    const alvo = grupo[i + dir];
+    if (!alvo) return;
+    dragId.current = p.id;
+    await soltarSobre(alvo);
+  }
+
+  // botão-alça de arrasto (desktop) + setas ▲/▼ (mobile, onde o drag não funciona)
   function DragHandle({ p }: { p: Plano }) {
     return (
-      <span draggable
-        onDragStart={(e) => { dragId.current = p.id; e.dataTransfer.effectAllowed = "move"; }}
-        onDragEnd={() => { dragId.current = null; setDropAlvo(null); }}
-        title="arraste para reordenar"
-        className="shrink-0 cursor-grab active:cursor-grabbing text-muted hover:text-txt select-none text-[13px] leading-none">⠿</span>
+      <>
+        <span draggable
+          onDragStart={(e) => { dragId.current = p.id; e.dataTransfer.effectAllowed = "move"; }}
+          onDragEnd={() => { dragId.current = null; setDropAlvo(null); }}
+          title="arraste para reordenar"
+          className="hidden md:inline shrink-0 cursor-grab active:cursor-grabbing text-muted hover:text-txt select-none text-[13px] leading-none">⠿</span>
+        <span className="md:hidden inline-flex flex-col shrink-0">
+          <button onClick={() => moverItem(p, -1)} title="Mover para cima"
+            className="w-[26px] h-[20px] flex items-center justify-center text-muted bg-transparent border-0 cursor-pointer p-0 text-[10px] leading-none">▲</button>
+          <button onClick={() => moverItem(p, 1)} title="Mover para baixo"
+            className="w-[26px] h-[20px] flex items-center justify-center text-muted bg-transparent border-0 cursor-pointer p-0 text-[10px] leading-none">▼</button>
+        </span>
+      </>
     );
   }
   // props de alvo de drop para a <tr> de um item
@@ -788,8 +808,8 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
               <CartaoToggle p={p} />
             </div>
           </td>
-          <td className="text-muted">{p.categoria || "—"}</td>
-          {histMeses.map((c) => <td key={c} className="num text-muted">{fmt(dados(p, c).efetivo)}</td>)}
+          <td className="text-muted hidden md:table-cell">{p.categoria || "—"}</td>
+          {histMeses.map((c) => <td key={c} className="num text-muted hidden md:table-cell">{fmt(dados(p, c).efetivo)}</td>)}
           <td className="num text-muted">{d.previsto ? fmt(d.previsto) : "—"}</td>
           <td className="num">
             <input className={`${inp} w-[100px] text-right ${d.conflito ? "!border-red" : ""} ${rec ? "text-green" : ""}`} value={reais[p.id] ?? ""}
@@ -804,7 +824,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
           </td>
           <td className="!text-center">
             <button onClick={() => togglePago(p)} title={d.pago ? "Pago" : "Marcar pago"}
-              className={`w-7 h-7 rounded-[8px] border-2 flex items-center justify-center mx-auto text-[15px] font-bold cursor-pointer transition-colors ${d.pago ? "bg-green border-green text-onaccent" : "bg-transparent border-line text-transparent hover:border-green"}`}>✓</button>
+              className={`tap w-7 h-7 rounded-[8px] border-2 flex items-center justify-center mx-auto text-[15px] font-bold cursor-pointer transition-colors ${d.pago ? "bg-green border-green text-onaccent" : "bg-transparent border-line text-transparent hover:border-green"}`}>✓</button>
           </td>
           <td className="!text-center whitespace-nowrap text-[12px]">
             <button onClick={() => abrirLink(p)} className="bg-transparent border-0 p-0 cursor-pointer text-muted hover:text-accent transition-colors">vincular</button>
@@ -853,7 +873,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             <span>{titulo}{sub && <span className="text-muted font-normal"> · {sub}</span>}{col && <span className="text-muted font-normal text-[11px]"> · {count} {count === 1 ? "item" : "itens"}</span>}</span>
           </button>
         </td>
-        {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line">{cell(histFn(c))}</td>)}
+        {histMeses.map((c) => <td key={c} className="num border-t-2 !border-t-line hidden md:table-cell">{cell(histFn(c))}</td>)}
         <td className="num border-t-2 !border-t-line">{cell(prev)}</td>
         <td className="num border-t-2 !border-t-line">{cell(real)}</td>
         <td className="border-t-2 !border-t-line" colSpan={2}></td>
@@ -865,7 +885,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
   function LinhaProj(p: Plano) {
     return (
       <tr key={p.id} {...dropProps(p)} className={`${p.ativo ? "" : "opacity-45"} ${dropAlvo === p.id ? "bg-accent/10" : ""}`}>
-        <td className="min-w-[230px] !pl-[10px]">
+        <td className="sticky left-0 z-10 bg-card min-w-[150px] max-w-[46vw] md:min-w-[230px] md:max-w-none !pl-[10px]">
           <div className="flex items-center gap-2">
             <DragHandle p={p} />
             <input type="checkbox" checked={p.ativo} onChange={() => toggleAtivo(p)} title={p.ativo ? "ativo" : "ignorado"} className="cursor-pointer" />
@@ -881,8 +901,8 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
           const ajustado = ovr[m.k]?.[p.id] != null;
           const v = p.ativo ? valProj(p, m.k) : 0;
           return (
-            <td key={m.k} onDoubleClick={() => editarCelula(p, m.k)}
-              title={p.ativo ? "duplo clique para ajustar só este mês" : undefined}
+            <td key={m.k} onClick={() => { if (!editando) editarCelula(p, m.k); }}
+              title={p.ativo ? "clique/toque para ajustar só este mês" : undefined}
               className={`num ${ehReceitaTipo(p.tipo) ? "text-green" : ""} ${p.ativo && !editando ? "cursor-pointer" : ""}`}>
               {editando ? (
                 <input autoFocus className={`${inp} w-[58px] text-right`} value={editVal}
@@ -891,7 +911,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setEditCell(null); }} />
               ) : v ? (
                 <span className={`${editavel} ${ajustado ? "border-accent text-accent font-medium underline decoration-dotted underline-offset-2" : "border-line hover:border-accent"}`}
-                  title={ajustado ? "ajustado manualmente" : "duplo clique para ajustar só este mês"}>
+                  title={ajustado ? "ajustado manualmente" : "clique/toque para ajustar só este mês"}>
                   {fmtCell(v)}
                 </span>
               ) : (
@@ -918,7 +938,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
     const col = !!colapsado[gkey];
     return (
       <tr className={`font-bold bg-card2 ${colorCls}`}>
-        <td className="border-t-2 !border-t-line">
+        <td className="border-t-2 !border-t-line sticky left-0 z-10 bg-card2">
           <button onClick={() => toggleGrupo(gkey)} title={col ? "Mostrar os itens deste grupo" : "Minimizar: esconder os itens e ver só o total"}
             className="bg-transparent border-0 p-0 cursor-pointer inline-flex items-center gap-[6px] text-left text-inherit font-bold">
             <span className="text-muted w-[10px] text-[10px] leading-none">{col ? "▶" : "▼"}</span>
@@ -962,6 +982,8 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                 const cor = sug.tipo === "cartao" ? "bg-violet" : sug.tipo === "receita" ? "bg-green" : "bg-accent";
                 return (
                   <>
+                    <button onClick={fecharSugJa} aria-label="Fechar"
+                      className="tap absolute top-[6px] right-[6px] w-[22px] h-[22px] rounded-full bg-fill text-muted border-0 cursor-pointer flex items-center justify-center text-[11px] md:hidden">✕</button>
                     <div className="font-semibold text-txt mb-[2px]">📊 Média móvel</div>
                     <div className="text-muted mb-2 leading-snug">média do {base} nos meses fechados do histórico</div>
                     <div className="flex flex-col gap-[3px] mb-[10px]">
@@ -998,18 +1020,18 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
 
           <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
             <div className="overflow-x-auto scroll-thin">
-              <table className="tbl min-w-[960px]">
+              <table className="tbl min-w-[560px] md:min-w-[960px]">
                 <thead>
                   <tr>
                     <th rowSpan={2} className="!text-left">Item</th>
-                    <th rowSpan={2}>Categoria</th>
-                    <th colSpan={3} className="!text-center !p-[6px] !text-[10px]">Realizado — meses anteriores</th>
+                    <th rowSpan={2} className="hidden md:table-cell">Categoria</th>
+                    <th colSpan={3} className="!text-center !p-[6px] !text-[10px] hidden md:table-cell">Realizado — meses anteriores</th>
                     <th colSpan={2} className="!text-center text-accent">{dvLabel(comp)}</th>
                     <th rowSpan={2} className="!text-center">Pago</th>
                     <th rowSpan={2}></th>
                   </tr>
                   <tr>
-                    {histMeses.map((c) => <th key={c} className="num !font-normal">{dvLabel(c)}</th>)}
+                    {histMeses.map((c) => <th key={c} className="num !font-normal hidden md:table-cell">{dvLabel(c)}</th>)}
                     <th className="num">Previsto</th>
                     <th className="num">Real</th>
                   </tr>
@@ -1038,7 +1060,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       {/* 🏦 conta — gerais (orçado) · começa o bloco consolidado (borda no topo) */}
                       <tr className="text-[12.5px]" title="gasto corriqueiro da conta (Pix/débito) que você orça; realizado = o que saiu da conta além dos recorrentes e dos itens avulsos">
                         <td colSpan={2} className="border-t-2 !border-t-line">🏦 Gastos na conta <span className="text-muted font-normal">· gerais (orçado)</span></td>
-                        {histMeses.map((c) => { const v = contaGeralEfet(c); return <td key={c} className="num text-muted border-t-2 !border-t-line">{v == null ? "—" : fmtCell(v)}</td>; })}
+                        {histMeses.map((c) => { const v = contaGeralEfet(c); return <td key={c} className="num text-muted border-t-2 !border-t-line hidden md:table-cell">{v == null ? "—" : fmtCell(v)}</td>; })}
                         <td className="num text-muted !py-1 border-t-2 !border-t-line">
                           {orcEdit === "conta" ? (
                             <input autoFocus className={`${inp} w-[84px] text-right`} value={orcVal}
@@ -1050,6 +1072,8 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                                 className={`${editavel} border-line bg-transparent cursor-pointer hover:border-accent hover:text-accent`}>
                                 {contaGeralPrev(comp) == null ? <span className="text-accent">↑ orçar</span> : fmtCell(contaGeralPrev(comp) as number)}
                               </button>
+                              <button onClick={(e) => { e.stopPropagation(); abrirSug("conta", e.currentTarget); }} title="ver média móvel"
+                                className="md:hidden tap ml-1 bg-transparent border-0 p-0 cursor-pointer text-[12px] align-middle">📊</button>
                             </span>
                           )}
                         </td>
@@ -1059,7 +1083,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       {/* 💳 cartão variável, fora os recorrentes marcados */}
                       <tr className="text-violet text-[12.5px]" title="o que caiu no cartão além dos recorrentes marcados — vem dos lançamentos importados (origem Cartao)">
                         <td colSpan={2}>💳 Gastos no cartão <span className="text-muted font-normal">· fora os recorrentes</span></td>
-                        {histMeses.map((c) => <td key={c} className="num">{fmtCell(cartaoVarEfet(c))}</td>)}
+                        {histMeses.map((c) => <td key={c} className="num hidden md:table-cell">{fmtCell(cartaoVarEfet(c))}</td>)}
                         <td className="num !py-1">
                           {orcEdit === "cartao" ? (
                             <input autoFocus className={`${inp} w-[84px] text-right`} value={orcVal}
@@ -1071,6 +1095,8 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                                 className={`${editavel} border-line bg-transparent cursor-pointer hover:border-violet hover:text-violet`}>
                                 {cartaoVarPrev(comp) == null ? <span className="text-violet">↑ orçar</span> : fmtCell(cartaoVarPrev(comp) as number)}
                               </button>
+                              <button onClick={(e) => { e.stopPropagation(); abrirSug("cartao", e.currentTarget); }} title="ver média móvel"
+                                className="md:hidden tap ml-1 bg-transparent border-0 p-0 cursor-pointer text-[12px] align-middle">📊</button>
                             </span>
                           )}
                         </td>
@@ -1082,15 +1108,15 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       {/* Σ total geral consolidado */}
                       <tr className="font-bold">
                         <td colSpan={2}>Σ Gastos gerais</td>
-                        {histMeses.map((c) => <td key={c} className="num">{fmtCell(geraisEfet(c))}</td>)}
+                        {histMeses.map((c) => <td key={c} className="num hidden md:table-cell">{fmtCell(geraisEfet(c))}</td>)}
                         <td className="num">{fmtCell(geraisPrev(comp))}</td>
                         <td className="num" title={cartaoParcial(comp) ? TIP_PARCIAL : undefined}>{fmtCell(geraisEfet(comp))}{cartaoParcial(comp) && <span className="font-normal text-[10px] text-muted"> *</span>}</td>
                         <td colSpan={2}></td>
                       </tr>
                       {/* 💰 Receitas — Hist/Real = lançado (real); Previsto = receita prevista editável (mesma da Projeção, conectado) */}
-                      <tr className="text-green text-[12.5px]" title="Hist. e Real = o que de fato entrou no mês (seus lançamentos). Previsto = a receita que você planeja por mês: clique para definir o valor-base; ajuste só um mês na aba Projeção (duplo clique). É a mesma receita prevista da Projeção — editar aqui muda lá e vice-versa.">
+                      <tr className="text-green text-[12.5px]" title="Hist. e Real = o que de fato entrou no mês (seus lançamentos). Previsto = a receita que você planeja por mês: clique para definir o valor-base; ajuste só um mês na aba Projeção (um clique/toque). É a mesma receita prevista da Projeção — editar aqui muda lá e vice-versa.">
                         <td colSpan={2}>💰 Receitas <span className="text-muted font-normal">· real lançado · previsto editável</span></td>
-                        {histMeses.map((c) => { const v = receitaReal(c); return <td key={c} className="num">{v ? fmtCell(v) : "—"}</td>; })}
+                        {histMeses.map((c) => { const v = receitaReal(c); return <td key={c} className="num hidden md:table-cell">{v ? fmtCell(v) : "—"}</td>; })}
                         <td className="num !py-1">
                           {orcEdit === "receita" ? (
                             <input autoFocus className={`${inp} w-[84px] text-right`} value={orcVal}
@@ -1108,6 +1134,8 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                                     : <span className="text-green underline decoration-dotted">↑ prever</span>;
                                 })()}
                               </button>
+                              <button onClick={(e) => { e.stopPropagation(); abrirSug("receita", e.currentTarget); }} title="ver média móvel"
+                                className="md:hidden tap ml-1 bg-transparent border-0 p-0 cursor-pointer text-[12px] align-middle">📊</button>
                             </span>
                           )}
                         </td>
@@ -1117,7 +1145,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                       {/* Saldo do mês = receita − gerais */}
                       <tr className="font-bold">
                         <td className="border-t-2 !border-t-line" colSpan={2}>Saldo do mês</td>
-                        {histMeses.map((c) => { const s = receitaReal(c) - geraisEfet(c); return <td key={c} className={`num border-t-2 !border-t-line ${s < 0 ? "text-red" : "text-green"}`}>{fmtCell(s)}</td>; })}
+                        {histMeses.map((c) => { const s = receitaReal(c) - geraisEfet(c); return <td key={c} className={`num border-t-2 !border-t-line hidden md:table-cell ${s < 0 ? "text-red" : "text-green"}`}>{fmtCell(s)}</td>; })}
                         <td className={`num border-t-2 !border-t-line ${prevRec - prevGer < 0 ? "text-red" : "text-green"}`}>{fmtCell(prevRec - prevGer)}</td>
                         <td className={`num border-t-2 !border-t-line ${efetRec - efetGer < 0 ? "text-red" : "text-green"}`}>{fmtCell(efetRec - efetGer)}</td>
                         <td className="border-t-2 !border-t-line" colSpan={2}></td>
@@ -1131,7 +1159,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                   {!!receitasMes.length && (
                     <tr className="font-bold text-green">
                       <td colSpan={2}>Σ Receitas previstas <span className="text-muted font-normal">· plano</span></td>
-                      {histMeses.map((c) => <td key={c} className="num">{fmtCell(somaEfet(receitasMes, c))}</td>)}
+                      {histMeses.map((c) => <td key={c} className="num hidden md:table-cell">{fmtCell(somaEfet(receitasMes, c))}</td>)}
                       <td className="num">{fmtCell(somaPrev(receitasMes, comp))}</td>
                       <td className="num">{fmtCell(somaEfet(receitasMes, comp))}</td>
                       <td colSpan={2}></td>
@@ -1159,7 +1187,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
               <table className="tbl" style={{ minWidth: minW }}>
                 <thead>
                   <tr>
-                    <th className="!text-left">Item</th>
+                    <th className="!text-left sticky left-0 z-20 bg-card">Item</th>
                     {meses.map((m, i) => <th key={m.k} className={`num ${i === 0 ? "text-accent" : ""}`}>{m.label}</th>)}
                     <th></th>
                   </tr>
@@ -1189,33 +1217,33 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                         (o total dos recorrentes fica no tbody, logo abaixo dos fixos) */}
                     {/* 🏦 conta — gerais (orçado) */}
                     <tr className="text-[12.5px]" title="orçamento previsto da conta (definido na visão Mês via ↑ orçar) — o gasto corriqueiro de Pix/débito">
-                      <td className="border-t-2 !border-t-line">🏦 Gastos na conta <span className="text-muted font-normal">· gerais (orçado)</span></td>
+                      <td className="border-t-2 !border-t-line sticky left-0 z-10 bg-card">🏦 Gastos na conta <span className="text-muted font-normal">· gerais (orçado)</span></td>
                       {proj.map((m, i) => <td key={m.k} className={`num text-muted border-t-2 !border-t-line ${i === 0 ? "!text-accent" : ""}`}>{m.contaOrc ? fmtCell(m.contaOrc) : <span className="text-line">·</span>}</td>)}
                       <td className="border-t-2 !border-t-line"></td>
                     </tr>
                     {/* 💳 cartão variável (total do cartão fora os recorrentes marcados) */}
                     <tr className="text-violet text-[12.5px]" title="total do cartão (orçamento, senão soma dos itens marcados 💳) além dos recorrentes já marcados">
-                      <td>💳 Gastos no cartão <span className="text-muted font-normal">· fora os recorrentes</span></td>
+                      <td className="sticky left-0 z-10 bg-card">💳 Gastos no cartão <span className="text-muted font-normal">· fora os recorrentes</span></td>
                       {proj.map((m, i) => <td key={m.k} className={`num ${i === 0 ? "!text-accent" : ""}`}>{m.cartaoVar ? fmtCell(m.cartaoVar) : <span className="text-line">·</span>}</td>)}
                       <td></td>
                     </tr>
                     {/* Σ total geral consolidado */}
                     <tr className="font-bold">
-                      <td>Σ Gastos gerais</td>
+                      <td className="sticky left-0 z-10 bg-card">Σ Gastos gerais</td>
                       {proj.map((m, i) => <td key={m.k} className={`num ${i === 0 ? "text-accent" : ""}`}>{fmtCell(m.gerais)}</td>)}
                       <td></td>
                     </tr>
                     {/* 💰 Receita prevista — editável por mês (duplo clique ajusta só aquele mês); valor-base vem da visão Mês (↑ prever) */}
                     <tr className="text-green">
-                      <td>💰 Receita prevista <span className="text-muted font-normal">· duplo clique p/ ajustar o mês</span></td>
+                      <td className="sticky left-0 z-10 bg-card">💰 Receita prevista <span className="text-muted font-normal">· clique p/ ajustar o mês</span></td>
                       {proj.map((m, i) => {
                         const p = receitaPlano;
                         const editando = !!p && editCell?.id === p.id && editCell?.k === m.k;
                         const ajustado = !!p && ovr[m.k]?.[p.id] != null;
                         const v = m.receita || 0; // total previsto (orçamento + itens) = o que o Saldo usa; o duplo clique ajusta o orçamento
                         return (
-                          <td key={m.k} onDoubleClick={() => editarReceitaCelula(m.k)}
-                            title="duplo clique para ajustar a receita prevista só deste mês"
+                          <td key={m.k} onClick={() => { if (!editando) editarReceitaCelula(m.k); }}
+                            title="clique/toque para ajustar a receita prevista só deste mês"
                             className={`num ${i === 0 ? "!text-accent" : ""} ${editando ? "" : "cursor-pointer"}`}>
                             {editando ? (
                               <input autoFocus className={`${inp} w-[58px] text-right`} value={editVal}
@@ -1224,7 +1252,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                                 onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); else if (e.key === "Escape") setEditCell(null); }} />
                             ) : v ? (
                               <span className={`${editavel} ${ajustado ? "border-accent text-accent font-medium underline decoration-dotted underline-offset-2" : "border-line hover:border-green"}`}
-                                title={ajustado ? "ajustado manualmente" : "duplo clique para ajustar a receita prevista só deste mês"}>
+                                title={ajustado ? "ajustado manualmente" : "clique/toque para ajustar a receita prevista só deste mês"}>
                                 {fmtCell(v)}
                               </span>
                             ) : (
@@ -1237,7 +1265,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
                     </tr>
                     {/* Saldo do mês = receita − gerais */}
                     <tr className="font-bold">
-                      <td className="border-t-2 !border-t-line">Saldo do mês</td>
+                      <td className="border-t-2 !border-t-line sticky left-0 z-10 bg-card">Saldo do mês</td>
                       {proj.map((m) => <td key={m.k} className={`num border-t-2 !border-t-line ${m.saldo < 0 ? "text-red" : "text-green"}`}>{fmtCell(m.saldo)}</td>)}
                       <td className="border-t-2 !border-t-line"></td>
                     </tr>
@@ -1265,36 +1293,36 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       <Panel title={editId ? "Editar item" : "Adicionar item"} className="mt-[18px]">
         <div className="flex flex-wrap gap-3 items-end">
           <Field label="Tipo">
-            <Select value={form.tipo} onChange={(v) => setForm((f) => ({ ...f, tipo: v as TipoPlano }))} className="w-[180px]">
+            <Select value={form.tipo} onChange={(v) => setForm((f) => ({ ...f, tipo: v as TipoPlano }))} className="w-full sm:w-[180px]">
               {TIPOS.map((t) => <option key={t.v} value={t.v}>{t.icon} {t.label.replace(/s$/, "")}</option>)}
             </Select>
           </Field>
           <Field label="Nome">
-            <input className={`${inp} w-[190px]`} placeholder={NOME_PH[form.tipo]} value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} />
+            <input className={`${inp} w-full sm:w-[190px]`} placeholder={NOME_PH[form.tipo]} value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} />
           </Field>
           {podeCategoria && (
             <Field label="Categoria">
-              <select className={`select-chev ${inp} cursor-pointer w-[150px]`} value={form.categoria} onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}>
+              <select className={`select-chev ${inp} cursor-pointer w-full sm:w-[150px]`} value={form.categoria} onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}>
                 {catOpcoes.map((c) => <option key={c} value={c}>{c || "—"}</option>)}
               </select>
             </Field>
           )}
           <Field label={VALOR_LABEL[form.tipo]}>
-            <input className={`${inp} w-[120px] text-right`} placeholder="0,00" value={form.valor} onChange={(e) => setForm((f) => ({ ...f, valor: e.target.value }))} />
+            <input className={`${inp} w-full sm:w-[120px] text-right`} placeholder="0,00" value={form.valor} onChange={(e) => setForm((f) => ({ ...f, valor: e.target.value }))} />
           </Field>
           {form.tipo === "parcelamento" && (
             <Field label="Parcelas">
-              <input className={`${inp} w-[70px] text-right`} value={form.parcelas} onChange={(e) => setForm((f) => ({ ...f, parcelas: e.target.value }))} />
+              <input className={`${inp} w-full sm:w-[70px] text-right`} value={form.parcelas} onChange={(e) => setForm((f) => ({ ...f, parcelas: e.target.value }))} />
             </Field>
           )}
           <Field label={ehMesUnico ? "Mês" : "Mês início"}>
-            <Select value={form.mes_inicio} onChange={(v) => setForm((f) => ({ ...f, mes_inicio: v }))} className="w-[120px]">
+            <Select value={form.mes_inicio} onChange={(v) => setForm((f) => ({ ...f, mes_inicio: v }))} className="w-full sm:w-[120px]">
               {MES_OPCOES.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
             </Select>
           </Field>
           {temFim && (
             <Field label="Até (opcional)">
-              <Select value={form.mes_fim} onChange={(v) => setForm((f) => ({ ...f, mes_fim: v }))} className="w-[130px]">
+              <Select value={form.mes_fim} onChange={(v) => setForm((f) => ({ ...f, mes_fim: v }))} className="w-full sm:w-[130px]">
                 <option value="">sem fim</option>
                 {MES_OPCOES.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
               </Select>
@@ -1302,7 +1330,7 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
           )}
           {ehMeta && (
             <Field label="Mês-alvo">
-              <Select value={form.mes_fim} onChange={(v) => setForm((f) => ({ ...f, mes_fim: v }))} className="w-[120px]">
+              <Select value={form.mes_fim} onChange={(v) => setForm((f) => ({ ...f, mes_fim: v }))} className="w-full sm:w-[120px]">
                 <option value="">—</option>
                 {MES_OPCOES.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
               </Select>
@@ -1336,14 +1364,14 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       {/* legenda explicativa — por último, abaixo do formulário */}
       {view === "mes" ? (
         <div className="text-muted text-[12px] mt-2 leading-relaxed">
-          <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (duplo clique). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦, 💳 e 💰, <b>clique</b> para digitar o valor (não sobrescreve o que já está lá) e <b>passe o mouse</b> em cima para abrir um pop-up com a <b>média móvel dos meses fechados</b> — clique em <b>Usar</b> ali para aplicá-la. Clique no nome de um grupo (<b>🔁 Gastos recorrentes</b>, <b>📦 Outros gastos</b>) para <b>minimizar</b> — os itens somem e fica só o total na linha-cabeçalho. Arraste a alça <b>⠿</b> no início de cada item para <b>reordenar</b> as linhas dentro do grupo. O <b>Σ Gastos gerais</b> é a soma das quatro linhas acima: <b>🔁 recorrentes + 📦 outros + 🏦 conta (gerais) + 💳 cartão</b>.
+          <b>Previsto</b> vem da regra de cada item; <b>Real</b> você preenche (ou puxa do <b>lançado</b> via <b>vincular</b>). Marque um gasto com <b className="text-violet">💳</b> se ele cai no cartão. No rodapé: <b>🏦 conta</b> soma os gastos fora do cartão, <b className="text-violet">💳 cartão</b> é o total (Previsto = orçamento que você digita; <b>Real = o que realmente caiu no cartão, dos seus lançamentos importados</b> — pode sobrescrever digitando) e <b>Σ gerais</b> é tudo junto. Na linha <b className="text-green">💰 Receitas</b>, <b>Hist.</b> e <b>Real</b> são o que de fato entrou (seus lançamentos) e o <b>Previsto</b> é a receita que você planeja: clique para definir o valor-base por mês (ou <b className="text-green">↑ prever</b>, que sugere a média do que entrou). É a mesma <b>Receita prevista</b> da aba <b>Projeção</b> — editar num lado muda no outro; para mexer só num mês, ajuste lá na Projeção (um clique/toque). O <b>Saldo do mês</b> usa a receita <b>real</b> (coluna Real) e a <b>prevista</b> (coluna Previsto). Os itens 💳 já estão dentro do cartão, não somam de novo. Enquanto o mês <b>não fecha</b>, o cartão aparece como <b>· parcial</b> (gasto importado até agora) e só vira valor real quando o mês termina — ou se você digitar a fatura fechada. Na coluna <b>Previsto</b> das linhas 🏦, 💳 e 💰, <b>clique</b> para digitar o valor (não sobrescreve o que já está lá) e <b>passe o mouse</b> em cima para abrir um pop-up com a <b>média móvel dos meses fechados</b> — clique em <b>Usar</b> ali para aplicá-la. Clique no nome de um grupo (<b>🔁 Gastos recorrentes</b>, <b>📦 Outros gastos</b>) para <b>minimizar</b> — os itens somem e fica só o total na linha-cabeçalho. Arraste a alça <b>⠿</b> no início de cada item (ou use as setas ▲▼ no celular) para <b>reordenar</b> as linhas dentro do grupo. O <b>Σ Gastos gerais</b> é a soma das quatro linhas acima: <b>🔁 recorrentes + 📦 outros + 🏦 conta (gerais) + 💳 cartão</b>.
           {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           {!temOrcConta && <> <span className="text-amber">{MSG_MIGRACAO_CONTA}</span></>}
           {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
         </div>
       ) : (
         <div className="text-muted text-[12px] mt-2 leading-relaxed">
-          Valores em reais (sem centavos); a primeira coluna é o mês atual. Dê <b>duplo clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). <b>Mesma estrutura da visão Mês</b>: <b>🔁 Gastos recorrentes</b> e <b>📦 Outros gastos</b> trazem o total no próprio cabeçalho — clique no nome para <b>minimizar</b> e esconder os itens (arraste a alça <b>⠿</b> de cada item para <b>reordenar</b>); depois vêm <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos quatro, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>duplo clique</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
+          Valores em reais (sem centavos); a primeira coluna é o mês atual. Toque ou <b>clique</b> em qualquer valor para ajustar só aquele mês (fica <span className="text-accent">destacado</span>; apague ou iguale à regra para voltar ao previsto). <b>Mesma estrutura da visão Mês</b>: <b>🔁 Gastos recorrentes</b> e <b>📦 Outros gastos</b> trazem o total no próprio cabeçalho — clique no nome para <b>minimizar</b> e esconder os itens (arraste a alça <b>⠿</b> de cada item, ou use as setas ▲▼ no celular, para <b>reordenar</b>); depois vêm <b>🏦 conta</b> e <b className="text-violet">💳 cartão</b> fora os recorrentes, <b>Σ gerais</b> (a soma dos quatro, sem contar em dobro), a <b className="text-green">💰 Receita prevista</b> e o <b>Saldo do mês</b>. A <b className="text-green">💰 Receita prevista</b> é editável: <b>um clique/toque</b> numa célula ajusta só aquele mês; o valor-base (que se repete) você define na visão <b>Mês</b> (linha 💰, <b className="text-green">↑ prever</b>). Defina o orçamento do cartão na visão <b>Mês</b> (linha 💳) — sem orçamento, o cartão mostra a soma dos itens marcados.
           {!temOrcCartao && <> <span className="text-amber">{MSG_MIGRACAO_CARTAO}</span></>}
           {!temOrcReceita && <> <span className="text-amber">{MSG_MIGRACAO_RECEITA}</span></>}
         </div>
