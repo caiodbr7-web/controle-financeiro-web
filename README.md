@@ -147,13 +147,37 @@ Para garantir o isolamento, rode uma única vez em **Supabase → SQL Editor →
 query → Run**:
 
 ```
-db/migrations/2026-06-16-separar-orcamento-planejamento.sql
+supabase/migrations/*_separar_orcamento_planejamento.sql
 ```
 
 Ele é idempotente (pode rodar de novo), **não apaga dados** e atribui os
 registros sem dono ao titular (ajuste o e-mail no topo do arquivo se preciso).
 No fim do arquivo há 3 `SELECT`s comentados para **conferir** que o RLS ficou
 ligado e que cada linha pertence ao usuário certo.
+
+## Migrações do banco (automáticas)
+
+As alterações de schema ficam em **`supabase/migrations/`** no formato da
+Supabase CLI (`<timestamp>_nome.sql`). Ao dar **merge na `main`**, o workflow
+[`.github/workflows/migrations.yml`](.github/workflows/migrations.yml) roda
+`supabase db push` e aplica **apenas as migrações pendentes** — a CLI guarda o
+histórico do que já rodou na tabela `supabase_migrations.schema_migrations` do
+próprio banco.
+
+**Configuração (uma vez só):** cadastre em **GitHub → Settings → Secrets and
+variables → Actions → New repository secret** o secret **`SUPABASE_DB_URL`** com
+a connection string do Postgres (Supabase → Project Settings → Database →
+Connection string → URI, de preferência o pooler na porta `6543`). Depois disso
+é só criar migrações e mergear — nunca mais precisa cadastrar a chave.
+
+> Como o banco de produção já tinha essas migrações aplicadas manualmente, na
+> **primeira** vez marque-as como aplicadas sem reexecutar, com
+> `supabase migration repair --status applied <version>` para cada arquivo
+> existente (ou, como todas são idempotentes, deixe o `db push` reaplicá-las —
+> é seguro). Migrações **novas** a partir daqui rodam sozinhas.
+
+Para testar uma migração antes do merge, dá para colar o SQL do arquivo no
+**Supabase → SQL Editor** manualmente (todos são idempotentes).
 
 ## Observações
 

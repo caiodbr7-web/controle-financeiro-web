@@ -186,7 +186,7 @@ function buildLancamentos(): Lancamento[] {
 
 // ---- categorias (semeadas, com id e ordem) ----------------------------------
 function buildCategorias() {
-  return CATEGORIAS_DEFAULT.map((c, i) => ({ id: i + 1, nome: c.nome, cor: c.cor, ordem: i }));
+  return CATEGORIAS_DEFAULT.map((c, i) => ({ id: i + 1, nome: c.nome, cor: c.cor, ordem: i, tipo: "despesa" }));
 }
 
 // ---- planejamento -----------------------------------------------------------
@@ -316,6 +316,7 @@ export function buildDemoData(): DemoDb {
   return {
     lancamentos: buildLancamentos() as unknown as Record<string, unknown>[],
     categorias: buildCategorias() as unknown as Record<string, unknown>[],
+    subcategorias: [],
     planos: buildPlanos() as unknown as Record<string, unknown>[],
     plano_mensal: [],
     regras: buildRegras() as unknown as Record<string, unknown>[],

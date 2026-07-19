@@ -17,7 +17,14 @@ import { CATEGORIAS_DEFAULT, setCategoriasRegistry } from "./finance";
    auto-classificação, para a base nunca apontar p/ uma categoria inexistente.
 --------------------------------------------------------------------------- */
 
-export interface Categoria { id: number; nome: string; cor: string; ordem: number }
+export type TipoCategoria = "despesa" | "receita";
+
+export interface Subcategoria { id: number; categoria_id: number; nome: string; ordem: number }
+export interface Categoria {
+  id: number; nome: string; cor: string; ordem: number;
+  tipo: TipoCategoria;
+  subs: Subcategoria[];
+}
 
 export interface ResultadoRenomear { ok: boolean; erro?: string; afetadas?: number }
 export interface ResultadoAdicionar { ok: boolean; erro?: string }
@@ -27,13 +34,21 @@ interface CategoriasCtx {
   carregando: boolean;
   pronto: boolean;            // tabela existe e já carregou ao menos uma vez
   recarregar: () => Promise<void>;
-  adicionar: (nome: string, cor: string) => Promise<ResultadoAdicionar>;
+  adicionar: (nome: string, cor: string, tipo?: TipoCategoria) => Promise<ResultadoAdicionar>;
   renomear: (id: number, nome: string) => Promise<ResultadoRenomear>;
   mudarCor: (id: number, cor: string) => Promise<void>;
   excluir: (id: number) => Promise<void>;
   reordenar: (ids: number[]) => Promise<void>;
   contarTransacoes: (nome: string) => Promise<number>;
+  // subcategorias (opcionais; qualquer categoria pode ter)
+  adicionarSub: (categoriaId: number, nome: string) => Promise<ResultadoAdicionar>;
+  renomearSub: (subId: number, nome: string) => Promise<ResultadoAdicionar>;
+  excluirSub: (subId: number) => Promise<void>;
+  reordenarSub: (categoriaId: number, subIds: number[]) => Promise<void>;
 }
+
+// linha crua da tabela categorias (antes de anexar as subcategorias)
+interface CategoriaRow { id: number; nome: string; cor: string; ordem: number; tipo?: string }
 
 const Ctx = createContext<CategoriasCtx | null>(null);
 
@@ -66,7 +81,7 @@ export function CategoriasProvider({ children }: { children: ReactNode }) {
     }
     setCarregando(true);
     const { data, error } = await sb
-      .from("categorias").select("id,nome,cor,ordem").order("ordem").order("id");
+      .from("categorias").select("id,nome,cor,ordem,tipo").order("ordem").order("id");
     if (error) {
       // tabela ainda não migrada → mantém os defaults p/ o app seguir funcionando
       setCategoriasRegistry(CATEGORIAS_DEFAULT);
@@ -74,16 +89,32 @@ export function CategoriasProvider({ children }: { children: ReactNode }) {
       setCarregando(false);
       return;
     }
-    let linhas = (data || []) as Categoria[];
+    let linhas = (data || []) as CategoriaRow[];
     // base nova (sem categorias): semeia os defaults uma única vez
     if (linhas.length === 0 && !seedEmAndamento.current) {
       seedEmAndamento.current = true;
       const seed = CATEGORIAS_DEFAULT.map((c, i) => ({ nome: c.nome, cor: c.cor, ordem: i }));
-      const { data: ins } = await sb.from("categorias").insert(seed).select("id,nome,cor,ordem");
-      linhas = (ins || []) as Categoria[];
+      const { data: ins } = await sb.from("categorias").insert(seed).select("id,nome,cor,ordem,tipo");
+      linhas = (ins || []) as CategoriaRow[];
       seedEmAndamento.current = false;
     }
-    aplicar(linhas);
+    // subcategorias (best-effort: se a tabela não existir, segue sem elas)
+    let subs: Subcategoria[] = [];
+    const { data: subData } = await sb
+      .from("subcategorias").select("id,categoria_id,nome,ordem").order("ordem").order("id");
+    if (subData) subs = subData as Subcategoria[];
+    const porCat = new Map<number, Subcategoria[]>();
+    for (const s of subs) {
+      const arr = porCat.get(s.categoria_id) || [];
+      arr.push(s);
+      porCat.set(s.categoria_id, arr);
+    }
+    const completas: Categoria[] = linhas.map((c) => ({
+      id: c.id, nome: c.nome, cor: c.cor, ordem: c.ordem,
+      tipo: (c.tipo === "receita" ? "receita" : "despesa") as TipoCategoria,
+      subs: porCat.get(c.id) || [],
+    }));
+    aplicar(completas);
     setPronto(true);
     setCarregando(false);
   }, [aplicar]);
@@ -102,13 +133,13 @@ export function CategoriasProvider({ children }: { children: ReactNode }) {
     return count || 0;
   }, []);
 
-  const adicionar = useCallback(async (nome: string, cor: string): Promise<ResultadoAdicionar> => {
+  const adicionar = useCallback(async (nome: string, cor: string, tipo: TipoCategoria = "despesa"): Promise<ResultadoAdicionar> => {
     const n = nome.trim();
     if (!n) return { ok: false, erro: "Informe um nome." };
     if (categorias.some((c) => c.nome.toLowerCase() === n.toLowerCase()))
       return { ok: false, erro: "Já existe uma categoria com esse nome." };
     const ordem = categorias.reduce((m, c) => Math.max(m, c.ordem), -1) + 1;
-    const { error } = await sb.from("categorias").insert({ nome: n, cor, ordem });
+    const { error } = await sb.from("categorias").insert({ nome: n, cor, ordem, tipo });
     if (error) return { ok: false, erro: error.message };
     await recarregar();
     return { ok: true };
@@ -165,9 +196,55 @@ export function CategoriasProvider({ children }: { children: ReactNode }) {
     await Promise.all(nova.map((c) => sb.from("categorias").update({ ordem: c.ordem }).eq("id", c.id)));
   }, [categorias, aplicar]);
 
+  /* ----------------------------- subcategorias ----------------------------- */
+  const adicionarSub = useCallback(async (categoriaId: number, nome: string): Promise<ResultadoAdicionar> => {
+    const n = nome.trim();
+    if (!n) return { ok: false, erro: "Informe um nome." };
+    const cat = categorias.find((c) => c.id === categoriaId);
+    if (!cat) return { ok: false, erro: "Categoria não encontrada." };
+    if (cat.subs.some((s) => s.nome.toLowerCase() === n.toLowerCase()))
+      return { ok: false, erro: "Já existe uma subcategoria com esse nome." };
+    const ordem = cat.subs.reduce((m, s) => Math.max(m, s.ordem), -1) + 1;
+    const { error } = await sb.from("subcategorias").insert({ categoria_id: categoriaId, nome: n, ordem });
+    if (error) return { ok: false, erro: error.message };
+    await recarregar();
+    return { ok: true };
+  }, [categorias, recarregar]);
+
+  const renomearSub = useCallback(async (subId: number, nome: string): Promise<ResultadoAdicionar> => {
+    const n = nome.trim();
+    if (!n) return { ok: false, erro: "O nome não pode ficar vazio." };
+    const cat = categorias.find((c) => c.subs.some((s) => s.id === subId));
+    const atual = cat?.subs.find((s) => s.id === subId);
+    if (!cat || !atual) return { ok: false, erro: "Subcategoria não encontrada." };
+    if (n === atual.nome) return { ok: true };
+    if (cat.subs.some((s) => s.id !== subId && s.nome.toLowerCase() === n.toLowerCase()))
+      return { ok: false, erro: "Já existe uma subcategoria com esse nome." };
+    const { error } = await sb.from("subcategorias").update({ nome: n }).eq("id", subId);
+    if (error) return { ok: false, erro: error.message };
+    await recarregar();
+    return { ok: true };
+  }, [categorias, recarregar]);
+
+  const excluirSub = useCallback(async (subId: number) => {
+    await sb.from("subcategorias").delete().eq("id", subId);
+    await recarregar();
+  }, [recarregar]);
+
+  const reordenarSub = useCallback(async (categoriaId: number, subIds: number[]) => {
+    const cat = categorias.find((c) => c.id === categoriaId);
+    if (!cat) return;
+    const byId = new Map(cat.subs.map((s) => [s.id, s]));
+    const nova = subIds.map((id, i) => ({ ...(byId.get(id) as Subcategoria), ordem: i }));
+    // reflete na hora
+    aplicar(categorias.map((c) => (c.id === categoriaId ? { ...c, subs: nova } : c)));
+    await Promise.all(nova.map((s) => sb.from("subcategorias").update({ ordem: s.ordem }).eq("id", s.id)));
+  }, [categorias, aplicar]);
+
   const valor: CategoriasCtx = {
     categorias, carregando, pronto, recarregar,
     adicionar, renomear, mudarCor, excluir, reordenar, contarTransacoes,
+    adicionarSub, renomearSub, excluirSub, reordenarSub,
   };
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>;
 }

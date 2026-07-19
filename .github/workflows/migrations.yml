@@ -1,0 +1,50 @@
+name: Aplicar migrações (Supabase)
+
+# Aplica automaticamente as migrações pendentes de supabase/migrations/ no
+# banco de produção, sempre que algo mudar nessa pasta na branch main.
+#
+# A Supabase CLI mantém o histórico do que já foi aplicado na tabela
+# supabase_migrations.schema_migrations do próprio banco — então só as
+# migrações NOVAS são executadas. Rodar de novo é seguro.
+#
+# Pré-requisito (uma vez só): cadastrar em
+#   GitHub → Settings → Secrets and variables → Actions → New repository secret
+# o secret SUPABASE_DB_URL com a connection string do Postgres do Supabase
+# (Supabase → Project Settings → Database → Connection string → URI, de
+# preferência a do pooler na porta 6543). A senha nunca aparece no código,
+# nos logs nem no histórico do git.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+      - ".github/workflows/migrations.yml"
+  workflow_dispatch: {}   # permite rodar manualmente pela aba Actions
+
+# evita duas aplicações simultâneas pisando uma na outra
+concurrency:
+  group: supabase-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Aplicar migrações pendentes
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::Secret SUPABASE_DB_URL não configurado. Veja o cabeçalho deste workflow."
+            exit 1
+          fi
+          supabase db push --db-url "$SUPABASE_DB_URL"

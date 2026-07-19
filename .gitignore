@@ -7,3 +7,7 @@ dist-ssr
 .env.*
 .DS_Store
 .vite
+
+# Supabase CLI (arquivos temporários locais)
+supabase/.temp
+supabase/.branches
