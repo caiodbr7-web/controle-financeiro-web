@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip } from "recharts";
 import type { Aba, Lancamento } from "../../types";
-import { Panel, BarRow, Select, Seg } from "../ui";
+import { Panel, BarRow, Select, Seg, Legenda } from "../ui";
 import { useChart, ChartTip, useIsMobile } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
@@ -382,8 +382,10 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
               </span>
             )}
           </div>
-          <div className="text-[11.5px] text-muted mt-2">
-            Pela competência (fatura/extrato do mês), cartão + contas. Parcelas e compras de meses anteriores já contam desde o dia 1º — o platô no início da curva.{!calc.completo ? " Mês ainda em curso." : ""} <span className="text-accent">Clique num dia para ver os lançamentos.</span>
+          <div className="mt-2">
+            <Legenda>
+              Pela competência (fatura/extrato do mês), cartão + contas. Parcelas e compras de meses anteriores já contam desde o dia 1º — o platô no início da curva.{!calc.completo ? " Mês ainda em curso." : ""} <span className="text-accent">Clique num dia para ver os lançamentos.</span>
+            </Legenda>
           </div>
         </Panel>
 

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { Lancamento, PatchLocal, Mutate, Enqueue } from "../../types";
-import { Kpi } from "../ui";
+import { Kpi, Legenda } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
 import { BRL0, ehGasto, ehReceita, ehTransfer, normEstab, precisaClassificar } from "../../lib/finance";
@@ -559,13 +559,15 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
         </div>
       )}
 
-      {/* como funciona — explicação completa fica no rodapé da página */}
-      <div className="text-muted text-[12.5px] mt-4 leading-relaxed">
+      {/* como funciona — legenda discreta no rodapé (abre pop-up) */}
+      <div className="mt-3">
+      <Legenda>
         Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto pro menor. Defina a <b>categoria</b> (use <b>Corporativo</b> para trabalho)
         e clique <b>Aplicar</b> — vale pra todos os lançamentos do grupo, vira sugestão e dá pra <b>desfazer</b>.
         <br />Agora aparecem também <b>receitas e transferências</b> ainda sem classificação. O botão <b>⇄</b> marca o grupo como <b className="text-violet">entre contas próprias</b> — é só uma escolha: <b>nada é gravado até você clicar em Aplicar</b>. Para <b className="text-green">receitas</b> (ex.: salário), use <b>✓ Receita</b> para confirmar sem precisar de categoria de despesa; juros/dividendos aparecem como <b className="text-accent">📈 renda invest.</b> e têm o próprio <b>✓ Renda invest.</b>.
         <br />Os que já sabemos serem <b className="text-violet">🔁 provavelmente entre contas</b> (histórico ou transferência) já vêm <b>pré-marcados</b> e entram, junto com os <b className="text-green">conhecidos</b> (🔗 vínculo e 🧠 histórico), no botão <b>Aplicar conhecidos</b>. Os <b className="text-accent">sugeridos</b> (⚙️ motor e 🏦 banco) vêm pré-preenchidos pra você confirmar.
         <span className="hidden sm:inline"> Pelo teclado: <kbd className="kbd">↑</kbd><kbd className="kbd">↓</kbd> navega, <kbd className="kbd">Enter</kbd> escolhe categoria, <kbd className="kbd">espaço</kbd> seleciona, <kbd className="kbd">E</kbd> entre contas, <kbd className="kbd">A</kbd> aplica.</span>
+      </Legenda>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback, type ReactNode } from "react";
 import type { Lancamento } from "../types";
+import { Legenda } from "./ui";
 import { BRL0, dvLabel, dvParcialLimite } from "../lib/finance";
 import {
   type MatrizMensal as Matriz, type SecaoInfo, type LinhaMatriz,
@@ -171,7 +172,9 @@ export function MatrizMensal({ dados, matriz, openModal }: Props) {
       </table>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted text-[12px] mt-2">
-        <span>Clique no cabeçalho p/ ordenar; arraste pelo punho <b>⠿</b> p/ reordenar à mão. Células com valor abrem o detalhamento.</span>
+        <Legenda>
+          Clique no cabeçalho para <b>ordenar</b>; arraste pelo punho <b>⠿</b> para reordenar à mão. Células com valor abrem o <b>detalhamento</b> dos lançamentos daquele mês.
+        </Legenda>
         {customizado && (
           <button className="text-accent hover:underline cursor-pointer" onClick={resetar} title="voltar à ordem padrão">
             ↺ ordem padrão

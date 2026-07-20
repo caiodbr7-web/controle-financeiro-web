@@ -4,7 +4,7 @@ import {
   ComposedChart, Bar, Area,
 } from "recharts";
 import type { Lancamento, Modo } from "../../types";
-import { Panel, Kpi, Seg, Select } from "../ui";
+import { Panel, Kpi, Seg, Select, Legenda } from "../ui";
 import { useChart, useTheme, ChartTip, useIsMobile } from "../../lib/theme";
 import {
   BRL0, brlShort, dvLabel, dvGasto, mesComp, dvDiasNoMes, diaDoMov, ehParcelaAnterior,
@@ -220,7 +220,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
     <div>
       <Panel
         title="Gasto acumulado ao longo do mês"
-        sub="(por competência · quebrado em parcelamentos · casa fixo · cartão · gastos gerais — os quatro somados = gasto do mês)"
+        sub="por competência"
         right={
           <div className="flex items-center gap-2 flex-wrap">
             <Seg size="sm" value={String(janela)} onChange={(v) => setJanela(+v)} options={JANELAS} />
@@ -300,11 +300,13 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
             </span>
           )}
         </div>
-        <div className="text-muted text-[12.5px] mt-3 leading-relaxed">
+        <div className="mt-3">
+        <Legenda>
           A curva é o gasto do mês empilhado em quatro faixas: <b style={{ color: corParc }}>parcelamentos</b> (o platô de meses anteriores, já comprometido no dia 1),
           <b style={{ color: corCasa }}> casa fixo</b> (contas mensais + aluguel/IPTU),
           <b style={{ color: corCartao }}> cartão</b> (não casa fixo) e <b style={{ color: corGeral }}>gastos gerais</b> (não casa fixo, em conta) — os quatro somados são o gasto total daquele mês.
           A <b className="text-amber">linha tracejada</b> é a média dos últimos {janela} meses no mesmo ponto do mês. <span className="text-accent">Clique num dia para ver os lançamentos.</span>
+        </Legenda>
         </div>
       </Panel>
 
