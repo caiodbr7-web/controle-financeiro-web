@@ -9,12 +9,15 @@ import { semAcento } from "../lib/texto";
    (fixed) para não ser cortado pelo overflow das tabelas. Totalmente navegável
    por teclado: digite p/ filtrar, ↑/↓ move, Enter escolhe, Esc fecha.
 
-   SUBCATEGORIAS: cada categoria pode ter subs (opcionais). Elas aparecem
-   indentadas logo abaixo da categoria-mãe e também são escolhíveis — escolher
-   uma sub define categoria + sub de uma vez; escolher a categoria "seca"
-   limpa a sub. A busca também encontra subs (pelo nome da sub ou da mãe). */
+   SUBCATEGORIAS: a classificação aponta sempre para a FOLHA da hierarquia.
+   Uma categoria SEM subcategorias é escolhível diretamente. Uma categoria
+   COM subcategorias NÃO é escolhível sozinha — ela vira só um cabeçalho, e
+   as escolhíveis são as suas subcategorias (indentadas abaixo). Assim nenhuma
+   categoria com sub recebe valores dedicados. A busca encontra folhas pelo
+   nome da sub ou da mãe. */
 
-interface Opcao { cat: string; sub: string | null }
+// header=true → linha de título da categoria-mãe (não selecionável)
+interface Opcao { cat: string; sub: string | null; header?: boolean }
 
 interface Props {
   value: string;                       // categoria atual ("" = sem categoria)
@@ -42,15 +45,24 @@ export function CategoryPicker({
     const t = semAcento(q).toLowerCase().trim();
     const base: Opcao[] = [{ cat: "", sub: null }]; // "" = sem categoria (limpar)
     for (const c of categorias) {
-      base.push({ cat: c.nome, sub: null });
-      for (const s of c.subs) base.push({ cat: c.nome, sub: s.nome });
+      if (c.subs.length === 0) {
+        base.push({ cat: c.nome, sub: null }); // folha: categoria sem sub (escolhível)
+      } else {
+        base.push({ cat: c.nome, sub: null, header: true }); // cabeçalho (não escolhível)
+        for (const s of c.subs) base.push({ cat: c.nome, sub: s.nome }); // folhas escolhíveis
+      }
     }
     if (!t) return base;
+    // filtra pelas FOLHAS que casam; mantém o cabeçalho só se sobrar alguma folha sua
+    const folhaCasa = (o: Opcao) =>
+      o.cat === ""
+        ? "sem categoria".includes(t)
+        : semAcento(o.sub ? `${o.cat} ${o.sub}` : o.cat).toLowerCase().includes(t);
+    const comFilhoVisivel = new Set<string>();
+    for (const o of base) if (!o.header && o.sub && folhaCasa(o)) comFilhoVisivel.add(o.cat);
     return base.filter((o) => {
-      const alvo = o.cat === ""
-        ? "sem categoria"
-        : semAcento(o.sub ? `${o.cat} ${o.sub}` : o.cat).toLowerCase();
-      return alvo.includes(t);
+      if (o.header) return comFilhoVisivel.has(o.cat);
+      return folhaCasa(o);
     });
   }, [q, categorias]);
 
@@ -80,18 +92,28 @@ export function CategoryPicker({
   useEffect(() => { setHi((h) => Math.min(h, Math.max(0, lista.length - 1))); }, [lista.length]);
 
   function fechar() { setAberto(false); setQ(""); setHi(0); onClose?.(); }
-  function escolher(o: Opcao) { onSelect(o.cat, o.sub); fechar(); }
+  function escolher(o: Opcao) { if (o.header) return; onSelect(o.cat, o.sub); fechar(); }
+
+  // próximo índice escolhível (pula cabeçalhos) a partir de `de`, na direção `dir`
+  function proximoSelec(de: number, dir: 1 | -1): number {
+    let i = de;
+    while (i >= 0 && i < lista.length) {
+      if (!lista[i]?.header) return i;
+      i += dir;
+    }
+    return de;
+  }
 
   function abrir() {
-    const idx = lista.findIndex((o) => o.cat === value && (o.sub || null) === (subValue || null));
-    setHi(idx > 0 ? idx : 0);
+    const idx = lista.findIndex((o) => !o.header && o.cat === value && (o.sub || null) === (subValue || null));
+    setHi(idx > 0 ? idx : proximoSelec(0, 1));
     setAberto(true);
   }
 
   function onKey(e: ReactKeyboardEvent) {
-    if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, lista.length - 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
-    else if (e.key === "Enter") { e.preventDefault(); if (lista[hi] !== undefined) escolher(lista[hi]); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => proximoSelec(Math.min(h + 1, lista.length - 1), 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => proximoSelec(Math.max(h - 1, 0), -1)); }
+    else if (e.key === "Enter") { e.preventDefault(); if (lista[hi] && !lista[hi].header) escolher(lista[hi]); }
     else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); fechar(); }
   }
 
@@ -133,6 +155,18 @@ export function CategoryPicker({
             <div className="max-h-[260px] overflow-auto scroll-thin">
               {lista.length === 0 && <div className="text-muted text-[12.5px] px-2 py-2">Nada encontrado</div>}
               {lista.map((o, i) => {
+                // cabeçalho da categoria-mãe (que tem subs): rótulo, não escolhível
+                if (o.header) {
+                  return (
+                    <div
+                      key={`h//${o.cat}`}
+                      className="flex items-center gap-[9px] px-2 pt-[8px] pb-[3px] text-[11px] text-muted uppercase tracking-[.04em] font-semibold"
+                    >
+                      <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: corCategoria(o.cat) }} />
+                      <span className="truncate">{o.cat}</span>
+                    </div>
+                  );
+                }
                 const selecionada = o.cat === value && (o.sub || null) === (subValue || null);
                 return (
                   <button

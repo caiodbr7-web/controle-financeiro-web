@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Panel, Legenda } from "../ui";
+import { ListaOrdenavel, AlcaArrastar, type AlcaProps } from "../ListaOrdenavel";
 import { useCategorias, type Categoria, type Subcategoria, type TipoCategoria } from "../../lib/categorias";
 import { useToast } from "../Toast";
 import { useConfirm } from "../Confirm";
@@ -41,32 +42,6 @@ function SeletorCor({ cor, onPick }: { cor: string; onPick: (c: string) => void 
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-/* ---------- setinhas de reordenar (cima/baixo) ---------- */
-function Setas({ podeSubir, podeDescer, onSubir, onDescer }: {
-  podeSubir: boolean; podeDescer: boolean; onSubir: () => void; onDescer: () => void;
-}) {
-  return (
-    <div className="flex flex-col shrink-0">
-      <button
-        onClick={onSubir}
-        disabled={!podeSubir}
-        title="Mover para cima"
-        className="w-[28px] h-[22px] md:w-[20px] md:h-[15px] flex items-center justify-center text-muted hover:text-txt disabled:opacity-25 disabled:cursor-default bg-transparent border-0 cursor-pointer p-0"
-      >
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 15 6-6 6 6" /></svg>
-      </button>
-      <button
-        onClick={onDescer}
-        disabled={!podeDescer}
-        title="Mover para baixo"
-        className="w-[28px] h-[22px] md:w-[20px] md:h-[15px] flex items-center justify-center text-muted hover:text-txt disabled:opacity-25 disabled:cursor-default bg-transparent border-0 cursor-pointer p-0"
-      >
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-      </button>
     </div>
   );
 }
@@ -268,15 +243,11 @@ export function Categorias({ reload }: Props) {
     if (n > 0) { reload(); recarregarContagem(); }
   };
 
-  const moverCat = async (lista: Categoria[], idx: number, dir: -1 | 1) => {
-    const j = idx + dir;
-    if (j < 0 || j >= lista.length || busy) return;
-    // reordena dentro da seção e depois costura a ordem global (despesas antes de receitas)
-    const nova = lista.slice();
-    [nova[idx], nova[j]] = [nova[j], nova[idx]];
-    const outraSecao = lista === despesas ? receitas : despesas;
-    const idsGlobais = (lista === despesas ? [...nova, ...outraSecao] : [...outraSecao, ...nova]).map((c) => c.id);
-    await reordenar(idsGlobais);
+  // reordena uma seção (por arraste) e costura a ordem global (despesas antes de receitas)
+  const reordenarSecao = (tipo: TipoCategoria, ids: number[]) => {
+    const outraSecao = (tipo === "despesa" ? receitas : despesas).map((c) => c.id);
+    const idsGlobais = tipo === "despesa" ? [...ids, ...outraSecao] : [...outraSecao, ...ids];
+    reordenar(idsGlobais);
   };
 
   /* --------------------------- subcategorias --------------------------- */
@@ -321,14 +292,6 @@ export function Categorias({ reload }: Props) {
     setBusy(false);
     toast({ message: `Subcategoria “${s.nome}” apagada.`, variant: "info" });
     if (n > 0) { reload(); recarregarContagem(); }
-  };
-
-  const moverSub = async (c: Categoria, idx: number, dir: -1 | 1) => {
-    const j = idx + dir;
-    if (j < 0 || j >= c.subs.length || busy) return;
-    const ids = c.subs.map((s) => s.id);
-    [ids[idx], ids[j]] = [ids[j], ids[idx]];
-    await reordenarSub(c.id, ids);
   };
 
   /* ------------------- movimentos entre níveis da hierarquia ------------------- */
@@ -410,17 +373,14 @@ export function Categorias({ reload }: Props) {
   };
 
   /* --------------------------- render de uma categoria --------------------------- */
-  const renderCategoria = (c: Categoria, i: number, lista: Categoria[]) => {
+  const renderCategoria = (c: Categoria, alca: AlcaProps, arrastando: boolean, lista: Categoria[]) => {
     const n = contagem[c.nome] || 0;
     const editando = editId === c.id;
     const aberta = !!abertas[c.id];
     return (
-      <div key={c.id} className="py-[6px]">
+      <div className={`py-[6px] rounded-[10px] transition-shadow ${arrastando ? "bg-card shadow-pop ring-1 ring-line" : ""}`}>
         <div className="flex items-center gap-2">
-          <Setas
-            podeSubir={i > 0} podeDescer={i < lista.length - 1}
-            onSubir={() => moverCat(lista, i, -1)} onDescer={() => moverCat(lista, i, 1)}
-          />
+          <AlcaArrastar alca={alca} className="w-[28px] h-[30px] md:w-[24px]" />
 
           {/* expandir subcategorias */}
           <button
@@ -499,16 +459,18 @@ export function Categorias({ reload }: Props) {
 
         {/* subcategorias */}
         {aberta && (
-          <div className="mt-[6px] ml-[48px] pl-3 border-l border-line flex flex-col gap-[4px]">
-            {c.subs.map((s, si) => {
+          <div className="mt-[6px] ml-[40px] pl-3 border-l border-line">
+            <ListaOrdenavel
+              items={c.subs}
+              getId={(s) => s.id}
+              onReorder={(ids) => reordenarSub(c.id, ids)}
+              className="flex flex-col gap-[4px]"
+              render={(s, alcaSub, arrastandoSub) => {
               const edSub = editSubId === s.id;
               const nSub = contagemSub[`${c.nome}//${s.nome}`] || 0;
               return (
-                <div key={s.id} className="flex items-center gap-2">
-                  <Setas
-                    podeSubir={si > 0} podeDescer={si < c.subs.length - 1}
-                    onSubir={() => moverSub(c, si, -1)} onDescer={() => moverSub(c, si, 1)}
-                  />
+                <div className={`flex items-center gap-2 rounded-[8px] ${arrastandoSub ? "bg-card shadow-pop ring-1 ring-line" : ""}`}>
+                  <AlcaArrastar alca={alcaSub} className="w-[24px] h-[26px]" />
                   <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ background: c.cor }} />
                   {edSub ? (
                     <input
@@ -555,7 +517,8 @@ export function Categorias({ reload }: Props) {
                   </button>
                 </div>
               );
-            })}
+              }}
+            />
             {/* nova subcategoria */}
             <div className="flex items-center gap-2 pt-[2px]">
               <span className="w-[6px] h-[6px] rounded-full shrink-0 border border-line" />
@@ -604,7 +567,7 @@ export function Categorias({ reload }: Props) {
         descricao={
           <>
             Gerencie as categorias usadas para classificar <b>gastos</b>. Edite o <b>nome</b>, escolha a <b>cor</b> e
-            use as setas para definir a <b>ordem</b>. Abra uma categoria (seta ›) para criar <b>subcategorias</b> —
+            <b> arraste pela alça</b> (⠿) para definir a <b>ordem</b>. Abra uma categoria (seta ›) para criar <b>subcategorias</b> —
             elas são opcionais e qualquer categoria pode ter. Ao <b>apagar</b> uma categoria em uso, as transações
             dela voltam para “sem categoria”.
           </>
@@ -613,6 +576,7 @@ export function Categorias({ reload }: Props) {
         onAdd={(nome, cor, limpar) => adicionarCat(nome, cor, "despesa", limpar)}
         lista={despesas}
         renderCategoria={renderCategoria}
+        onReorder={(ids) => reordenarSecao("despesa", ids)}
         vazio="Nenhuma categoria de despesa ainda. Adicione a primeira acima."
       />
 
@@ -630,6 +594,7 @@ export function Categorias({ reload }: Props) {
         onAdd={(nome, cor, limpar) => adicionarCat(nome, cor, "receita", limpar)}
         lista={receitas}
         renderCategoria={renderCategoria}
+        onReorder={(ids) => reordenarSecao("receita", ids)}
         vazio="Nenhuma categoria de receita ainda. Adicione a primeira acima."
       />
     </div>
@@ -638,7 +603,7 @@ export function Categorias({ reload }: Props) {
 
 /* ---------- uma seção (Despesas ou Receitas): form de adicionar + lista ---------- */
 function SecaoCategorias({
-  titulo, contador, descricao, busy, onAdd, lista, renderCategoria, vazio,
+  titulo, contador, descricao, busy, onAdd, lista, renderCategoria, onReorder, vazio,
 }: {
   tipo: TipoCategoria;
   titulo: string;
@@ -647,7 +612,8 @@ function SecaoCategorias({
   busy: boolean;
   onAdd: (nome: string, cor: string, limpar: () => void) => void;
   lista: Categoria[];
-  renderCategoria: (c: Categoria, i: number, lista: Categoria[]) => ReactNode;
+  renderCategoria: (c: Categoria, alca: AlcaProps, arrastando: boolean, lista: Categoria[]) => ReactNode;
+  onReorder: (ids: number[]) => void;
   vazio: string;
 }) {
   const [nome, setNome] = useState("");
@@ -679,13 +645,18 @@ function SecaoCategorias({
         </button>
       </div>
 
-      {/* lista ordenável */}
-      <div className="divide-y divide-line">
-        {lista.map((c, i) => renderCategoria(c, i, lista))}
-        {lista.length === 0 && (
-          <div className="text-muted text-[13.5px] py-4">{vazio}</div>
-        )}
-      </div>
+      {/* lista ordenável por arraste */}
+      <ListaOrdenavel
+        items={lista}
+        getId={(c) => c.id}
+        onReorder={onReorder}
+        disabled={busy}
+        className="divide-y divide-line"
+        render={(c, alca, arrastando) => renderCategoria(c, alca, arrastando, lista)}
+      />
+      {lista.length === 0 && (
+        <div className="text-muted text-[13.5px] py-4">{vazio}</div>
+      )}
 
       {/* explicação de como usar — legenda discreta no rodapé */}
       <div className="mt-3">

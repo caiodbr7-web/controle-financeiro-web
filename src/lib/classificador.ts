@@ -26,6 +26,7 @@ export type FonteSugestao = "vinculo" | "historico" | "motor" | "banco" | "nenhu
 export interface Regra {
   padrao: string;
   categoria: string;
+  subcategoria?: string | null; // folha aprendida (sub), quando houver
   prioridade?: number | null;
   match_type?: string | null;
 }
@@ -38,14 +39,18 @@ export interface VinculoPlano {
 
 export interface Sugestao {
   categoria: string;
+  subcategoria: string; // "" quando a folha é a própria categoria
   fonte: FonteSugestao;
   conhecido: boolean;
 }
 
+// o histórico guarda a FOLHA que você já usou: categoria + subcategoria (opcional)
+export interface FolhaHist { categoria: string; subcategoria?: string | null }
+
 export interface CtxSugestao {
   regras: Regra[];
   planos: VinculoPlano[];
-  histMap: Record<string, string>; // chave normEstab → categoria que você já usou
+  histMap: Record<string, FolhaHist>; // chave normEstab → folha que você já usou
 }
 
 // regras gravadas pelo app herdam a prioridade default do banco (100); as ~200
@@ -139,30 +144,32 @@ export function sugerirGrupo(
     if (p.ativo === false) continue;
     const lt = normTexto(p.link_texto || "");
     if (lt && desc.includes(lt) && ehCategoria(p.categoria)) {
-      return { categoria: p.categoria as string, fonte: "vinculo", conhecido: true };
+      return { categoria: p.categoria as string, subcategoria: "", fonte: "vinculo", conhecido: true };
     }
   }
 
-  // 2) histórico: você já classificou este estabelecimento → conhecido
+  // 2) histórico: você já classificou este estabelecimento → conhecido (com a folha)
   const h = ctx.histMap[key];
-  if (ehCategoria(h)) return { categoria: h, fonte: "historico", conhecido: true };
+  if (h && ehCategoria(h.categoria)) {
+    return { categoria: h.categoria, subcategoria: h.subcategoria || "", fonte: "historico", conhecido: true };
+  }
 
   // 3) motor de regras (palavra-chave). Regra aprendida (prio ≥ 100) é tratada
   //    como histórico/conhecido — cobre o caso da descrição variar levemente.
   const r = matchRegra(desc, ctx.regras);
   if (r && ehCategoria(r.categoria)) {
     const aprendida = (r.prioridade ?? PRIO_APRENDIDA) >= PRIO_APRENDIDA;
-    return { categoria: r.categoria, fonte: aprendida ? "historico" : "motor", conhecido: aprendida };
+    return { categoria: r.categoria, subcategoria: r.subcategoria || "", fonte: aprendida ? "historico" : "motor", conhecido: aprendida };
   }
 
   // 3b) categoria_auto do parser de PDF já vem em PT (motor embutido) → sugestão
   if (ehCategoria(categoriaAutoTop)) {
-    return { categoria: categoriaAutoTop, fonte: "motor", conhecido: false };
+    return { categoria: categoriaAutoTop as string, subcategoria: "", fonte: "motor", conhecido: false };
   }
 
   // 4) categoria do banco (Open Banking / Pluggy, em inglês) → sugestão
   const b = bancoSugestao(categoriaAutoTop);
-  if (b) return { categoria: b, fonte: "banco", conhecido: false };
+  if (b) return { categoria: b, subcategoria: "", fonte: "banco", conhecido: false };
 
-  return { categoria: "", fonte: "nenhuma", conhecido: false };
+  return { categoria: "", subcategoria: "", fonte: "nenhuma", conhecido: false };
 }
