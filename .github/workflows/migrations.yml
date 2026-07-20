@@ -47,4 +47,8 @@ jobs:
             echo "::error::Secret SUPABASE_DB_URL não configurado. Veja o cabeçalho deste workflow."
             exit 1
           fi
-          supabase db push --db-url "$SUPABASE_DB_URL"
+          # --include-all: aplica migrações pendentes mesmo quando o timestamp cai
+          # "no meio" do histórico já aplicado (acontece quando dois PRs entram com
+          # timestamps intercalados). Todas as migrações são idempotentes, então
+          # reaplicar/aplicar fora de ordem é seguro.
+          supabase db push --include-all --db-url "$SUPABASE_DB_URL"
