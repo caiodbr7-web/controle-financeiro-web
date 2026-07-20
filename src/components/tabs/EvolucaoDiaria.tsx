@@ -21,7 +21,7 @@ interface Props {
   openModal: (title: string, rows: Lancamento[]) => void;
 }
 const MODO_OPTS: { v: Modo; label: string }[] = [
-  { v: "cartao", label: "Só cartão" }, { v: "ambos", label: "Cartão + contas" }, { v: "conta", label: "Só contas" },
+  { v: "ambos", label: "Cartão + contas" }, { v: "cartao", label: "Só cartão" }, { v: "conta", label: "Só contas" },
 ];
 const MESES_OPTS = [
   { v: "3", label: "3m" }, { v: "6", label: "6m" }, { v: "12", label: "12m" }, { v: "all", label: "Tudo" },
@@ -189,7 +189,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
   };
 
   /* ---------- segundo gráfico: evolução mensal (barras + média móvel) ---------- */
-  const [modo, setModo] = useState<Modo>("cartao");
+  const [modo, setModo] = useState<Modo>("ambos");
   const [mesesSel, setMesesSel] = useState("6");
   const meta = MODOS[modo];
 
