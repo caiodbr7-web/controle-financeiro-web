@@ -67,15 +67,15 @@ export function Panel({
 }
 
 export function Kpi({
-  title, value, sub, color = "", onClick,
-}: { title: ReactNode; value: ReactNode; sub?: ReactNode; color?: string; onClick?: () => void }) {
+  title, value, sub, color = "", onClick, className = "",
+}: { title: ReactNode; value: ReactNode; sub?: ReactNode; color?: string; onClick?: () => void; className?: string }) {
   const Tag: any = onClick ? "button" : "div";
   return (
     <Tag
       onClick={onClick}
       className={`bg-card border border-line rounded-[16px] p-4 sm:p-[18px] shadow-card min-w-0 text-left transition-all duration-[280ms] hover:-translate-y-[3px] hover:shadow-card-hover ${
         onClick ? "cursor-pointer hover:border-accent/50" : ""
-      }`}
+      } ${className}`}
     >
       <div className="text-muted text-[12.5px] font-semibold">{title}</div>
       <div className={`font-display text-[22px] sm:text-[26px] font-bold mt-[6px] tracking-tight tabular-nums ${color}`}>{value}</div>
