@@ -12,16 +12,3 @@
   for = "/"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
-
-# ===== headers de segurança (todas as rotas) =====
-# CSP: só o próprio site + Supabase + Pluggy (widget Open Finance) + Google Fonts.
-# 'unsafe-inline' em style-src é exigido pelos estilos inline do React/Recharts.
-[[headers]]
-  for = "/*"
-  [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self' https://*.pluggy.ai; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.pluggy.ai; connect-src 'self' https://qjotxjunuurfezqgtugr.supabase.co wss://qjotxjunuurfezqgtugr.supabase.co https://*.pluggy.ai; frame-src https://*.pluggy.ai; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
-    X-Frame-Options = "DENY"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"
-    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
