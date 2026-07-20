@@ -23,21 +23,16 @@ export const BRL = (v: number) =>
 
 export const brlShort = (v: number) => "R$ " + Math.round(Number(v || 0)).toLocaleString("pt-BR");
 
-// reais compactos p/ caixas apertadas (mobile): milhares viram "k", milhões "M".
-// Abaixo de 10 mil mantém o valor cheio (abreviar "R$ 4.428" só atrapalha).
+// reais inteiros (com "R$") — valor cheio, sem abreviar milhares/milhões.
 export const kBRL = (v: number) => {
   const n = Number(v || 0), a = Math.abs(n), s = n < 0 ? "-" : "";
-  if (a >= 1_000_000) return s + "R$ " + (a / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "M";
-  if (a >= 10_000) return s + "R$ " + Math.round(a / 1000).toLocaleString("pt-BR") + "k";
   return s + "R$ " + Math.round(a).toLocaleString("pt-BR");
 };
 
-// compacto SEM "R$" — p/ tabelas onde a moeda já está implícita (ex.: Matriz Mensal).
-// Mantém o "k"/"M" e o sinal, mas economiza a largura do "R$ " (evita quebra de linha).
+// reais inteiros SEM "R$" — p/ tabelas onde a moeda já está implícita (ex.: Matriz Mensal).
+// Valor cheio, sem abreviar milhares/milhões; mantém o sinal.
 export const kNum = (v: number) => {
   const n = Number(v || 0), a = Math.abs(n), s = n < 0 ? "-" : "";
-  if (a >= 1_000_000) return s + (a / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "M";
-  if (a >= 10_000) return s + Math.round(a / 1000).toLocaleString("pt-BR") + "k";
   return s + Math.round(a).toLocaleString("pt-BR");
 };
 
