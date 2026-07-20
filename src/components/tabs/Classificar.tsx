@@ -5,8 +5,9 @@ import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
 import { BRL0, ehGasto, ehReceita, ehTransfer, normEstab, precisaClassificar } from "../../lib/finance";
 import { ehInterna, ehReceitaInvest } from "../../lib/lancClasses";
-import { sugerirGrupo, type FonteSugestao, type Regra, type VinculoPlano } from "../../lib/classificador";
+import { sugerirGrupo, type FonteSugestao, type Regra, type VinculoPlano, type FolhaHist } from "../../lib/classificador";
 import { useToast } from "../Toast";
+import { useCategorias } from "../../lib/categorias";
 
 interface Props {
   dados: Lancamento[]; allDados: Lancamento[];
@@ -14,7 +15,7 @@ interface Props {
   patchLocal: PatchLocal; mutate: Mutate; enqueue: Enqueue;
 }
 
-interface Grupo { key: string; ex: string; ids: number[]; rows: Lancamento[]; total: number; n: number; sugestao: string; fonte: FonteSugestao; conhecido: boolean; internaSug: boolean; receita: boolean; rinvest: boolean; rotuloReceita: string; }
+interface Grupo { key: string; ex: string; ids: number[]; rows: Lancamento[]; total: number; n: number; sugestao: string; sugestaoSub: string; fonte: FonteSugestao; conhecido: boolean; internaSug: boolean; receita: boolean; rinvest: boolean; rotuloReceita: string; }
 
 // pistas de que um grupo é "provavelmente entre contas próprias" pelos próprios
 // lançamentos (classe de transferência ou subtipo de movimento interno).
@@ -36,6 +37,15 @@ interface Snap { ids: number[]; key: string; prevRegra?: string }
 
 export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   const { toast } = useToast();
+  const { categorias } = useCategorias();
+  // categorias que TÊM subcategoria: nelas a classificação exige escolher uma sub
+  // (nenhuma categoria com sub recebe valores dedicados a ela).
+  const catComSub = useMemo(
+    () => new Set(categorias.filter((c) => c.subs.length > 0).map((c) => c.nome)),
+    [categorias]
+  );
+  // folha válida p/ gravar: categoria sem sub, ou categoria com sub E uma sub escolhida
+  const folhaValida = (cat: string, sub?: string | null) => !!cat && (!catComSub.has(cat) || !!sub);
   const [escolhas, setEscolhas] = useState<Record<string, string>>({});
   // subcategoria escolhida por grupo (opcional; sempre subordinada à categoria escolhida)
   const [escolhasSub, setEscolhasSub] = useState<Record<string, string>>({});
@@ -59,7 +69,7 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
 
   useEffect(() => {
     (async () => {
-      const { data } = await sb.from("regras").select("padrao,categoria,prioridade,match_type");
+      const { data } = await sb.from("regras").select("padrao,categoria,subcategoria,prioridade,match_type");
       const m: Record<string, string> = {};
       (data || []).forEach((x: any) => { m[x.padrao] = x.categoria; });
       setRegras(m);
@@ -75,9 +85,9 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   // ---- regras aprendidas (padrão do estabelecimento -> categoria) ----
   // O aprendizado é LOCAL e imediato (mexe só nas sugestões futuras); a escrita
   // no banco vai para a fila, separada, para não bloquear a ação principal.
-  const aprenderRegraLocal = (key: string, categoria: string) => {
+  const aprenderRegraLocal = (key: string, categoria: string, subcategoria?: string | null) => {
     setRegras((r) => ({ ...r, [key]: categoria }));
-    setRegrasList((l) => [...l.filter((x) => x.padrao !== key), { padrao: key, categoria, prioridade: 100, match_type: "contains" }]);
+    setRegrasList((l) => [...l.filter((x) => x.padrao !== key), { padrao: key, categoria, subcategoria: subcategoria || null, prioridade: 100, match_type: "contains" }]);
   };
   const esquecerRegraLocal = (key: string) => {
     setRegras((r) => { const n = { ...r }; delete n[key]; return n; });
@@ -87,8 +97,8 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   const restaurarRegraLocal = (key: string, prev?: string) =>
     prev ? aprenderRegraLocal(key, prev) : esquecerRegraLocal(key);
   // escritas no banco (sem tocar no estado local — quem chama já cuidou disso)
-  const salvarRegraDB = (key: string, categoria: string) =>
-    sb.from("regras").upsert({ padrao: key, categoria }, { onConflict: "user_id,padrao" }).then(() => {});
+  const salvarRegraDB = (key: string, categoria: string, subcategoria?: string | null) =>
+    sb.from("regras").upsert({ padrao: key, categoria, subcategoria: subcategoria || null }, { onConflict: "user_id,padrao" }).then(() => {});
   const restaurarRegraDB = (key: string, prev?: string) =>
     (prev
       ? sb.from("regras").upsert({ padrao: key, categoria: prev }, { onConflict: "user_id,padrao" })
@@ -98,16 +108,22 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   const erroToast = (e: unknown) =>
     toast({ message: "Erro ao salvar: " + ((e as { message?: string })?.message || e), variant: "error" });
 
-  // histórico já classificado: estabelecimento -> categoria mais usada (aprende do passado)
+  // histórico já classificado: estabelecimento -> FOLHA mais usada (categoria + sub).
+  // A chave de contagem é "categoria//sub" para aprender também a subcategoria.
   const histMap = useMemo(() => {
     const cnt: Record<string, Record<string, number>> = {};
     allDados.forEach((d) => {
       if (!ehGasto(d.classe) || !d.categoria_manual) return;
       const k = normEstab(d.descricao);
-      (cnt[k] = cnt[k] || {})[d.categoria_manual] = (cnt[k][d.categoria_manual] || 0) + 1;
+      const folha = `${d.categoria_manual}//${d.subcategoria_manual || ""}`;
+      (cnt[k] = cnt[k] || {})[folha] = (cnt[k][folha] || 0) + 1;
     });
-    const m: Record<string, string> = {};
-    Object.keys(cnt).forEach((k) => { m[k] = Object.keys(cnt[k]).sort((a, b) => cnt[k][b] - cnt[k][a])[0]; });
+    const m: Record<string, FolhaHist> = {};
+    Object.keys(cnt).forEach((k) => {
+      const top = Object.keys(cnt[k]).sort((a, b) => cnt[k][b] - cnt[k][a])[0];
+      const [categoria, sub] = top.split("//");
+      m[k] = { categoria, subcategoria: sub || null };
+    });
     return m;
   }, [allDados]);
 
@@ -127,7 +143,7 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
       if (!precisaClassificar(d)) return;
       const k = normEstab(d.descricao);
       let g = map.get(k);
-      if (!g) { g = { key: k, ex: d.descricao, ids: [], rows: [], total: 0, n: 0, sugestao: "", fonte: "nenhuma", conhecido: false, internaSug: false, receita: false, rinvest: false, rotuloReceita: "Receita" }; map.set(k, g); }
+      if (!g) { g = { key: k, ex: d.descricao, ids: [], rows: [], total: 0, n: 0, sugestao: "", sugestaoSub: "", fonte: "nenhuma", conhecido: false, internaSug: false, receita: false, rinvest: false, rotuloReceita: "Receita" }; map.set(k, g); }
       g.ids.push(d.id); g.rows.push(d); g.total += Math.abs(d.valor); g.n++;
     });
     const arr = [...map.values()].map((g) => {
@@ -145,14 +161,19 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
       const subCnt: Record<string, number> = {};
       g.rows.forEach((d) => { if (d.subtipo) subCnt[d.subtipo] = (subCnt[d.subtipo] || 0) + 1; });
       const rotuloReceita = Object.keys(subCnt).sort((a, b) => subCnt[b] - subCnt[a])[0] || (rinvest ? "Renda de investimento" : "Receita");
-      return { ...g, sugestao: s.categoria, fonte: s.fonte, conhecido: s.conhecido, internaSug, receita, rinvest, rotuloReceita };
+      // só é "conhecido" (aplicável em 1 clique) se a sugestão é uma folha válida:
+      // categoria sem sub, ou categoria com sub E a sub sugerida junto.
+      const conhecido = s.conhecido && folhaValida(s.categoria, s.subcategoria);
+      return { ...g, sugestao: s.categoria, sugestaoSub: s.subcategoria, fonte: s.fonte, conhecido, internaSug, receita, rinvest, rotuloReceita };
     });
     arr.sort((a, b) => b.total - a.total);
     return arr;
-  }, [dados, regrasList, planos, histMap, histInternaSet]);
+  }, [dados, regrasList, planos, histMap, histInternaSet, catComSub]);
 
   useEffect(() => {
     setEscolhas((prev) => { const i: Record<string, string> = {}; grupos.forEach((g) => { i[g.key] = prev[g.key] ?? g.sugestao; }); return i; });
+    // pré-preenche a subcategoria sugerida (folha) junto da categoria
+    setEscolhasSub((prev) => { const i: Record<string, string> = {}; grupos.forEach((g) => { const v = prev[g.key] ?? g.sugestaoSub; if (v) i[g.key] = v; }); return i; });
     // pré-marca "entre contas próprias" nos grupos que já sabemos serem internos
     // (histórico/transferência) — fica só selecionado, à espera do Aplicar.
     setEscolhaInterna((prev) => { const i: Record<string, boolean> = {}; grupos.forEach((g) => { i[g.key] = prev[g.key] ?? g.internaSug; }); return i; });
@@ -219,11 +240,11 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
     const snap: Snap[] = alvo.map(({ g }) => ({ ids: g.ids, key: g.key, prevRegra: regras[g.key] }));
     alvo.forEach(({ g, cat, sub }) => {
       const prevRegra = regras[g.key];
-      aprenderRegraLocal(g.key, cat);
+      aprenderRegraLocal(g.key, cat, sub);
       mutate({
         ids: g.ids,
         patch: { categoria_manual: cat, subcategoria_manual: sub || null },
-        persist: async () => { await dbCategoria(g.ids, cat, sub || null); await salvarRegraDB(g.key, cat); },
+        persist: async () => { await dbCategoria(g.ids, cat, sub || null); await salvarRegraDB(g.key, cat, sub); },
         onError: (e) => { restaurarRegraLocal(g.key, prevRegra); erroToast(e); },
       });
     });
@@ -272,11 +293,11 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
     const internaIds = internaAlvo.flatMap((g) => g.ids);
     catAlvo.forEach(({ g, cat, sub }) => {
       const prevRegra = regras[g.key];
-      aprenderRegraLocal(g.key, cat);
+      aprenderRegraLocal(g.key, cat, sub);
       mutate({
         ids: g.ids,
         patch: { categoria_manual: cat, subcategoria_manual: sub || null },
-        persist: async () => { await dbCategoria(g.ids, cat, sub || null); await salvarRegraDB(g.key, cat); },
+        persist: async () => { await dbCategoria(g.ids, cat, sub || null); await salvarRegraDB(g.key, cat, sub); },
         onError: (e) => { restaurarRegraLocal(g.key, prevRegra); erroToast(e); },
       });
     });
@@ -312,17 +333,27 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
     if (escolhaInterna[g.key]) { marcarInternaUm(g); return; }
     const cat = escolhas[g.key]; if (!cat) return;
     const sub = escolhasSub[g.key] || null;
+    if (!folhaValida(cat, sub)) {
+      toast({ message: `“${cat}” tem subcategorias — escolha uma para classificar.`, variant: "error" });
+      setPickerKey(g.key); // abre o seletor para escolher a sub
+      return;
+    }
     aplicar([{ g, cat, sub }], `“${g.ex.slice(0, 24)}” → ${cat}${sub ? ` › ${sub}` : ""}`);
   };
   const aplicarTodas = () => {
     const internaAlvo = grupos.filter((g) => escolhaInterna[g.key]);
-    const catAlvo = grupos.filter((g) => !escolhaInterna[g.key] && escolhas[g.key]).map((g) => ({ g, cat: escolhas[g.key], sub: escolhasSub[g.key] || null }));
+    const catAlvo = grupos
+      .filter((g) => !escolhaInterna[g.key] && escolhas[g.key])
+      .map((g) => ({ g, cat: escolhas[g.key], sub: escolhasSub[g.key] || null }))
+      .filter((x) => folhaValida(x.cat, x.sub)); // pula categorias com sub sem sub escolhida
     const n = internaAlvo.length + catAlvo.length;
     aplicarLote(catAlvo, internaAlvo, `${n} estabelecimento${n > 1 ? "s" : ""} resolvido${n > 1 ? "s" : ""} ✓`);
   };
   const aplicarConhecidos = () => {
-    const catAlvo = conhecidosCat.map((g) => ({ g, cat: escolhas[g.key], sub: escolhasSub[g.key] || null }));
-    const n = conhecidos.length;
+    const catAlvo = conhecidosCat
+      .map((g) => ({ g, cat: escolhas[g.key], sub: escolhasSub[g.key] || null }))
+      .filter((x) => folhaValida(x.cat, x.sub));
+    const n = catAlvo.length + conhecidosInterna.length;
     aplicarLote(catAlvo, conhecidosInterna, `${n} conhecido${n > 1 ? "s" : ""} aplicado${n > 1 ? "s" : ""} ✓`);
   };
   const marcarRestantesOutros = () => {
@@ -350,7 +381,7 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
     const alvo = grupos
       .filter((g) => sel.has(g.key))
       .map((g) => ({ g, cat: bulkCat || escolhas[g.key], sub: bulkCat ? bulkSub : escolhasSub[g.key] || null }))
-      .filter((x) => x.cat);
+      .filter((x) => folhaValida(x.cat, x.sub));
     if (!alvo.length) return;
     aplicar(alvo, bulkCat ? `${alvo.length} selecionados → ${bulkCat}${bulkSub ? ` › ${bulkSub}` : ""}` : `${alvo.length} selecionados classificados ✓`);
     setBulkCat(""); setBulkSub(null);
