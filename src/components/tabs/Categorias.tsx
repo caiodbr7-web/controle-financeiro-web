@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Panel } from "../ui";
+import { Panel, Legenda } from "../ui";
 import { useCategorias, type Categoria, type Subcategoria, type TipoCategoria } from "../../lib/categorias";
 import { useToast } from "../Toast";
 import { useConfirm } from "../Confirm";
@@ -660,8 +660,6 @@ function SecaoCategorias({
 
   return (
     <Panel title={titulo} sub={`(${contador})`}>
-      <div className="text-muted text-[12.5px] mb-4 leading-relaxed">{descricao}</div>
-
       {/* adicionar nova categoria */}
       <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-line">
         <SeletorCor cor={cor} onPick={setCor} />
@@ -687,6 +685,11 @@ function SecaoCategorias({
         {lista.length === 0 && (
           <div className="text-muted text-[13.5px] py-4">{vazio}</div>
         )}
+      </div>
+
+      {/* explicação de como usar — legenda discreta no rodapé */}
+      <div className="mt-3">
+        <Legenda>{descricao}</Legenda>
       </div>
     </Panel>
   );

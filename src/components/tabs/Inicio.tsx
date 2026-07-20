@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip } from "recharts";
 import type { Aba, Lancamento } from "../../types";
-import { Panel, BarRow, Select, Seg } from "../ui";
-import { useChart, ChartTip } from "../../lib/theme";
+import { Panel, BarRow, Select, Seg, Legenda } from "../ui";
+import { useChart, ChartTip, useIsMobile } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
   BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dataCompleta,
@@ -46,6 +46,7 @@ const JANELAS = [{ v: "3", label: "3m" }, { v: "6", label: "6m" }, { v: "12", la
 
 export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   const cc = useChart();
+  const mobile = useIsMobile();
   const hoje = new Date();
   const mesAtual = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
 
@@ -322,7 +323,12 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                 </defs>
                 <XAxis dataKey="dia" hide />
                 <YAxis hide domain={[0, "auto"]} />
-                <Tooltip content={<ChartTip labelPrefix="Dia " />} />
+                <Tooltip
+                  content={<ChartTip labelPrefix="Dia " />}
+                  position={mobile ? { x: 0, y: 208 } : undefined}
+                  allowEscapeViewBox={mobile ? { x: false, y: true } : undefined}
+                  wrapperStyle={mobile ? { zIndex: 30 } : undefined}
+                />
                 <Line type="monotone" dataKey={calc.benchNome} stroke={cc.media} strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls isAnimationActive={false} />
                 {calc.empilhado && (
                   <Area type="monotone" dataKey={calc.parcNome} stackId="gasto" stroke={cc.parcela} strokeWidth={1.5} fill={cc.parcela} fillOpacity={0.13} dot={false} isAnimationActive={false} />
@@ -376,8 +382,10 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
               </span>
             )}
           </div>
-          <div className="text-[11.5px] text-muted mt-2">
-            Pela competência (fatura/extrato do mês), cartão + contas. Parcelas e compras de meses anteriores já contam desde o dia 1º — o platô no início da curva.{!calc.completo ? " Mês ainda em curso." : ""} <span className="text-accent">Clique num dia para ver os lançamentos.</span>
+          <div className="mt-2">
+            <Legenda>
+              Pela competência (fatura/extrato do mês), cartão + contas. Parcelas e compras de meses anteriores já contam desde o dia 1º — o platô no início da curva.{!calc.completo ? " Mês ainda em curso." : ""} <span className="text-accent">Clique num dia para ver os lançamentos.</span>
+            </Legenda>
           </div>
         </Panel>
 

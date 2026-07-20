@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { Lancamento, PatchLocal, Mutate, Enqueue } from "../../types";
-import { Kpi } from "../ui";
+import { Kpi, Legenda } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
 import { BRL0, ehGasto, ehReceita, ehTransfer, normEstab, precisaClassificar } from "../../lib/finance";
-import { ehInterna } from "../../lib/lancClasses";
+import { ehInterna, ehReceitaInvest } from "../../lib/lancClasses";
 import { sugerirGrupo, type FonteSugestao, type Regra, type VinculoPlano } from "../../lib/classificador";
 import { useToast } from "../Toast";
 
@@ -14,7 +14,7 @@ interface Props {
   patchLocal: PatchLocal; mutate: Mutate; enqueue: Enqueue;
 }
 
-interface Grupo { key: string; ex: string; ids: number[]; rows: Lancamento[]; total: number; n: number; sugestao: string; fonte: FonteSugestao; conhecido: boolean; internaSug: boolean; receita: boolean; rotuloReceita: string; }
+interface Grupo { key: string; ex: string; ids: number[]; rows: Lancamento[]; total: number; n: number; sugestao: string; fonte: FonteSugestao; conhecido: boolean; internaSug: boolean; receita: boolean; rinvest: boolean; rotuloReceita: string; }
 
 // pistas de que um grupo é "provavelmente entre contas próprias" pelos próprios
 // lançamentos (classe de transferência ou subtipo de movimento interno).
@@ -127,7 +127,7 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
       if (!precisaClassificar(d)) return;
       const k = normEstab(d.descricao);
       let g = map.get(k);
-      if (!g) { g = { key: k, ex: d.descricao, ids: [], rows: [], total: 0, n: 0, sugestao: "", fonte: "nenhuma", conhecido: false, internaSug: false, receita: false, rotuloReceita: "Receita" }; map.set(k, g); }
+      if (!g) { g = { key: k, ex: d.descricao, ids: [], rows: [], total: 0, n: 0, sugestao: "", fonte: "nenhuma", conhecido: false, internaSug: false, receita: false, rinvest: false, rotuloReceita: "Receita" }; map.set(k, g); }
       g.ids.push(d.id); g.rows.push(d); g.total += Math.abs(d.valor); g.n++;
     });
     const arr = [...map.values()].map((g) => {
@@ -139,10 +139,13 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
       // grupo de receita: só entra receita (nenhum gasto). Rótulo = subtipo mais
       // frequente (ex.: "Salario"), com fallback "Receita".
       const receita = g.rows.some((d) => ehReceita(d.classe)) && !g.rows.some((d) => ehGasto(d.classe));
+      // renda de investimento (juros, dividendos, rendimentos): classe própria,
+      // confirmável em 1 clique como a receita — não é gasto.
+      const rinvest = !receita && g.rows.some((d) => ehReceitaInvest(d.classe)) && !g.rows.some((d) => ehGasto(d.classe));
       const subCnt: Record<string, number> = {};
       g.rows.forEach((d) => { if (d.subtipo) subCnt[d.subtipo] = (subCnt[d.subtipo] || 0) + 1; });
-      const rotuloReceita = Object.keys(subCnt).sort((a, b) => subCnt[b] - subCnt[a])[0] || "Receita";
-      return { ...g, sugestao: s.categoria, fonte: s.fonte, conhecido: s.conhecido, internaSug, receita, rotuloReceita };
+      const rotuloReceita = Object.keys(subCnt).sort((a, b) => subCnt[b] - subCnt[a])[0] || (rinvest ? "Renda de investimento" : "Receita");
+      return { ...g, sugestao: s.categoria, fonte: s.fonte, conhecido: s.conhecido, internaSug, receita, rinvest, rotuloReceita };
     });
     arr.sort((a, b) => b.total - a.total);
     return arr;
@@ -336,11 +339,11 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   const confirmarReceita = (g: Grupo) =>
     aplicar([{ g, cat: g.rotuloReceita }], `“${g.ex.slice(0, 24)}” → ${g.rotuloReceita}`);
   const confirmarReceitasSelecionados = () => {
-    const alvo = grupos.filter((g) => sel.has(g.key) && g.receita).map((g) => ({ g, cat: g.rotuloReceita }));
+    const alvo = grupos.filter((g) => sel.has(g.key) && (g.receita || g.rinvest)).map((g) => ({ g, cat: g.rotuloReceita }));
     if (!alvo.length) return;
     aplicar(alvo, `${alvo.length} receita${alvo.length > 1 ? "s" : ""} confirmada${alvo.length > 1 ? "s" : ""} ✓`);
   };
-  const selReceitas = grupos.filter((g) => sel.has(g.key) && g.receita).length;
+  const selReceitas = grupos.filter((g) => sel.has(g.key) && (g.receita || g.rinvest)).length;
   // bulkCat (quando escolhido) sobrepõe todos; senão, usa a categoria de cada linha.
   // pula os selecionados que ainda não têm categoria nenhuma.
   const aplicarSelecionados = () => {
@@ -392,14 +395,6 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
             <button disabled={busy || grupos.length === comEscolha} onClick={marcarRestantesOutros} className="btn-ghost flex-1 !py-[7px] !text-[12px]">Restantes: Outros</button>
           </div>
         </div>
-      </div>
-
-      <div className="text-muted text-[12.5px] mb-3 leading-relaxed">
-        Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto pro menor. Defina a <b>categoria</b> (use <b>Corporativo</b> para trabalho)
-        e clique <b>Aplicar</b> — vale pra todos os lançamentos do grupo, vira sugestão e dá pra <b>desfazer</b>.
-        <br />Agora aparecem também <b>receitas e transferências</b> ainda sem classificação. O botão <b>⇄</b> marca o grupo como <b className="text-violet">entre contas próprias</b> — é só uma escolha: <b>nada é gravado até você clicar em Aplicar</b>. Para <b className="text-green">receitas</b> (ex.: salário), use <b>✓ Receita</b> para confirmar sem precisar de categoria de despesa.
-        <br />Os que já sabemos serem <b className="text-violet">🔁 provavelmente entre contas</b> (histórico ou transferência) já vêm <b>pré-marcados</b> e entram, junto com os <b className="text-green">conhecidos</b> (🔗 vínculo e 🧠 histórico), no botão <b>Aplicar conhecidos</b>. Os <b className="text-accent">sugeridos</b> (⚙️ motor e 🏦 banco) vêm pré-preenchidos pra você confirmar.
-        <span className="hidden sm:inline"> Pelo teclado: <kbd className="kbd">↑</kbd><kbd className="kbd">↓</kbd> navega, <kbd className="kbd">Enter</kbd> escolhe categoria, <kbd className="kbd">espaço</kbd> seleciona, <kbd className="kbd">E</kbd> entre contas, <kbd className="kbd">A</kbd> aplica.</span>
       </div>
 
       {grupos.length === 0 ? (
@@ -477,34 +472,40 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
                   role="option"
                   aria-selected={selecionado}
                   onMouseDown={() => setActiveIdx(i)}
-                  className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-[11px] transition-colors ${ativo ? "bg-fill/70" : "hover:bg-fill/30"}`}
+                  className={`flex flex-col md:flex-row md:flex-wrap md:items-center gap-x-3 gap-y-[10px] px-3 sm:px-4 py-[12px] transition-colors ${ativo ? "bg-fill/70" : "hover:bg-fill/30"}`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={selecionado}
-                    onChange={() => setSel((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    aria-label={`Selecionar ${g.ex}`}
-                    className="accent-accent w-[15px] h-[15px] shrink-0"
-                  />
-                  <button
-                    className="min-w-0 flex-1 text-left bg-transparent border-0 p-0 cursor-pointer group"
-                    onClick={() => openModal(g.ex, g.rows)}
-                    title="Ver lançamentos do grupo"
-                  >
-                    <div className="text-[13.5px] font-medium truncate group-hover:text-accent transition-colors">{g.ex}</div>
-                    <div className="text-[11.5px] text-muted">
-                      {g.n} {g.n === 1 ? "lançamento" : "lançamentos"} · <span className="text-red tabular-nums">{BRL0(g.total)}</span>
-                      {interna
-                        ? <span className="ml-2 inline-flex items-center rounded-full bg-violet/15 text-violet px-[7px] py-[1px] text-[10.5px] font-semibold">🔁 {g.internaSug ? "provavelmente entre contas" : "entre contas próprias"}</span>
-                        : cat
-                          ? (FONTE_BADGE[g.fonte] && <span className={`ml-2 inline-flex items-center rounded-full px-[7px] py-[1px] text-[10.5px] font-semibold ${FONTE_BADGE[g.fonte]!.cls}`}>{FONTE_BADGE[g.fonte]!.label}</span>)
-                          : g.receita
-                            ? <span className="ml-2 inline-flex items-center rounded-full bg-green/10 text-green px-[7px] py-[1px] text-[10.5px] font-semibold">💰 receita{g.rotuloReceita !== "Receita" ? ` · ${g.rotuloReceita}` : ""}</span>
-                            : <span className="ml-2 inline-flex items-center rounded-full bg-amber/10 text-amber px-[7px] py-[1px] text-[10.5px] font-semibold">sem sugestão</span>}
-                    </div>
-                  </button>
-                  <div className="flex items-center gap-2 shrink-0 ml-auto" onMouseDown={(e) => e.stopPropagation()}>
+                  {/* linha 1 (mobile) / bloco esquerdo (desktop): checkbox + nome + resumo */}
+                  <div className="flex items-start md:items-center gap-3 min-w-0 md:flex-1">
+                    <input
+                      type="checkbox"
+                      checked={selecionado}
+                      onChange={() => setSel((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      aria-label={`Selecionar ${g.ex}`}
+                      className="accent-accent w-[15px] h-[15px] shrink-0 mt-[3px] md:mt-0"
+                    />
+                    <button
+                      className="min-w-0 flex-1 text-left bg-transparent border-0 p-0 cursor-pointer group"
+                      onClick={() => openModal(g.ex, g.rows)}
+                      title="Ver lançamentos do grupo"
+                    >
+                      <div className="text-[13.5px] font-medium truncate group-hover:text-accent transition-colors">{g.ex}</div>
+                      <div className="text-[11.5px] text-muted">
+                        <span className="whitespace-nowrap">{g.n} {g.n === 1 ? "lançamento" : "lançamentos"} · <span className={`tabular-nums ${g.receita || g.rinvest ? "text-green" : "text-red"}`}>{g.receita || g.rinvest ? "+" + BRL0(g.total) : BRL0(-g.total)}</span></span>
+                        {interna
+                          ? <span className="ml-2 inline-flex items-center rounded-full bg-violet/15 text-violet px-[7px] py-[1px] text-[10.5px] font-semibold">🔁 {g.internaSug ? "provavelmente entre contas" : "entre contas próprias"}</span>
+                          : cat
+                            ? (FONTE_BADGE[g.fonte] && <span className={`ml-2 inline-flex items-center rounded-full px-[7px] py-[1px] text-[10.5px] font-semibold ${FONTE_BADGE[g.fonte]!.cls}`}>{FONTE_BADGE[g.fonte]!.label}</span>)
+                            : g.receita
+                              ? <span className="ml-2 inline-flex items-center rounded-full bg-green/10 text-green px-[7px] py-[1px] text-[10.5px] font-semibold">💰 receita{g.rotuloReceita !== "Receita" ? ` · ${g.rotuloReceita}` : ""}</span>
+                              : g.rinvest
+                                ? <span className="ml-2 inline-flex items-center rounded-full bg-accent/10 text-accent px-[7px] py-[1px] text-[10.5px] font-semibold">📈 renda invest.</span>
+                                : <span className="ml-2 inline-flex items-center rounded-full bg-amber/10 text-amber px-[7px] py-[1px] text-[10.5px] font-semibold">sem sugestão</span>}
+                      </div>
+                    </button>
+                  </div>
+                  {/* linha 2 (mobile) / bloco direito (desktop): categoria + ações */}
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 pl-[27px] md:pl-0 md:ml-auto" onMouseDown={(e) => e.stopPropagation()}>
                     <div className={interna ? "opacity-40" : ""}>
                       <CategoryPicker
                         key={pickerKey === g.key ? `open-${g.key}` : g.key}
@@ -527,14 +528,14 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
                     >
                       Aplicar
                     </button>
-                    {g.receita && !interna && !cat && (
+                    {(g.receita || g.rinvest) && !interna && !cat && (
                       <button
                         disabled={busy}
                         onClick={() => confirmarReceita(g)}
                         className="text-[12px] rounded-[8px] px-2 py-[6px] border border-green/40 bg-green/10 text-green transition-colors whitespace-nowrap"
-                        title={`Confirmar como receita (${g.rotuloReceita}) sem escolher categoria de despesa`}
+                        title={`Confirmar como ${g.rinvest ? "renda de investimento" : "receita"} (${g.rotuloReceita}) sem escolher categoria de despesa`}
                       >
-                        ✓ Receita
+                        ✓ {g.rinvest ? "Renda invest." : "Receita"}
                       </button>
                     )}
                     <button
@@ -557,6 +558,17 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
           </div>
         </div>
       )}
+
+      {/* como funciona — legenda discreta no rodapé (abre pop-up) */}
+      <div className="mt-3">
+      <Legenda>
+        Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto pro menor. Defina a <b>categoria</b> (use <b>Corporativo</b> para trabalho)
+        e clique <b>Aplicar</b> — vale pra todos os lançamentos do grupo, vira sugestão e dá pra <b>desfazer</b>.
+        <br />Agora aparecem também <b>receitas e transferências</b> ainda sem classificação. O botão <b>⇄</b> marca o grupo como <b className="text-violet">entre contas próprias</b> — é só uma escolha: <b>nada é gravado até você clicar em Aplicar</b>. Para <b className="text-green">receitas</b> (ex.: salário), use <b>✓ Receita</b> para confirmar sem precisar de categoria de despesa; juros/dividendos aparecem como <b className="text-accent">📈 renda invest.</b> e têm o próprio <b>✓ Renda invest.</b>.
+        <br />Os que já sabemos serem <b className="text-violet">🔁 provavelmente entre contas</b> (histórico ou transferência) já vêm <b>pré-marcados</b> e entram, junto com os <b className="text-green">conhecidos</b> (🔗 vínculo e 🧠 histórico), no botão <b>Aplicar conhecidos</b>. Os <b className="text-accent">sugeridos</b> (⚙️ motor e 🏦 banco) vêm pré-preenchidos pra você confirmar.
+        <span className="hidden sm:inline"> Pelo teclado: <kbd className="kbd">↑</kbd><kbd className="kbd">↓</kbd> navega, <kbd className="kbd">Enter</kbd> escolhe categoria, <kbd className="kbd">espaço</kbd> seleciona, <kbd className="kbd">E</kbd> entre contas, <kbd className="kbd">A</kbd> aplica.</span>
+      </Legenda>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,52 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+
+/* ---------- Legenda: linha discreta que abre um pop-up com a explicação ----------
+   Substitui os parágrafos longos de ajuda espalhados pelas abas. Fica abaixo do
+   objeto que explica; no celular abre como "folha" no rodapé, no desktop centrada. */
+export function Legenda({ children, className = "" }: { children: ReactNode; className?: string }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [open]);
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className={`inline-flex items-center gap-[5px] text-[11.5px] text-muted hover:text-txt bg-transparent border-0 p-0 cursor-pointer transition-colors ${className}`}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+          <circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5v.5" />
+        </svg>
+        Legenda
+      </button>
+      {open && createPortal(
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-[6px] z-[90] flex items-end sm:items-center justify-center sm:p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
+        >
+          <div className="bg-card border border-line rounded-t-[18px] sm:rounded-[18px] w-full sm:max-w-[560px] max-h-[80vh] flex flex-col shadow-modal fade-in">
+            <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-line">
+              <h3 className="text-[14px] font-semibold tracking-tight">Legenda</h3>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Fechar"
+                className="tap w-[28px] h-[28px] rounded-full bg-fill text-muted hover:text-txt border-0 cursor-pointer flex items-center justify-center text-[12px] shrink-0"
+              >✕</button>
+            </div>
+            <div className="px-5 py-4 pb-6 sm:pb-4 overflow-auto scroll-thin text-[13px] text-muted leading-relaxed">
+              {children}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 export function Panel({
   title, sub, right, children, className = "",

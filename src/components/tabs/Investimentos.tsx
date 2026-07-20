@@ -15,7 +15,7 @@ import {
   getIbkrCredencial, saveIbkrCredencial, deleteIbkrCredencial, importIbkr,
 } from "../../lib/pluggy";
 import type { ManualInvestmentInput, SaldoConta, IbkrCredencial } from "../../lib/pluggy";
-import { BRL, BRL0, brlShort, fmtMoeda } from "../../lib/finance";
+import { BRL, BRL0, kBRL, brlShort, fmtMoeda } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
 
 /* ============================================================================
@@ -169,7 +169,7 @@ function SaldoContaCard({ caixa, total }: { caixa: SaldoConta[]; total: number }
     >
       <div className="text-muted text-[12px] font-medium">Saldo conta</div>
       <div className={`text-[20px] sm:text-[24px] font-semibold mt-[6px] tracking-tight tabular-nums ${total < 0 ? "text-red" : "text-violet"}`}>
-        {BRL0(total)}
+        {kBRL(total)}
       </div>
       <div className="text-[11.5px] mt-[4px] text-muted leading-snug">
         {contas.length} {contas.length === 1 ? "conta" : "contas"} · Open Finance
@@ -931,7 +931,7 @@ export function Investimentos() {
       <Kpi
         key={title}
         title={title}
-        value={<span className={pos ? "text-green" : "text-red"}>{pos ? "+" : ""}{BRL0(g.delta)}</span>}
+        value={<span className={pos ? "text-green" : "text-red"}>{pos ? "+" : ""}{kBRL(g.delta)}</span>}
         sub={`${pctTxt}desde ${fmtDiaBR(g.refDia)}`}
       />
     );
@@ -1004,8 +1004,8 @@ export function Investimentos() {
       <div className={`grid grid-cols-2 gap-[14px] mb-[18px] ${caixa.length > 0 ? "md:grid-cols-3 lg:grid-cols-5" : "md:grid-cols-4"}`}>
         <Kpi
           title="Investido total"
-          value={BRL0(kpis.atual)}
-          sub={`D+1 ${BRL0(d1Total)} · ${d1Pct.toFixed(0)}%`}
+          value={kBRL(kpis.atual)}
+          sub={`D+1 ${kBRL(d1Total)} · ${d1Pct.toFixed(0)}%`}
           color="text-violet"
         />
         {caixa.length > 0 && <SaldoContaCard caixa={caixa} total={caixaTotal} />}

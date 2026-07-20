@@ -1,17 +1,28 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Lancamento, Mutate } from "../types";
 import { BRL, catKey, corCategoria, dataCompleta } from "../lib/finance";
-import { ehInterna } from "../lib/lancClasses";
+import { ehInterna, ehReceita, ehReceitaInvest, CLASSES } from "../lib/lancClasses";
 import { CategoryPicker } from "./CategoryPicker";
+import { Select } from "./ui";
 import { sb } from "../lib/supabase";
 import { useToast } from "./Toast";
 
 export interface ModalData { title: string; rows: Lancamento[]; }
 
+// rótulos amigáveis para as classes (valores canônicos ficam no banco)
+const CLASSE_LABEL: Record<string, string> = {
+  Gasto: "Gasto",
+  "Estorno/Credito": "Estorno / crédito",
+  Receita: "Receita",
+  Aporte: "Aporte (investido)",
+  "Receita Investimento": "Renda de investimento",
+  "Transferencia/Pagamento": "Transferência / pagamento",
+};
+
 export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClose: () => void; mutate?: Mutate }) {
   const { toast } = useToast();
   const [salvos, setSalvos] = useState<Record<number, string>>({});
-  const [rev, setRev] = useState(0); // força recomputar a agregação após editar uma categoria
+  const [rev, setRev] = useState(0); // força recomputar a agregação após editar
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -19,31 +30,64 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
     return () => document.removeEventListener("keydown", h);
   }, [onClose]);
 
-  // edição de categoria direto do pop-up → grava em `categoria_manual` (override).
-  // OTIMISTA: reflete na hora (objeto local + dashboards via patch) e a escrita
-  // vai para a fila em background — sem `reload` bloqueante.
-  function salvarCat(d: Lancamento, valor: string, sub?: string | null) {
-    const novo = valor || null;
-    const novoSub = (novo && sub) || null;
-    d.categoria_manual = novo; // espelha na tabela do próprio pop-up
-    d.subcategoria_manual = novoSub;
+  // editor OTIMISTA genérico: aplica na hora (objeto local + dashboards via patch),
+  // enfileira a escrita e, se falhar, reverte e avisa. `d` aqui é a MESMA referência
+  // que está nos dashboards, então mexer nele reflete em todo lugar.
+  function editar(
+    d: Lancamento,
+    patch: Record<string, unknown>,
+    aplicar: () => void,
+    reverter: () => void,
+    rotuloErro: string,
+  ) {
+    aplicar();
     setRev((r) => r + 1);
     setSalvos((s) => ({ ...s, [d.id]: "salvando…" }));
     const persist = async () => {
-      const { error } = await sb.from("lancamentos").update({ categoria_manual: novo, subcategoria_manual: novoSub }).eq("id", d.id);
+      const { error } = await sb.from("lancamentos").update(patch).eq("id", d.id);
       if (error) throw error;
     };
-    const finalizar = () => {
+    const p = mutate ? mutate({ ids: [d.id], patch, persist }) : persist();
+    p.then(() => {
       setSalvos((s) => ({ ...s, [d.id]: "✓" }));
       setTimeout(() => setSalvos((s) => { const n = { ...s }; delete n[d.id]; return n; }), 1200);
-    };
-    const p = mutate
-      ? mutate({ ids: [d.id], patch: { categoria_manual: novo, subcategoria_manual: novoSub }, persist })
-      : persist();
-    p.then(finalizar).catch((e: unknown) => {
-      setSalvos((s) => ({ ...s, [d.id]: "" }));
-      toast({ message: "Erro ao salvar categoria: " + ((e as { message?: string })?.message || e), variant: "error" });
+    }).catch((e: unknown) => {
+      reverter();
+      setRev((r) => r + 1);
+      setSalvos((s) => { const n = { ...s }; delete n[d.id]; return n; });
+      toast({ message: rotuloErro + ((e as { message?: string })?.message || e), variant: "error" });
     });
+  }
+
+  // categoria/subcategoria → grava em `categoria_manual` (override)
+  function salvarCat(d: Lancamento, valor: string, sub?: string | null) {
+    const novo = valor || null, novoSub = (novo && sub) || null;
+    const prev = d.categoria_manual, prevSub = d.subcategoria_manual ?? null;
+    editar(d, { categoria_manual: novo, subcategoria_manual: novoSub },
+      () => { d.categoria_manual = novo; d.subcategoria_manual = novoSub; },
+      () => { d.categoria_manual = prev; d.subcategoria_manual = prevSub; },
+      "Erro ao salvar categoria: ");
+  }
+
+  // classe (Gasto/Receita/Renda de investimento/…) → grava em `classe_manual` (override)
+  // e espelha o efetivo `classe` p/ a UI refletir na hora.
+  function salvarClasse(d: Lancamento, valor: string) {
+    const manual = valor || null;
+    const prevManual = d.classe_manual, prevClasse = d.classe;
+    const patch = manual ? { classe_manual: manual, classe: manual } : { classe_manual: null };
+    editar(d, patch,
+      () => { d.classe_manual = manual; if (manual) d.classe = manual; },
+      () => { d.classe_manual = prevManual; d.classe = prevClasse; },
+      "Erro ao salvar classe: ");
+  }
+
+  // "entre contas próprias" → grava em `interna_manual` (boolean override)
+  function salvarInterna(d: Lancamento, valor: boolean) {
+    const prevManual = d.interna_manual, prevInterna = d.interna;
+    editar(d, { interna_manual: valor, interna: valor },
+      () => { d.interna_manual = valor; d.interna = valor; },
+      () => { d.interna_manual = prevManual; d.interna = prevInterna; },
+      "Erro ao salvar: ");
   }
 
   if (!data) return null;
@@ -53,6 +97,31 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
   const cats = Object.keys(grupos).sort((a, b) => grupos[b] - grupos[a]);
   const tot = cats.reduce((s, k) => s + grupos[k], 0);
   const ord = [...data.rows].sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
+
+  // seletor de classe (compartilhado mobile/desktop)
+  const classeSelect = (d: Lancamento): ReactNode => (
+    <Select
+      value={d.classe || ""}
+      onChange={(v) => salvarClasse(d, v)}
+      className={`!pl-2 !py-[5px] !text-[12px] ${d.classe_manual ? "border-accent" : ""}`}
+    >
+      <option value="">— classe —</option>
+      {CLASSES.map((c) => <option key={c} value={c}>{CLASSE_LABEL[c] || c}</option>)}
+    </Select>
+  );
+
+  // toggle "entre contas próprias" (compartilhado)
+  const internaToggle = (d: Lancamento): ReactNode => (
+    <label className="inline-flex items-center gap-[5px] text-[11.5px] text-muted cursor-pointer select-none whitespace-nowrap" title="Movimento entre contas próprias (não entra em gasto/receita)">
+      <input
+        type="checkbox"
+        checked={ehInterna(d)}
+        onChange={(e) => salvarInterna(d, e.target.checked)}
+        className="accent-accent w-[14px] h-[14px]"
+      />
+      entre contas
+    </label>
+  );
 
   return (
     <div
@@ -98,34 +167,36 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
           </table>
           <h4 className="text-[11px] text-muted uppercase tracking-[.05em] mt-[18px] mb-2 font-semibold">Transações ({data.rows.length})</h4>
           {/* mobile: cartões (sem rolagem horizontal) */}
-          <div className="md:hidden max-h-[420px] overflow-auto scroll-thin divide-y divide-line -mx-2">
+          <div className="md:hidden max-h-[440px] overflow-auto scroll-thin divide-y divide-line -mx-2">
             {ord.map((d) => (
-              <div key={d.id} className="px-2 py-[11px]">
+              <div key={d.id} className="px-2 py-[12px]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-[13px] font-medium truncate" title={d.descricao}>{d.descricao}</div>
                     <div className="text-muted text-[11.5px] truncate">
-                      {dataCompleta(d)} · {d.origem} · {d.classe || "—"}
-                      {ehInterna(d) && <span className="text-violet ml-1" title="Entre contas próprias">⇄</span>}
+                      {dataCompleta(d)} · {d.origem}
                       {d.subtipo && <span className="ml-1">· {d.subtipo}</span>}
                     </div>
                   </div>
-                  <div className={`tabular-nums text-[13px] font-medium shrink-0 ${d.valor < 0 ? "text-red" : "text-green"}`}>{BRL(d.valor)}</div>
+                  <div className={`tabular-nums text-[13px] font-medium shrink-0 ${d.valor < 0 ? "text-red" : ehReceita(d.classe) || ehReceitaInvest(d.classe) ? "text-green" : ""}`}>{BRL(d.valor)}</div>
                 </div>
-                <div className="mt-[8px] flex items-center gap-[6px]">
+                {/* controles: classe · categoria · entre contas */}
+                <div className="mt-[9px] flex flex-wrap items-center gap-x-2 gap-y-[8px]">
+                  {classeSelect(d)}
                   <CategoryPicker
                     value={d.categoria_manual || d.categoria_auto || ""}
                     subValue={d.categoria_manual ? d.subcategoria_manual || null : null}
                     onSelect={(v, s) => salvarCat(d, v, s)}
                   />
-                  {salvos[d.id] && <span className="text-muted text-[11px] whitespace-nowrap">{salvos[d.id]}</span>}
+                  {internaToggle(d)}
+                  {salvos[d.id] && <span className="text-[11px] text-green">{salvos[d.id]}</span>}
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="hidden md:block max-h-[420px] overflow-auto scroll-thin">
-            <table className="tbl min-w-[620px]">
+          <div className="hidden md:block max-h-[440px] overflow-auto scroll-thin">
+            <table className="tbl min-w-[720px]">
               <thead><tr>
                 <th>Data</th>
                 <th>Descrição</th>
@@ -138,14 +209,15 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
                 {ord.map((d) => (
                   <tr key={d.id}>
                     <td className="whitespace-nowrap">{dataCompleta(d)}</td>
-                    <td className="max-w-[230px] truncate" title={d.descricao}>{d.descricao}</td>
+                    <td className="max-w-[220px] truncate" title={d.descricao}>{d.descricao}</td>
                     <td>{d.origem}</td>
-                    <td className="whitespace-nowrap">
-                      <span className="inline-flex items-center gap-[5px]">
-                        {d.classe || "—"}
-                        {ehInterna(d) && <span className="text-violet text-[11px]" title="Entre contas próprias">⇄</span>}
-                        {d.subtipo && <span className="text-muted text-[11px]">· {d.subtipo}</span>}
-                      </span>
+                    <td>
+                      <div className="flex items-center gap-[6px]">
+                        {classeSelect(d)}
+                        {d.classe_manual && <span className="text-[10px] text-accent" title="Classe corrigida na mão (override)">✎</span>}
+                        {d.subtipo && <span className="text-muted text-[11px] whitespace-nowrap">· {d.subtipo}</span>}
+                      </div>
+                      <div className="mt-[5px]">{internaToggle(d)}</div>
                     </td>
                     <td>
                       <span className="inline-flex items-center gap-[6px]">
@@ -154,10 +226,10 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
                           subValue={d.categoria_manual ? d.subcategoria_manual || null : null}
                           onSelect={(v, s) => salvarCat(d, v, s)}
                         />
-                        {salvos[d.id] && <span className="text-muted text-[11px] whitespace-nowrap">{salvos[d.id]}</span>}
+                        {salvos[d.id] && <span className="text-[11px] text-green whitespace-nowrap">{salvos[d.id]}</span>}
                       </span>
                     </td>
-                    <td className={`num ${d.valor < 0 ? "text-red" : "text-green"}`}>{BRL(d.valor)}</td>
+                    <td className={`num ${d.valor < 0 ? "text-red" : ehReceita(d.classe) || ehReceitaInvest(d.classe) ? "text-green" : ""}`}>{BRL(d.valor)}</td>
                   </tr>
                 ))}
               </tbody>

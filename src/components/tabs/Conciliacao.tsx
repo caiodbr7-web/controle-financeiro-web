@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Lancamento } from "../../types";
-import { Kpi, Seg, Select } from "../ui";
+import { Kpi, Seg, Select, Legenda } from "../ui";
 import { sb } from "../../lib/supabase";
 import { BRL, BRL0, fmtMoeda, dicaMoedaOrigem, bankOf, dvDataReal, dvLabel } from "../../lib/finance";
 import { conciliar, totaisPorMes, type Conf, type Par, type Via, type TotaisMes } from "../../lib/conciliacao";
@@ -252,12 +252,14 @@ export function Conciliacao() {
         </div>
       </div>
 
-      <p className="text-[12px] text-muted mt-2 leading-relaxed">
+      <p className="mt-2">
+        <Legenda>
         Diagnóstico apenas — nada é alterado no banco. <strong>Duplicata provável</strong> = mesma transação nas duas fontes
         (casada por valor + data ± tolerância + tipo; <strong>Alta</strong> exige valor exato + banco + descrição + mesmo tipo).
         A etiqueta ao lado da confiança indica quando a regra foi relaxada: <strong>≈ valor</strong> (valor aproximado),
         <strong> moeda</strong> (estrangeira, casada por descrição/data/câmbio) ou <strong>tipo difere</strong> (cartão↔conta) — esses nunca são "Alta".
         <strong> Só PDF na janela</strong> considera só o período coberto pelas duas fontes; antes da janela o "só PDF" é esperado.
+        </Legenda>
       </p>
     </div>
   );
@@ -349,13 +351,15 @@ function PlacarMes({
         </table>
       </div>
 
-      <p className="text-[11.5px] text-muted mt-2 leading-relaxed">
+      <p className="mt-2">
+        <Legenda>
         Agrupado pela <strong>data real</strong> do movimento (não pela competência da fatura), só valores em <strong>BRL</strong>.
         <strong> Diferença</strong> = PDF − Open Finance: positiva quer dizer que o PDF trouxe mais que o Open Finance no mês
         (o banco ainda não sincronizou, período fora da cobertura do Open Finance, ou possível duplicata só de um lado).
         {estrangeiro > 0 && (
           <> {estrangeiro} lançamento(s) em moeda estrangeira ficaram fora desta soma.</>
         )}
+        </Legenda>
       </p>
     </div>
   );
