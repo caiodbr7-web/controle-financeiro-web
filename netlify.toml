@@ -12,9 +12,3 @@
   for = "/"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
-
-# security headers (all routes)
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Content-Type-Options = "nosniff"
