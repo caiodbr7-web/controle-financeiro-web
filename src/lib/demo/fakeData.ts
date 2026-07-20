@@ -143,7 +143,10 @@ function buildLancamentos(): Lancamento[] {
     for (const g of GASTOS) {
       const n = Math.max(0, g.freq + ri(-1, 1));
       for (let i = 0; i < n; i++) {
-        rows.push(novo(y, m, ri(1, 28), g.origem, g.banco, pick(g.nomes), "Gasto", -money(g.min, g.max), g.cat));
+        const nome = pick(g.nomes);
+        // subcategoria demo (só p/ algumas categorias) — mostra a hierarquia na Matriz
+        const sub = SUBCAT_DEMO[g.cat]?.[nome] ?? null;
+        rows.push(novo(y, m, ri(1, 28), g.origem, g.banco, nome, "Gasto", -money(g.min, g.max), g.cat, sub ? { subcategoria_manual: sub } : {}));
       }
     }
 
@@ -184,9 +187,42 @@ function buildLancamentos(): Lancamento[] {
   return rows;
 }
 
+// subcategorias demo por estabelecimento — mostram a hierarquia na Matriz Mensal,
+// no seletor de categoria e na aba Categorias.
+const SUBCAT_DEMO: Record<string, Record<string, string>> = {
+  Mercado: {
+    "Pao de Acucar": "Supermercado", "Carrefour": "Supermercado", "Assai Atacadista": "Supermercado",
+    "Mercado Dia": "Supermercado", "Supermercado St Marche": "Supermercado", "Hortifruti Natural": "Feira/Hortifruti",
+  },
+  Alimentacao: {
+    "iFood": "Delivery", "China in Box": "Delivery",
+    "Restaurante Madero": "Restaurante", "Outback": "Restaurante", "Burger King": "Restaurante",
+    "Starbucks": "Café/Padaria", "Padaria Bella Paulista": "Café/Padaria",
+  },
+  Transporte: {
+    "Uber": "Apps de mobilidade", "99 App": "Apps de mobilidade",
+    "Posto Shell": "Combustível", "Posto Ipiranga": "Combustível",
+    "Estacionamento Shopping": "Estacionamento", "Metro SP": "Transporte público",
+  },
+};
+
 // ---- categorias (semeadas, com id e ordem) ----------------------------------
 function buildCategorias() {
   return CATEGORIAS_DEFAULT.map((c, i) => ({ id: i + 1, nome: c.nome, cor: c.cor, ordem: i, tipo: "despesa" }));
+}
+
+// ---- subcategorias (semeadas a partir do SUBCAT_DEMO) -----------------------
+function buildSubcategorias(cats: { id: number; nome: string }[]) {
+  const idDe = new Map(cats.map((c) => [c.nome, c.id]));
+  const rows: { id: number; categoria_id: number; nome: string; ordem: number }[] = [];
+  let id = 1;
+  for (const cat of Object.keys(SUBCAT_DEMO)) {
+    const catId = idDe.get(cat);
+    if (catId == null) continue;
+    const nomes = [...new Set(Object.values(SUBCAT_DEMO[cat]))];
+    nomes.forEach((nome, i) => rows.push({ id: id++, categoria_id: catId, nome, ordem: i }));
+  }
+  return rows;
 }
 
 // ---- planejamento -----------------------------------------------------------
@@ -313,10 +349,11 @@ export interface DemoDb {
 export function buildDemoData(): DemoDb {
   const invs = buildInvestimentos();
   const { hist, histTipo } = buildHist(invs);
+  const cats = buildCategorias();
   return {
     lancamentos: buildLancamentos() as unknown as Record<string, unknown>[],
-    categorias: buildCategorias() as unknown as Record<string, unknown>[],
-    subcategorias: [],
+    categorias: cats as unknown as Record<string, unknown>[],
+    subcategorias: buildSubcategorias(cats) as unknown as Record<string, unknown>[],
     planos: buildPlanos() as unknown as Record<string, unknown>[],
     plano_mensal: [],
     regras: buildRegras() as unknown as Record<string, unknown>[],

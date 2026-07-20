@@ -14,12 +14,14 @@ export interface LinhaMatriz {
   label: string;
   secao: SecaoMatriz | "saldo";
   catRaw: string | null;       // categoria canonica p/ drill-down (null em totais/saldo)
+  subRaw?: string | null;      // subcategoria p/ drill-down (nas linhas-filha); undefined nas linhas-mae
   cor: string | null;          // corCategoria(cat) p/ a bolinha, ou null
   ehTotal: boolean;            // linha de total/saldo (negrito, nao arrasta, nao recebe cor de categoria)
   valores: Record<string, number>;   // mesKey "YYYY-MM" -> valor (presente p/ TODOS os meses visiveis)
   total: number;               // soma nos meses visiveis
   delta: number;               // ultimo mes - penultimo (0 se <2 meses)
   deltaPct: number | null;     // % vs penultimo (null se base 0 ou <2 meses)
+  subs?: LinhaMatriz[];        // subcategorias (so nas linhas-mae de GASTO que tem sub com valor)
 }
 
 export interface SecaoInfo {
@@ -134,11 +136,40 @@ export function construirMatriz(dados: Lancamento[], opts: MatrizOpts): MatrizMe
     if (v === 0) continue;
     valoresGasto[catKey(d)][mk] += v;
   }
+  // subcategorias por categoria de gasto: catKey -> subLabel -> valores por mes.
+  // subLabel = subcategoria_manual quando existe; agrupamos só o que TEM sub.
+  const subsGasto: Record<string, Record<string, Record<string, number>>> = {};
+  for (const d of dados) {
+    const mk = mesComp(d);
+    if (!mesesSet.has(mk)) continue;
+    const v = valorGasto(d);
+    if (v === 0) continue;
+    const sub = d.subcategoria_manual;
+    if (!sub) continue; // sem sub não vira linha-filha (fica só no total da mãe)
+    const c = catKey(d);
+    const porCat = (subsGasto[c] = subsGasto[c] || {});
+    (porCat[sub] = porCat[sub] || zerados(meses))[mk] += v;
+  }
   const linhasGasto = catGasto
-    .map((c) => finalizaLinha({
-      key: "gasto:" + c, label: c, secao: "gasto", catRaw: c, cor: corCategoria(c),
-      ehTotal: false, valores: valoresGasto[c], total: 0, delta: 0, deltaPct: null,
-    }, meses))
+    .map((c) => {
+      const ln = finalizaLinha({
+        key: "gasto:" + c, label: c, secao: "gasto", catRaw: c, cor: corCategoria(c),
+        ehTotal: false, valores: valoresGasto[c], total: 0, delta: 0, deltaPct: null,
+      }, meses);
+      // anexa as subcategorias (com valor em algum mês), ordenadas por total desc
+      const porSub = subsGasto[c];
+      if (porSub) {
+        const subs = Object.keys(porSub)
+          .map((sub) => finalizaLinha({
+            key: `gasto:${c}::${sub}`, label: sub, secao: "gasto", catRaw: c, subRaw: sub,
+            cor: corCategoria(c), ehTotal: false, valores: porSub[sub], total: 0, delta: 0, deltaPct: null,
+          }, meses))
+          .filter((s) => meses.some((m) => (s.valores[m] || 0) !== 0))
+          .sort((a, b) => b.total - a.total);
+        if (subs.length) ln.subs = subs;
+      }
+      return ln;
+    })
     // omite categorias sem nenhum valor nos meses visiveis (linhas 100% zeradas).
     .filter((ln) => meses.some((m) => (ln.valores[m] || 0) !== 0));
   const totalGasto = totalDaSecao("gasto", "Total Gastos", linhasGasto, meses);
@@ -217,11 +248,15 @@ export function construirMatriz(dados: Lancamento[], opts: MatrizOpts): MatrizMe
 // Usa os MESMOS criterios da agregacao (recCat/catKey) p/ consistencia.
 export function lancamentosDaCelula(
   dados: Lancamento[], secao: SecaoMatriz | "saldo", catRaw: string | null, mes: string,
+  subRaw?: string | null,
 ): Lancamento[] {
   return dados.filter((d) => {
     if (mesComp(d) !== mes) return false;
     if (secao === "gasto") {
-      return valorGasto(d) !== 0 && (catRaw == null || catKey(d) === catRaw);
+      if (valorGasto(d) === 0) return false;
+      if (catRaw != null && catKey(d) !== catRaw) return false;
+      if (subRaw != null && (d.subcategoria_manual || null) !== subRaw) return false;
+      return true;
     }
     if (secao === "receita") {
       return valorReceita(d) > 0 && (catRaw == null || grupoReceita(d) === catRaw);
