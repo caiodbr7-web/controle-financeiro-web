@@ -47,7 +47,7 @@ export async function createConnectToken(
 
 // --- leitura de dados -------------------------------------------------------
 export async function getItem(apiKey: string, itemId: string) {
-  const r = await fetch(`${PLUGGY_API}/items/${itemId}`, {
+  const r = await fetch(`${PLUGGY_API}/items/${encodeURIComponent(itemId)}`, {
     headers: { "X-API-KEY": apiKey },
   });
   if (!r.ok) throw new Error(`Pluggy /items falhou: ${r.status} ${await r.text()}`);
@@ -58,7 +58,7 @@ export async function getItem(apiKey: string, itemId: string) {
 // Dispara um "update" no item (PATCH /items). Sem isso, a leitura traz apenas o
 // ultimo retrato que a Pluggy ja tinha em cache. Retorna o item apos o PATCH.
 export async function triggerItemUpdate(apiKey: string, itemId: string) {
-  const r = await fetch(`${PLUGGY_API}/items/${itemId}`, {
+  const r = await fetch(`${PLUGGY_API}/items/${encodeURIComponent(itemId)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", "X-API-KEY": apiKey },
     body: "{}",
@@ -150,7 +150,7 @@ export function resolverBancoDaConta(
 }
 
 export async function getAccounts(apiKey: string, itemId: string) {
-  const r = await fetch(`${PLUGGY_API}/accounts?itemId=${itemId}`, {
+  const r = await fetch(`${PLUGGY_API}/accounts?itemId=${encodeURIComponent(itemId)}`, {
     headers: { "X-API-KEY": apiKey },
   });
   if (!r.ok) throw new Error(`Pluggy /accounts falhou: ${r.status} ${await r.text()}`);

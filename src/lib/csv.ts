@@ -7,7 +7,11 @@ export interface CsvCol<T> {
 }
 
 const esc = (v: unknown) => {
-  const s = v === null || v === undefined ? "" : String(v);
+  let s = v === null || v === undefined ? "" : String(v);
+  // anti "CSV injection": célula começando com = @ (ou tab/CR) é interpretada
+  // como fórmula pelo Excel/LibreOffice; + e - também, exceto números legítimos.
+  // Prefixa com apóstrofo p/ forçar texto — descrições vêm de extratos (terceiros).
+  if (/^[=@\t\r]/.test(s) || (/^[+-]/.test(s) && !/^[+-][\d.,]+$/.test(s))) s = "'" + s;
   return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
