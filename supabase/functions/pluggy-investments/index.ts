@@ -27,7 +27,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const PLUGGY_BASE = "https://api.pluggy.ai";
 
 const cors = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") ?? "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
     let q = sb.from("pluggy_items").select("item_id, connector_name");
     if (only) q = q.eq("item_id", only);
     const { data: itens, error: itensErr } = await q;
-    if (itensErr) return json({ error: itensErr.message }, 500);
+    if (itensErr) { console.error("pluggy-investments itens:", itensErr); return json({ error: "Falha ao ler conexões." }, 500); }
     if (!itens || itens.length === 0) {
       return json({ ok: true, itens: 0, investimentos: 0, inseridos: 0, por_item: {} });
     }
@@ -160,7 +160,7 @@ Deno.serve(async (req) => {
       const { error: upErr, count } = await sb
         .from("pluggy_investments")
         .upsert(unicos, { onConflict: "investment_id", count: "exact" });
-      if (upErr) return json({ error: upErr.message }, 500);
+      if (upErr) { console.error("pluggy-investments upsert:", upErr); return json({ error: "Falha ao gravar investimentos." }, 500); }
       inseridos = count ?? unicos.length;
     }
 
@@ -218,6 +218,7 @@ Deno.serve(async (req) => {
 
     return json({ ok: true, itens: itens.length, investimentos: unicos.length, inseridos, por_item });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    console.error("pluggy-investments:", e);
+    return json({ error: "Falha na sincronização de investimentos." }, 500);
   }
 });

@@ -26,7 +26,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") ?? "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
@@ -94,7 +94,10 @@ Deno.serve(async (req) => {
       if (Array.isArray(body?.tickers)) tickers = body.tickers.filter((t: unknown) => typeof t === "string" && t.trim());
     } catch { /* corpo vazio -> só o câmbio */ }
 
-    const unicos = [...new Set(tickers.map((t) => t.trim().toUpperCase()).filter(Boolean))];
+    // limite anti-abuso: sem teto, a função vira um amplificador de requisições
+    // contra o Yahoo (fan-out ilimitado por chamada autenticada)
+    const MAX_TICKERS = 50;
+    const unicos = [...new Set(tickers.map((t) => t.trim().toUpperCase()).filter(Boolean))].slice(0, MAX_TICKERS);
 
     // preços (Yahoo, em paralelo) + câmbio USD->BRL — independentes
     const [precos, usdbrl] = await Promise.all([
@@ -107,6 +110,7 @@ Deno.serve(async (req) => {
 
     return json({ ok: true, fonte: "yahoo", usdbrl, quotes });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    console.error("cotacao:", e);
+    return json({ error: "Falha ao buscar cotações." }, 500);
   }
 });

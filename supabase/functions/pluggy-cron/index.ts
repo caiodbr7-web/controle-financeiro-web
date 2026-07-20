@@ -56,13 +56,13 @@ async function pluggyAuth(): Promise<string> {
 }
 
 async function getItem(apiKey: string, itemId: string) {
-  const r = await fetch(`${PLUGGY_API}/items/${itemId}`, { headers: { "X-API-KEY": apiKey } });
+  const r = await fetch(`${PLUGGY_API}/items/${encodeURIComponent(itemId)}`, { headers: { "X-API-KEY": apiKey } });
   if (!r.ok) throw new Error(`Pluggy /items falhou: ${r.status} ${await r.text()}`);
   return await r.json();
 }
 
 async function getAccounts(apiKey: string, itemId: string): Promise<any[]> {
-  const r = await fetch(`${PLUGGY_API}/accounts?itemId=${itemId}`, { headers: { "X-API-KEY": apiKey } });
+  const r = await fetch(`${PLUGGY_API}/accounts?itemId=${encodeURIComponent(itemId)}`, { headers: { "X-API-KEY": apiKey } });
   if (!r.ok) throw new Error(`Pluggy /accounts falhou: ${r.status} ${await r.text()}`);
   return ((await r.json()).results ?? []) as any[];
 }
@@ -349,11 +349,20 @@ async function syncInvestimentos(admin: any, apiKey: string, userId: string, ite
   return { investimentos: unicos.length };
 }
 
+// comparação em tempo constante (=== vaza timing do prefixo do segredo)
+function safeEqual(a: string, b: string): boolean {
+  const ea = new TextEncoder().encode(a), eb = new TextEncoder().encode(b);
+  if (ea.length !== eb.length) return false;
+  let d = 0;
+  for (let i = 0; i < ea.length; i++) d |= ea[i] ^ eb[i];
+  return d === 0;
+}
+
 Deno.serve(async (req) => {
   try {
     // 1) só o agendador entra (header secreto, não JWT) ----------------------
     const cronSecret = Deno.env.get("CRON_SECRET");
-    if (!cronSecret || req.headers.get("x-cron-secret") !== cronSecret) {
+    if (!cronSecret || !safeEqual(req.headers.get("x-cron-secret") ?? "", cronSecret)) {
       return json({ error: "não autorizado" }, 401);
     }
 
@@ -419,8 +428,11 @@ Deno.serve(async (req) => {
       resumo[userId] = usr;
     }
 
-    return json({ ok: erros.length === 0, usuarios: porUsuario.size, conexoes: itens.length, erros, resumo });
+    // detalhes só no log: a resposta some no pg_net e não deve carregar ids/erros crus
+    if (erros.length) console.error("pluggy-cron erros:", erros);
+    return json({ ok: erros.length === 0, usuarios: porUsuario.size, conexoes: itens.length, falhas: erros.length, resumo });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    console.error("pluggy-cron:", e);
+    return json({ error: "Falha interna" }, 500);
   }
 });

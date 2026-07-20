@@ -68,7 +68,10 @@ const COLS: ColDef[] = [
 
 function toCsv(rows: Lancamento[]): string {
   const esc = (v: unknown) => {
-    const s = v === null || v === undefined ? "" : String(v);
+    let s = v === null || v === undefined ? "" : String(v);
+    // anti "CSV injection": força texto em célula que começaria como fórmula
+    // (= @ tab/CR sempre; + - só quando não for número legítimo)
+    if (/^[=@\t\r]/.test(s) || (/^[+-]/.test(s) && !/^[+-][\d.,]+$/.test(s))) s = "'" + s;
     return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const head = COLS.map((c) => c.label).join(";");

@@ -28,7 +28,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") ?? "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
@@ -295,6 +295,15 @@ async function importForUser(admin: any, userId: string, token: string, queryId:
 }
 
 /* -------------------------------- handler --------------------------------- */
+// comparação em tempo constante (=== vaza timing do prefixo do segredo)
+function safeEqual(a: string, b: string): boolean {
+  const ea = new TextEncoder().encode(a), eb = new TextEncoder().encode(b);
+  if (ea.length !== eb.length) return false;
+  let d = 0;
+  for (let i = 0; i < ea.length; i++) d |= ea[i] ^ eb[i];
+  return d === 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
@@ -302,9 +311,9 @@ Deno.serve(async (req) => {
     const cronSecret = Deno.env.get("CRON_SECRET");
 
     // ---- modo CRON: percorre todos os usuários com credencial IBKR ----
-    if (cronSecret && req.headers.get("x-cron-secret") === cronSecret) {
+    if (cronSecret && safeEqual(req.headers.get("x-cron-secret") ?? "", cronSecret)) {
       const { data: creds, error } = await admin.from("ibkr_flex").select("user_id, flex_token, flex_query_id");
-      if (error) return json({ error: error.message }, 500);
+      if (error) { console.error("ibkr-flex creds:", error); return json({ error: "Falha ao ler credenciais." }, 500); }
       const erros: string[] = [];
       let ok = 0;
       for (const c of creds ?? []) {
@@ -318,7 +327,9 @@ Deno.serve(async (req) => {
           await admin.from("ibkr_flex").update({ status: "ERRO: " + (e as Error).message, last_synced_at: ts, atualizado_em: ts }).eq("user_id", c.user_id);
         }
       }
-      return json({ ok: erros.length === 0, usuarios: (creds ?? []).length, importados: ok, erros });
+      // detalhes (com user_id) só no log; a resposta do cron não precisa deles
+      if (erros.length) console.error("ibkr-flex cron erros:", erros);
+      return json({ ok: erros.length === 0, usuarios: (creds ?? []).length, importados: ok, falhas: erros.length });
     }
 
     // ---- modo USUÁRIO: importa a conta do chamador ----
@@ -330,7 +341,7 @@ Deno.serve(async (req) => {
 
     const { data: cred, error: credErr } = await admin
       .from("ibkr_flex").select("flex_token, flex_query_id").eq("user_id", userId).maybeSingle();
-    if (credErr) return json({ error: credErr.message }, 500);
+    if (credErr) { console.error("ibkr-flex cred:", credErr); return json({ error: "Falha ao ler credencial." }, 500); }
     if (!cred) return json({ error: "Conecte a IBKR primeiro (token + query id)." }, 400);
 
     const ts = new Date().toISOString();
@@ -339,10 +350,14 @@ Deno.serve(async (req) => {
       await admin.from("ibkr_flex").update({ status: "OK", last_synced_at: ts, last_result: r, account_id: r.accountId, atualizado_em: ts }).eq("user_id", userId);
       return json({ ok: true, ...r });
     } catch (e) {
+      // o detalhe fica no status da PRÓPRIA linha do usuário (RLS) p/ diagnóstico;
+      // a resposta HTTP volta genérica (erros da IBKR podem ecoar o token/query)
       await admin.from("ibkr_flex").update({ status: "ERRO: " + (e as Error).message, last_synced_at: ts, atualizado_em: ts }).eq("user_id", userId);
-      return json({ error: (e as Error).message }, 500);
+      console.error("ibkr-flex user:", e);
+      return json({ error: "Falha ao importar da IBKR. Confira token e query id em Conectar → IBKR." }, 500);
     }
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    console.error("ibkr-flex:", e);
+    return json({ error: "Falha interna" }, 500);
   }
 });

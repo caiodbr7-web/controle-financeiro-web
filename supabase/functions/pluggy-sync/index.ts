@@ -267,6 +267,9 @@ Deno.serve(async (req) => {
 
     return json({ ok: true, ...resultado, inseridos });
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : String(e) }, 500);
+    // detalhe fica no log da funcao; o cliente recebe mensagem generica
+    // (mensagens cruas vazam schema do banco / respostas da Pluggy)
+    console.error("pluggy-sync:", e);
+    return json({ error: "Falha na sincronização. Tente novamente." }, 500);
   }
 });
