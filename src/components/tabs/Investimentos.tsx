@@ -1007,6 +1007,9 @@ export function Investimentos() {
           value={kBRL(kpis.atual)}
           sub={`D+1 ${kBRL(d1Total)} · ${d1Pct.toFixed(0)}%`}
           color="text-violet"
+          // com saldo de conta são 5 KPIs: no celular o herói ocupa a linha
+          // inteira p/ os outros 4 fecharem um 2×2 (sem cartão órfão).
+          className={caixa.length > 0 ? "col-span-2 md:col-span-1" : ""}
         />
         {caixa.length > 0 && <SaldoContaCard caixa={caixa} total={caixaTotal} />}
         {crescKpi("Crescimento MoM", cresc?.mom)}

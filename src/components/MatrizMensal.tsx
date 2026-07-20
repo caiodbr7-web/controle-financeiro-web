@@ -1,7 +1,7 @@
-import { useMemo, useState, useCallback, type ReactNode } from "react";
+import { useMemo, useState, useCallback, Fragment, type ReactNode } from "react";
 import type { Lancamento } from "../types";
 import { Legenda } from "./ui";
-import { kBRL, dvLabel, dvParcialLimite } from "../lib/finance";
+import { kNum, dvLabel, dvParcialLimite } from "../lib/finance";
 import {
   type MatrizMensal as Matriz, type SecaoInfo, type LinhaMatriz,
   lancamentosDaCelula,
@@ -70,6 +70,11 @@ export function MatrizMensal({ dados, matriz, openModal }: Props) {
     return o;
   });
   const [arrastando, setArrastando] = useState<{ secao: string; key: string } | null>(null);
+  // categorias expandidas (mostrando subcategorias). Padrão: TODAS recolhidas.
+  const [abertas, setAbertas] = useState<Set<string>>(new Set());
+  const alternar = useCallback((key: string) => {
+    setAbertas((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }, []);
 
   const limParcial = useMemo(() => dvParcialLimite(), []);
   const ultimoMes = meses[meses.length - 1];
@@ -159,6 +164,8 @@ export function MatrizMensal({ dados, matriz, openModal }: Props) {
                 nCols={nCols}
                 dados={dados}
                 openModal={openModal}
+                abertas={abertas}
+                alternar={alternar}
                 onDragStart={(key) => setArrastando({ secao: sec.secao, key })}
                 onDrop={(destinoKey) => solta(sec.secao, linhas, destinoKey)}
                 // Saldo entra logo após a seção de Gastos (como na planilha).
@@ -193,12 +200,14 @@ interface BlocoProps {
   nCols: number;
   dados: Lancamento[];
   openModal: (t: string, r: Lancamento[]) => void;
+  abertas: Set<string>;
+  alternar: (key: string) => void;
   onDragStart: (key: string) => void;
   onDrop: (destinoKey: string) => void;
   rodape?: ReactNode;
 }
 
-function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, onDragStart, onDrop, rodape }: BlocoProps) {
+function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, abertas, alternar, onDragStart, onDrop, rodape }: BlocoProps) {
   const hue = HUE_SECAO[sec.secao];
   return (
     <>
@@ -209,10 +218,13 @@ function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, onDragStart, 
         </td>
       </tr>
 
-      {/* linhas de categoria (arrastáveis) */}
-      {linhas.map((ln) => (
+      {/* linhas de categoria (arrastáveis) + subcategorias recolhíveis */}
+      {linhas.map((ln) => {
+        const temSub = !!ln.subs?.length;
+        const aberta = abertas.has(ln.key);
+        return (
+        <Fragment key={ln.key}>
         <tr
-          key={ln.key}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); onDrop(ln.key); }}
         >
@@ -224,8 +236,18 @@ function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, onDragStart, 
                 className="text-muted/70 cursor-grab active:cursor-grabbing select-none"
                 title="arraste para reordenar"
               >⠿</span>
+              {temSub ? (
+                <button
+                  onClick={() => alternar(ln.key)}
+                  title={aberta ? "Recolher subcategorias" : `Ver ${ln.subs!.length} subcategorias`}
+                  className="shrink-0 w-[16px] h-[16px] flex items-center justify-center text-muted hover:text-txt bg-transparent border-0 cursor-pointer p-0"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${aberta ? "rotate-90" : ""}`}><path d="m9 18 6-6-6-6" /></svg>
+                </button>
+              ) : <span className="w-[16px] shrink-0" />}
               {ln.cor && <span className="w-[10px] h-[10px] rounded-full shrink-0" style={{ background: ln.cor }} />}
               <span className="truncate">{ln.label}</span>
+              {temSub && !aberta && <span className="text-muted/60 text-[11px] shrink-0">({ln.subs!.length})</span>}
             </span>
           </td>
           {meses.map((mk) => {
@@ -237,14 +259,43 @@ function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, onDragStart, 
                 style={{ background: tintSequencial(v, sec.maxAbs, hue) }}
                 onClick={() => openModal(`${ln.label} · ${dvLabel(mk)}`, lancamentosDaCelula(dados, ln.secao, ln.catRaw, mk))}
               >
-                {v === 0 ? "—" : kBRL(v)}
+                {v === 0 ? "—" : kNum(v)}
               </td>
             );
           })}
           <CelulaDelta delta={ln.delta} maxDeltaAbs={sec.maxDeltaAbs} bomQuandoSobe={sec.bomQuandoSobe} />
           <CelulaPct deltaPct={ln.deltaPct} bomQuandoSobe={sec.bomQuandoSobe} />
         </tr>
-      ))}
+
+        {/* subcategorias (indentadas), só quando expandida */}
+        {temSub && aberta && ln.subs!.map((sln) => (
+          <tr key={sln.key} className="text-[12px]">
+            <td className="sticky left-0 z-10 bg-card">
+              <span className="inline-flex items-center gap-2 min-w-0 pl-[40px]">
+                <span className="w-[6px] h-[6px] rounded-full shrink-0 opacity-70" style={{ background: sln.cor || undefined }} />
+                <span className="truncate text-muted">{sln.label}</span>
+              </span>
+            </td>
+            {meses.map((mk) => {
+              const v = sln.valores[mk] || 0;
+              return (
+                <td
+                  key={mk}
+                  className={`num cursor-pointer ${v === 0 ? "text-muted" : "text-muted"}`}
+                  style={{ background: tintSequencial(v, sec.maxAbs, hue) }}
+                  onClick={() => openModal(`${ln.label} › ${sln.label} · ${dvLabel(mk)}`, lancamentosDaCelula(dados, sln.secao, sln.catRaw, mk, sln.subRaw))}
+                >
+                  {v === 0 ? "—" : kNum(v)}
+                </td>
+              );
+            })}
+            <CelulaDelta delta={sln.delta} maxDeltaAbs={sec.maxDeltaAbs} bomQuandoSobe={sec.bomQuandoSobe} />
+            <CelulaPct deltaPct={sln.deltaPct} bomQuandoSobe={sec.bomQuandoSobe} />
+          </tr>
+        ))}
+        </Fragment>
+        );
+      })}
 
       {/* total da seção */}
       <tr className="font-semibold">
@@ -257,7 +308,7 @@ function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, onDragStart, 
               className={`num cursor-pointer ${v === 0 ? "text-muted" : ""}`}
               onClick={() => openModal(`${sec.totalLinha.label} · ${dvLabel(mk)}`, lancamentosDaCelula(dados, sec.secao, null, mk))}
             >
-              {v === 0 ? "—" : kBRL(v)}
+              {v === 0 ? "—" : kNum(v)}
             </td>
           );
         })}
@@ -288,7 +339,7 @@ function LinhaSaldo({
             style={{ background: tintSequencial(v, maxAbs, HUE_SECAO.saldo) }}
             onClick={() => openModal(`${saldo.label} · ${dvLabel(mk)}`, lancamentosDaCelula(dados, "saldo", null, mk))}
           >
-            {v === 0 ? "—" : kBRL(v)}
+            {v === 0 ? "—" : kNum(v)}
           </td>
         );
       })}
@@ -302,7 +353,7 @@ function LinhaSaldo({
 function CelulaDelta({ delta, maxDeltaAbs, bomQuandoSobe }: { delta: number; maxDeltaAbs: number; bomQuandoSobe: boolean }) {
   return (
     <td className="num text-muted" style={{ background: tintDivergente(delta, maxDeltaAbs, { bomQuandoSobe }) }}>
-      {delta === 0 ? "—" : (delta > 0 ? "+" : "") + kBRL(delta)}
+      {delta === 0 ? "—" : (delta > 0 ? "+" : "") + kNum(delta)}
     </td>
   );
 }

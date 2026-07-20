@@ -208,12 +208,33 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
 
   if (!hero) return <div className="text-muted p-4">Sem dados ainda — importe os primeiros PDFs para começar.</div>;
 
+  // lançamentos que compõem cada balde do mês-herói, ACUMULADOS até o dia de
+  // referência — alimentam o drill-down ao clicar num card.
+  const rowsBalde = (balde: "total" | "parc" | "casa" | "cartao" | "geral"): Lancamento[] => {
+    if (!hero) return [];
+    const mk = hero.heroMes;
+    const parcRows = compSeries.parcRows[mk] || [];
+    if (balde === "parc") return parcRows;
+    const dias = compSeries.diaRows[mk] || [];
+    const ateHoje = dias.slice(0, hero.refDay).flat();
+    const gastosPos = ateHoje.filter((d) => dvGasto(d) > 0);
+    if (balde === "total") return [...parcRows, ...ateHoje];
+    if (balde === "casa") return gastosPos.filter((d) => ehCasaFixo(d));
+    if (balde === "cartao") return gastosPos.filter((d) => !ehCasaFixo(d) && String(d.origem || "").startsWith("Cartao"));
+    // geral
+    return gastosPos.filter((d) => !ehCasaFixo(d) && !String(d.origem || "").startsWith("Cartao"));
+  };
+  const abrirBalde = (balde: "total" | "parc" | "casa" | "cartao" | "geral", titulo: string) => {
+    const rows = rowsBalde(balde);
+    if (rows.length) openModal(`${titulo} · ${dvLabel(hero.heroMes)}`, rows);
+  };
+
   const splitStats = [
-    { t: "Gasto do mês", v: BRL0(hero.totAtual), s: hero.isAtual ? `até hoje · dia ${hero.refDay}/${hero.nd}` : "fatura + extrato do mês", c: "", dot: "" },
-    { t: "parcelamentos", v: BRL0(hero.parcSel), s: "comprometido no dia 1", c: "", dot: corParc },
-    { t: "casa fixo", v: BRL0(hero.casaAtual), s: "contas mensais + aluguel/IPTU", c: "", dot: corCasa },
-    { t: "cartão (não casa)", v: BRL0(hero.cartaoAtual), s: "compras do próprio mês", c: "", dot: corCartao },
-    { t: "gastos gerais", v: BRL0(hero.geralAtual), s: "não casa fixo · em conta", c: "", dot: corGeral },
+    { t: "Gasto do mês", v: BRL0(hero.totAtual), s: hero.isAtual ? `até hoje · dia ${hero.refDay}/${hero.nd}` : "fatura + extrato do mês", c: "", dot: "", balde: "total" as const },
+    { t: "parcelamentos", v: BRL0(hero.parcSel), s: "comprometido no dia 1", c: "", dot: corParc, balde: "parc" as const },
+    { t: "casa fixo", v: BRL0(hero.casaAtual), s: "contas mensais + aluguel/IPTU", c: "", dot: corCasa, balde: "casa" as const },
+    { t: "cartão (não casa)", v: BRL0(hero.cartaoAtual), s: "compras do próprio mês", c: "", dot: corCartao, balde: "cartao" as const },
+    { t: "gastos gerais", v: BRL0(hero.geralAtual), s: "não casa fixo · em conta", c: "", dot: corGeral, balde: "geral" as const },
   ];
 
   return (
@@ -265,14 +286,19 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
           </div>
           <div className="grid grid-cols-2 gap-3 md:flex md:flex-col md:h-full">
             {splitStats.map((s) => (
-              <div key={s.t} className="md:flex-1 flex flex-col justify-center bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card min-w-0">
+              <button
+                key={s.t}
+                onClick={() => abrirBalde(s.balde, s.t)}
+                title={`Ver lançamentos · ${s.t}`}
+                className="md:flex-1 flex flex-col justify-center bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card min-w-0 text-left cursor-pointer transition-all hover:-translate-y-[2px] hover:border-accent/50 hover:shadow-card-hover"
+              >
                 <div className="flex items-center gap-[6px] text-muted text-[12px] font-medium">
                   {s.dot && <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: s.dot }} />}
                   {s.t}
                 </div>
                 <div className={`text-[22px] sm:text-[28px] font-semibold mt-[5px] tracking-tight tabular-nums ${s.c}`}>{s.v}</div>
                 <div className="text-[11.5px] mt-[3px] text-muted">{s.s}</div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
