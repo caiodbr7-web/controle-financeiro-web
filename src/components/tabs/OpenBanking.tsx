@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { Lancamento } from "../../types";
 import { Kpi, Select } from "../ui";
 import { sb } from "../../lib/supabase";
-import { BRL0, fmtMoeda, dicaMoedaOrigem, mesCurto, dataCompleta, dataOrdKey, ehGasto, ehReceita } from "../../lib/finance";
+import { BRL0, kBRL, fmtMoeda, dicaMoedaOrigem, mesCurto, dataCompleta, dataOrdKey, ehGasto, ehReceita } from "../../lib/finance";
 
 /* ============================================================================
    Aba "Open Banking" — superfície de VALIDAÇÃO do Pluggy.
@@ -234,9 +234,9 @@ export function OpenBanking() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-[14px] mb-[18px]">
         <Kpi title="Lançamentos" value={filtrados.length.toLocaleString("pt-BR")} sub={`${rows.length.toLocaleString("pt-BR")} no total`} />
-        <Kpi title="Gastos" value={BRL0(kpis.gasto)} color="text-red" />
-        <Kpi title="Receitas/Créditos" value={BRL0(kpis.receita)} color="text-green" />
-        <Kpi title="Saldo" value={BRL0(kpis.saldo)} color={kpis.saldo < 0 ? "text-red" : "text-green"} />
+        <Kpi title="Gastos" value={kBRL(kpis.gasto)} color="text-red" />
+        <Kpi title="Receitas/Créditos" value={kBRL(kpis.receita)} color="text-green" />
+        <Kpi title="Saldo" value={kBRL(kpis.saldo)} color={kpis.saldo < 0 ? "text-red" : "text-green"} />
         <Kpi title="Contas / Itens" value={`${kpis.contas} / ${kpis.itens}`} sub="distintos no Pluggy" />
         <Kpi title="Última importação" value={kpis.ultima ? new Date(kpis.ultima).toLocaleDateString("pt-BR") : "—"} sub={kpis.ultima ? new Date(kpis.ultima).toLocaleTimeString("pt-BR") : ""} />
       </div>

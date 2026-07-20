@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Lancamento } from "../../types";
 import { Kpi, Seg, Select, Legenda } from "../ui";
 import { sb } from "../../lib/supabase";
-import { BRL, BRL0, fmtMoeda, dicaMoedaOrigem, bankOf, dvDataReal, dvLabel } from "../../lib/finance";
+import { BRL, BRL0, kBRL, fmtMoeda, dicaMoedaOrigem, bankOf, dvDataReal, dvLabel } from "../../lib/finance";
 import { conciliar, totaisPorMes, type Conf, type Par, type Via, type TotaisMes } from "../../lib/conciliacao";
 
 /* ============================================================================
@@ -229,7 +229,7 @@ export function Conciliacao() {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-[14px] mb-[18px]">
         <Kpi title="Lançamentos PDF" value={totPDF.toLocaleString("pt-BR")} />
         <Kpi title="Lançamentos Open Finance" value={totOF.toLocaleString("pt-BR")} />
-        <Kpi title={filtroAtivo ? "Duplicatas (filtro)" : "Duplicatas prováveis"} value={paresBuscaF.length.toLocaleString("pt-BR")} sub={BRL0(totalDupReais)} color={paresBuscaF.length ? "text-amber" : ""} />
+        <Kpi title={filtroAtivo ? "Duplicatas (filtro)" : "Duplicatas prováveis"} value={paresBuscaF.length.toLocaleString("pt-BR")} sub={kBRL(totalDupReais)} color={paresBuscaF.length ? "text-amber" : ""} />
         <Kpi title="Confiança Alta" value={contagemConf.alta.toLocaleString("pt-BR")} sub="valor+data+banco+descrição" color={contagemConf.alta ? "text-red" : ""} />
         <Kpi title="Só Open Finance" value={soOFF.length.toLocaleString("pt-BR")} sub="OF trouxe, PDF não" />
         <Kpi

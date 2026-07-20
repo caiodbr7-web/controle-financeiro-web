@@ -6,7 +6,7 @@ import type { Lancamento } from "../../types";
 import { Panel, Kpi, Seg, Select, Toolbar } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import {
-  BRL0, brlShort, ehGasto, ehReceita, ehTransfer, corChave, ordemChave,
+  BRL0, kBRL, brlShort, ehGasto, ehReceita, ehTransfer, corChave, ordemChave,
   dvLabel, dvParcialLimite, mesComp, valorGasto, valorReceita, valorAporte, valorReceitaInvest,
 } from "../../lib/finance";
 
@@ -75,7 +75,7 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
     const av = { rec: 0, gas: 0, saldo: 0 };
     last3.forEach((x) => { const aa = agg(x); av.rec += aa.rec; av.gas += aa.gas; av.saldo += aa.saldo; });
     const temInvest = aggs.some((a) => a.inv > 0 || a.recInv > 0);
-    return { label: dvLabel(ref), parcial: ref >= lim, cur, temInvest, av: { rec: av.rec / n, gas: av.gas / n, saldo: av.saldo / n } };
+    return { ref, label: dvLabel(ref), parcial: ref >= lim, cur, temInvest, av: { rec: av.rec / n, gas: av.gas / n, saldo: av.saldo / n } };
   }, [rows, vm, refIdx, lim, aggs]);
 
   // opções do seletor de mês dos KPIs (mais recente primeiro). "Automático" mostra
@@ -135,10 +135,14 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
 
       {kpis && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
-          <Kpi title="Receitas" value={BRL0(kpis.cur.rec)} sub={`${kpis.label} · média 3m ${BRL0(kpis.av.rec)}`} color="text-green" />
-          <Kpi title="Despesas" value={BRL0(kpis.cur.gas)} sub={`${kpis.label} · média 3m ${BRL0(kpis.av.gas)}`} color="text-red" />
-          <Kpi title="Saldo" value={BRL0(kpis.cur.saldo)} sub={`receitas − despesas · média 3m ${BRL0(kpis.av.saldo)}`} color={kpis.cur.saldo >= 0 ? "text-green" : "text-red"} />
-          <Kpi title="Transf. / Pagtos" value={BRL0(kpis.cur.tr)} sub="não é consumo (líquido)" color="text-violet" />
+          <Kpi title="Receitas" value={kBRL(kpis.cur.rec)} sub={`${kpis.label} · média 3m ${BRL0(kpis.av.rec)}`} color="text-green"
+            onClick={() => openModal(`Receitas · ${kpis.label}`, rowsDoMes(kpis.ref, ehReceita))} />
+          <Kpi title="Despesas" value={kBRL(kpis.cur.gas)} sub={`${kpis.label} · média 3m ${BRL0(kpis.av.gas)}`} color="text-red"
+            onClick={() => openModal(`Despesas · ${kpis.label}`, rowsDoMes(kpis.ref, ehGasto))} />
+          <Kpi title="Saldo" value={kBRL(kpis.cur.saldo)} sub={`receitas − despesas · média 3m ${BRL0(kpis.av.saldo)}`} color={kpis.cur.saldo >= 0 ? "text-green" : "text-red"}
+            onClick={() => openModal(`Receitas e despesas · ${kpis.label}`, rowsDoMes(kpis.ref, (c) => ehReceita(c) || ehGasto(c)))} />
+          <Kpi title="Transf. / Pagtos" value={kBRL(kpis.cur.tr)} sub="não é consumo (líquido)" color="text-violet"
+            onClick={() => openModal(`Transferências e pagamentos · ${kpis.label}`, rowsDoMes(kpis.ref, ehTransfer))} />
         </div>
       )}
 
@@ -151,8 +155,10 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
       {/* investimentos do mês de referência — só aparece quando há aporte/renda classificados */}
       {kpis && kpis.temInvest && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
-          <Kpi title="Investido no mês" value={BRL0(kpis.cur.inv)} sub={`${kpis.label} · aportes (Σ Aporte)`} color="text-violet" />
-          <Kpi title="Renda de investimentos" value={BRL0(kpis.cur.recInv)} sub={`${kpis.label} · rendimentos/dividendos`} color="text-green" />
+          <Kpi title="Investido no mês" value={kBRL(kpis.cur.inv)} sub={`${kpis.label} · aportes (Σ Aporte)`} color="text-violet"
+            onClick={() => openModal(`Aportes · ${kpis.label}`, rows.filter((r) => r.mk === kpis.ref && valorAporte(r.d) > 0).map((r) => r.d))} />
+          <Kpi title="Renda de investimentos" value={kBRL(kpis.cur.recInv)} sub={`${kpis.label} · rendimentos/dividendos`} color="text-green"
+            onClick={() => openModal(`Renda de investimentos · ${kpis.label}`, rows.filter((r) => r.mk === kpis.ref && valorReceitaInvest(r.d) > 0).map((r) => r.d))} />
         </div>
       )}
 

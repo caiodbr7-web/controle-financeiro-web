@@ -5,7 +5,7 @@ import { useConfirm } from "../Confirm";
 import { useToast } from "../Toast";
 import { sb } from "../../lib/supabase";
 import type { Lancamento } from "../../types";
-import { BRL0, dvAddMes, dvLabel, mesComp, valorGasto, valorReceita } from "../../lib/finance";
+import { BRL0, kBRL, dvAddMes, dvLabel, mesComp, valorGasto, valorReceita } from "../../lib/finance";
 import { useCategorias } from "../../lib/categorias";
 import {
   type Plano, type TipoPlano, TIPOS, mesAtual, horizonte, projetar,
@@ -1012,10 +1012,10 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             document.body
           )}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
-            <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={BRL0(prevGer)} sub="recorrentes (plano)" />
-            <Kpi title="Gastos realizados" value={BRL0(efetGer)} sub={cartaoParcial(comp) ? "cartão ainda parcial · mês em aberto" : "recorrente + conta + cartão"} color="text-amber" />
-            <Kpi title="Saldo previsto" value={BRL0(prevRec - prevGer)} sub="receita − gastos (plano)" color={prevRec - prevGer < 0 ? "text-red" : "text-green"} />
-            <Kpi title="Saldo realizado" value={BRL0(efetRec - efetGer)} sub="receita − gastos (real)" color={efetRec - efetGer < 0 ? "text-red" : "text-green"} />
+            <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={kBRL(prevGer)} sub="recorrentes (plano)" />
+            <Kpi title="Gastos realizados" value={kBRL(efetGer)} sub={cartaoParcial(comp) ? "cartão ainda parcial · mês em aberto" : "recorrente + conta + cartão"} color="text-amber" />
+            <Kpi title="Saldo previsto" value={kBRL(prevRec - prevGer)} sub="receita − gastos (plano)" color={prevRec - prevGer < 0 ? "text-red" : "text-green"} />
+            <Kpi title="Saldo realizado" value={kBRL(efetRec - efetGer)} sub="receita − gastos (real)" color={efetRec - efetGer < 0 ? "text-red" : "text-green"} />
           </div>
 
           <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
@@ -1176,10 +1176,10 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
-            <Kpi title="Gasto médio / mês" value={BRL0(gastoMedio)} sub={`projeção de ${n} meses`} />
-            <Kpi title="Maior mês" value={BRL0(maior.gerais)} sub={maior.label} color="text-amber" />
-            <Kpi title="Em parcelas (período)" value={BRL0(comprometidoParc)} sub="parcelamentos no horizonte" color="text-violet" />
-            <Kpi title="Saldo médio / mês" value={BRL0(saldoMedio)} sub={saldoMedio < 0 ? "no vermelho" : "sobra prevista"} color={saldoMedio < 0 ? "text-red" : "text-green"} />
+            <Kpi title="Gasto médio / mês" value={kBRL(gastoMedio)} sub={`projeção de ${n} meses`} />
+            <Kpi title="Maior mês" value={kBRL(maior.gerais)} sub={maior.label} color="text-amber" />
+            <Kpi title="Em parcelas (período)" value={kBRL(comprometidoParc)} sub="parcelamentos no horizonte" color="text-violet" />
+            <Kpi title="Saldo médio / mês" value={kBRL(saldoMedio)} sub={saldoMedio < 0 ? "no vermelho" : "sobra prevista"} color={saldoMedio < 0 ? "text-red" : "text-green"} />
           </div>
 
           <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">

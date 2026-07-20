@@ -2,8 +2,9 @@ import { useState, useMemo, useEffect, type Dispatch, type SetStateAction } from
 import type { Lancamento, Enqueue } from "../../types";
 import { Kpi, Select, Seg } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
+import { TransacaoDetalhe } from "../TransacaoDetalhe";
 import { sb } from "../../lib/supabase";
-import { BRL0, fmtMoeda, dicaMoedaOrigem, mesCurto, catKey, dataCompleta, dataOrdKey, ehGasto, ehReceita } from "../../lib/finance";
+import { BRL0, kBRL, fmtMoeda, dicaMoedaOrigem, mesCurto, catKey, dataCompleta, dataOrdKey, ehGasto, ehReceita } from "../../lib/finance";
 import {
   CLASSES,
   ehInterna,
@@ -32,6 +33,7 @@ export function Lancamentos({ dados, months, enqueue }: Props) {
   const { toast } = useToast();
   const erroMsg = (e: unknown) => (e as { message?: string })?.message || String(e);
   const [busca, setBusca] = useState("");
+  const [detalhe, setDetalhe] = useState<Lancamento | null>(null); // pop-up unificado de detalhe
   const [periodo, setPeriodo] = useState("all");
   const [fComp, setFComp] = useState("");
   const [fBanco, setFBanco] = useState("");
@@ -340,9 +342,11 @@ export function Lancamentos({ dados, months, enqueue }: Props) {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
-        <Kpi title="Gastos" value={BRL0(totals.gasto)} color="text-red" />
-        <Kpi title="Receitas" value={BRL0(totals.receita)} color="text-green" />
-        <Kpi title="Saldo" value={BRL0(totals.saldo)} color={totals.saldo < 0 ? "text-red" : "text-green"} />
+        <Kpi title="Gastos" value={kBRL(totals.gasto)} color="text-red" sub={fClasse === "Gasto" ? "filtrando ✕" : "ver na tabela ›"}
+          onClick={() => setFClasse((f) => (f === "Gasto" ? "" : "Gasto"))} />
+        <Kpi title="Receitas" value={kBRL(totals.receita)} color="text-green" sub={fClasse === "Receita" ? "filtrando ✕" : "ver na tabela ›"}
+          onClick={() => setFClasse((f) => (f === "Receita" ? "" : "Receita"))} />
+        <Kpi title="Saldo" value={kBRL(totals.saldo)} color={totals.saldo < 0 ? "text-red" : "text-green"} />
         <Kpi title="Lançamentos" value={rows.length.toLocaleString("pt-BR")} />
       </div>
 
@@ -418,7 +422,15 @@ export function Lancamentos({ dados, months, enqueue }: Props) {
                   <td>{d.banco}</td>
                   <td>{d.origem}</td>
                   <td className="whitespace-nowrap">{dataCompleta(d)}</td>
-                  <td className="max-w-[230px] truncate" title={d.descricao}>{d.descricao}</td>
+                  <td className="max-w-[230px]">
+                    <button
+                      onClick={() => setDetalhe(d)}
+                      title="Ver detalhes da transação"
+                      className="max-w-full truncate block bg-transparent border-0 p-0 text-left cursor-pointer text-[inherit] hover:text-accent transition-colors"
+                    >
+                      {d.descricao}
+                    </button>
+                  </td>
                   <td>
                     {classeCell(d)}
                     <div className="mt-[5px]">{internaToggle(d)}</div>
@@ -441,10 +453,14 @@ export function Lancamentos({ dados, months, enqueue }: Props) {
               <div className="min-w-0 flex items-start gap-2">
                 <input type="checkbox" className="accent-accent w-[15px] h-[15px] mt-[2px] shrink-0"
                   checked={sel.has(d.id)} onChange={() => toggleOne(d.id)} />
-                <div className="min-w-0">
-                  <div className="text-[13.5px] font-medium truncate" title={d.descricao}>{d.descricao}</div>
+                <button
+                  onClick={() => setDetalhe(d)}
+                  title="Ver detalhes da transação"
+                  className="min-w-0 bg-transparent border-0 p-0 text-left cursor-pointer group"
+                >
+                  <div className="text-[13.5px] font-medium truncate group-hover:text-accent transition-colors" title={d.descricao}>{d.descricao}</div>
                   <div className="text-[11.5px] text-muted truncate">{mesCurto(d.competencia)} · {d.origem} · {dataCompleta(d)}</div>
-                </div>
+                </button>
               </div>
               <div className="text-right shrink-0">
                 <div className={`tabular-nums text-[13.5px] font-medium ${d.valor < 0 ? "text-red" : ehReceita(d.classe) ? "text-green" : ""}`}>{valCell(d)}</div>
@@ -471,6 +487,14 @@ export function Lancamentos({ dados, months, enqueue }: Props) {
           <span className="text-muted text-[12.5px]">Mostrando {mostrados.length.toLocaleString("pt-BR")} de {rows.length.toLocaleString("pt-BR")}</span>
         </div>
       )}
+
+      {/* detalhe unificado de UMA transação */}
+      <TransacaoDetalhe
+        transacao={detalhe}
+        onClose={() => setDetalhe(null)}
+        onCategoria={(d, c, s) => salvarCat(d, c, s)}
+        salvando={detalhe ? salvos[detalhe.id] : undefined}
+      />
     </div>
   );
 }

@@ -7,7 +7,7 @@ import type { Lancamento, Modo } from "../../types";
 import { Panel, Kpi, Seg, Select, Legenda } from "../ui";
 import { useChart, useTheme, ChartTip, useIsMobile } from "../../lib/theme";
 import {
-  BRL0, brlShort, dvLabel, dvGasto, mesComp, dvDiasNoMes, diaDoMov, ehParcelaAnterior,
+  BRL0, kBRL, brlShort, dvLabel, dvGasto, mesComp, dvDiasNoMes, diaDoMov, ehParcelaAnterior,
   catKey, mvSeriesMensal, mvOrigemOk, MODOS, deltaTxt,
 } from "../../lib/finance";
 
@@ -321,8 +321,8 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
         }
       >
         <div className="grid grid-cols-2 md:grid-cols-3 gap-[14px] mt-3 mb-2">
-          <Kpi title="Patamar (média 3m)" value={BRL0(mensal.patamar)} sub="média dos últimos 3 meses completos" color="text-accent" />
-          <Kpi title={`Último mês · ${mensal.ultLabel}`} value={BRL0(mensal.ultVal)} sub={mensal.baseAnt != null ? deltaTxt(mensal.ultVal, mensal.baseAnt) + " vs média 3m" : "—"} />
+          <Kpi title="Patamar (média 3m)" value={kBRL(mensal.patamar)} sub="média dos últimos 3 meses completos" color="text-accent" />
+          <Kpi title={`Último mês · ${mensal.ultLabel}`} value={kBRL(mensal.ultVal)} sub={mensal.baseAnt != null ? deltaTxt(mensal.ultVal, mensal.baseAnt) + " vs média 3m" : "—"} />
           <Kpi title="Meses exibidos" value={mensal.data.length} sub="só meses completos" />
         </div>
         <div className="h-[clamp(260px,38vh,380px)]">
