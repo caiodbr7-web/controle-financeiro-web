@@ -23,6 +23,15 @@ export const BRL = (v: number) =>
 
 export const brlShort = (v: number) => "R$ " + Math.round(Number(v || 0)).toLocaleString("pt-BR");
 
+// reais compactos p/ caixas apertadas (mobile): milhares viram "k", milhões "M".
+// Abaixo de 10 mil mantém o valor cheio (abreviar "R$ 4.428" só atrapalha).
+export const kBRL = (v: number) => {
+  const n = Number(v || 0), a = Math.abs(n), s = n < 0 ? "-" : "";
+  if (a >= 1_000_000) return s + "R$ " + (a / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "M";
+  if (a >= 10_000) return s + "R$ " + Math.round(a / 1000).toLocaleString("pt-BR") + "k";
+  return s + "R$ " + Math.round(a).toLocaleString("pt-BR");
+};
+
 // reais sem centavos — para os números grandes do painel
 export const BRL0 = (v: number) =>
   (v < 0 ? "-" : "") + "R$ " + Math.round(Math.abs(v || 0)).toLocaleString("pt-BR", { maximumFractionDigits: 0 });

@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import type { Lancamento, Modo } from "../../types";
 import { Panel, Kpi, Seg, Select } from "../ui";
-import { useChart, useTheme, ChartTip } from "../../lib/theme";
+import { useChart, useTheme, ChartTip, useIsMobile } from "../../lib/theme";
 import {
   BRL0, brlShort, dvLabel, dvGasto, mesComp, dvDiasNoMes, diaDoMov, ehParcelaAnterior,
   catKey, mvSeriesMensal, mvOrigemOk, MODOS, deltaTxt,
@@ -30,6 +30,7 @@ const JANELAS = [{ v: "3", label: "3m" }, { v: "6", label: "6m" }, { v: "12", la
 
 export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
   const cc = useChart();
+  const mobile = useIsMobile();
   const { dark } = useTheme();
   const hoje = new Date();
   const mesAtual = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
@@ -243,7 +244,13 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
                 <CartesianGrid stroke={cc.grid} vertical={false} />
                 <XAxis dataKey="dia" tick={cc.tickSm} minTickGap={6} axisLine={false} tickLine={false} />
                 <YAxis tick={cc.tickSm} tickFormatter={(v) => brlShort(v)} width={56} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTip labelPrefix="Dia " />} />
+                {/* mobile: tooltip ancorado ABAIXO do gráfico (não cobre as curvas) */}
+                <Tooltip
+                  content={<ChartTip labelPrefix="Dia " />}
+                  position={mobile ? { x: 0, y: 308 } : undefined}
+                  allowEscapeViewBox={mobile ? { x: false, y: true } : undefined}
+                  wrapperStyle={mobile ? { zIndex: 30 } : undefined}
+                />
                 <Area type="monotone" dataKey={hero.parcNome} stackId="gasto" stroke={corParc} strokeWidth={1.4} fill={corParc} fillOpacity={0.16} dot={false} isAnimationActive={false} />
                 <Area type="monotone" dataKey={hero.casaNome} stackId="gasto" stroke={corCasa} strokeWidth={1.8} fill={corCasa} fillOpacity={0.18} dot={false} connectNulls={false} isAnimationActive={false} />
                 <Area type="monotone" dataKey={hero.cartaoNome} stackId="gasto" stroke={corCartao} strokeWidth={1.8} fill={corCartao} fillOpacity={0.18} dot={false} connectNulls={false} isAnimationActive={false} />

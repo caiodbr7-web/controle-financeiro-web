@@ -113,3 +113,18 @@ export function ChartTip({
     </div>
   );
 }
+
+/* true quando a viewport é de celular (< md/768px) — para adaptar interações
+   que não funcionam bem no toque (posição de tooltip, hover etc.). */
+export function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 767px)").matches : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const h = (e: MediaQueryListEvent) => setMobile(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
+  return mobile;
+}

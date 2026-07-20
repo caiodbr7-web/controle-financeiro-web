@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip } from "recharts";
 import type { Aba, Lancamento } from "../../types";
 import { Panel, BarRow, Select, Seg } from "../ui";
-import { useChart, ChartTip } from "../../lib/theme";
+import { useChart, ChartTip, useIsMobile } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
   BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dataCompleta,
@@ -46,6 +46,7 @@ const JANELAS = [{ v: "3", label: "3m" }, { v: "6", label: "6m" }, { v: "12", la
 
 export function Inicio({ dados, allDados, months, openModal, go }: Props) {
   const cc = useChart();
+  const mobile = useIsMobile();
   const hoje = new Date();
   const mesAtual = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
 
@@ -322,7 +323,12 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
                 </defs>
                 <XAxis dataKey="dia" hide />
                 <YAxis hide domain={[0, "auto"]} />
-                <Tooltip content={<ChartTip labelPrefix="Dia " />} />
+                <Tooltip
+                  content={<ChartTip labelPrefix="Dia " />}
+                  position={mobile ? { x: 0, y: 208 } : undefined}
+                  allowEscapeViewBox={mobile ? { x: false, y: true } : undefined}
+                  wrapperStyle={mobile ? { zIndex: 30 } : undefined}
+                />
                 <Line type="monotone" dataKey={calc.benchNome} stroke={cc.media} strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls isAnimationActive={false} />
                 {calc.empilhado && (
                   <Area type="monotone" dataKey={calc.parcNome} stackId="gasto" stroke={cc.parcela} strokeWidth={1.5} fill={cc.parcela} fillOpacity={0.13} dot={false} isAnimationActive={false} />

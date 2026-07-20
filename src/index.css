@@ -66,6 +66,9 @@ html {
 
 body {
   margin: 0;
+  /* nunca deixa a página alargar além da viewport (iOS encolheria o layout
+     inteiro); os contêineres internos com overflow-auto seguem roláveis */
+  overflow-x: clip;
   font-family: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   background: rgb(var(--c-bg));
   color: rgb(var(--c-txt));
