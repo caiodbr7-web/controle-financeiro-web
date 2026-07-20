@@ -394,14 +394,6 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
         </div>
       </div>
 
-      <div className="text-muted text-[12.5px] mb-3 leading-relaxed">
-        Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto pro menor. Defina a <b>categoria</b> (use <b>Corporativo</b> para trabalho)
-        e clique <b>Aplicar</b> — vale pra todos os lançamentos do grupo, vira sugestão e dá pra <b>desfazer</b>.
-        <br />Agora aparecem também <b>receitas e transferências</b> ainda sem classificação. O botão <b>⇄</b> marca o grupo como <b className="text-violet">entre contas próprias</b> — é só uma escolha: <b>nada é gravado até você clicar em Aplicar</b>. Para <b className="text-green">receitas</b> (ex.: salário), use <b>✓ Receita</b> para confirmar sem precisar de categoria de despesa.
-        <br />Os que já sabemos serem <b className="text-violet">🔁 provavelmente entre contas</b> (histórico ou transferência) já vêm <b>pré-marcados</b> e entram, junto com os <b className="text-green">conhecidos</b> (🔗 vínculo e 🧠 histórico), no botão <b>Aplicar conhecidos</b>. Os <b className="text-accent">sugeridos</b> (⚙️ motor e 🏦 banco) vêm pré-preenchidos pra você confirmar.
-        <span className="hidden sm:inline"> Pelo teclado: <kbd className="kbd">↑</kbd><kbd className="kbd">↓</kbd> navega, <kbd className="kbd">Enter</kbd> escolhe categoria, <kbd className="kbd">espaço</kbd> seleciona, <kbd className="kbd">E</kbd> entre contas, <kbd className="kbd">A</kbd> aplica.</span>
-      </div>
-
       {grupos.length === 0 ? (
         <div className="bg-card border border-line rounded-[18px] p-6 shadow-card flex items-center gap-2 text-green text-[14px]">
           <span className="w-[22px] h-[22px] rounded-full bg-green/10 flex items-center justify-center text-[12px]">✓</span>
@@ -477,34 +469,38 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
                   role="option"
                   aria-selected={selecionado}
                   onMouseDown={() => setActiveIdx(i)}
-                  className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-[11px] transition-colors ${ativo ? "bg-fill/70" : "hover:bg-fill/30"}`}
+                  className={`flex flex-col md:flex-row md:flex-wrap md:items-center gap-x-3 gap-y-[10px] px-3 sm:px-4 py-[12px] transition-colors ${ativo ? "bg-fill/70" : "hover:bg-fill/30"}`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={selecionado}
-                    onChange={() => setSel((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    aria-label={`Selecionar ${g.ex}`}
-                    className="accent-accent w-[15px] h-[15px] shrink-0"
-                  />
-                  <button
-                    className="min-w-0 flex-1 text-left bg-transparent border-0 p-0 cursor-pointer group"
-                    onClick={() => openModal(g.ex, g.rows)}
-                    title="Ver lançamentos do grupo"
-                  >
-                    <div className="text-[13.5px] font-medium truncate group-hover:text-accent transition-colors">{g.ex}</div>
-                    <div className="text-[11.5px] text-muted">
-                      {g.n} {g.n === 1 ? "lançamento" : "lançamentos"} · <span className="text-red tabular-nums">{BRL0(g.total)}</span>
-                      {interna
-                        ? <span className="ml-2 inline-flex items-center rounded-full bg-violet/15 text-violet px-[7px] py-[1px] text-[10.5px] font-semibold">🔁 {g.internaSug ? "provavelmente entre contas" : "entre contas próprias"}</span>
-                        : cat
-                          ? (FONTE_BADGE[g.fonte] && <span className={`ml-2 inline-flex items-center rounded-full px-[7px] py-[1px] text-[10.5px] font-semibold ${FONTE_BADGE[g.fonte]!.cls}`}>{FONTE_BADGE[g.fonte]!.label}</span>)
-                          : g.receita
-                            ? <span className="ml-2 inline-flex items-center rounded-full bg-green/10 text-green px-[7px] py-[1px] text-[10.5px] font-semibold">💰 receita{g.rotuloReceita !== "Receita" ? ` · ${g.rotuloReceita}` : ""}</span>
-                            : <span className="ml-2 inline-flex items-center rounded-full bg-amber/10 text-amber px-[7px] py-[1px] text-[10.5px] font-semibold">sem sugestão</span>}
-                    </div>
-                  </button>
-                  <div className="flex items-center gap-2 shrink-0 ml-auto" onMouseDown={(e) => e.stopPropagation()}>
+                  {/* linha 1 (mobile) / bloco esquerdo (desktop): checkbox + nome + resumo */}
+                  <div className="flex items-start md:items-center gap-3 min-w-0 md:flex-1">
+                    <input
+                      type="checkbox"
+                      checked={selecionado}
+                      onChange={() => setSel((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      aria-label={`Selecionar ${g.ex}`}
+                      className="accent-accent w-[15px] h-[15px] shrink-0 mt-[3px] md:mt-0"
+                    />
+                    <button
+                      className="min-w-0 flex-1 text-left bg-transparent border-0 p-0 cursor-pointer group"
+                      onClick={() => openModal(g.ex, g.rows)}
+                      title="Ver lançamentos do grupo"
+                    >
+                      <div className="text-[13.5px] font-medium truncate group-hover:text-accent transition-colors">{g.ex}</div>
+                      <div className="text-[11.5px] text-muted">
+                        <span className="whitespace-nowrap">{g.n} {g.n === 1 ? "lançamento" : "lançamentos"} · <span className="text-red tabular-nums">{BRL0(g.total)}</span></span>
+                        {interna
+                          ? <span className="ml-2 inline-flex items-center rounded-full bg-violet/15 text-violet px-[7px] py-[1px] text-[10.5px] font-semibold">🔁 {g.internaSug ? "provavelmente entre contas" : "entre contas próprias"}</span>
+                          : cat
+                            ? (FONTE_BADGE[g.fonte] && <span className={`ml-2 inline-flex items-center rounded-full px-[7px] py-[1px] text-[10.5px] font-semibold ${FONTE_BADGE[g.fonte]!.cls}`}>{FONTE_BADGE[g.fonte]!.label}</span>)
+                            : g.receita
+                              ? <span className="ml-2 inline-flex items-center rounded-full bg-green/10 text-green px-[7px] py-[1px] text-[10.5px] font-semibold">💰 receita{g.rotuloReceita !== "Receita" ? ` · ${g.rotuloReceita}` : ""}</span>
+                              : <span className="ml-2 inline-flex items-center rounded-full bg-amber/10 text-amber px-[7px] py-[1px] text-[10.5px] font-semibold">sem sugestão</span>}
+                      </div>
+                    </button>
+                  </div>
+                  {/* linha 2 (mobile) / bloco direito (desktop): categoria + ações */}
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 pl-[27px] md:pl-0 md:ml-auto" onMouseDown={(e) => e.stopPropagation()}>
                     <div className={interna ? "opacity-40" : ""}>
                       <CategoryPicker
                         key={pickerKey === g.key ? `open-${g.key}` : g.key}
@@ -557,6 +553,15 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
           </div>
         </div>
       )}
+
+      {/* como funciona — explicação completa fica no rodapé da página */}
+      <div className="text-muted text-[12.5px] mt-4 leading-relaxed">
+        Cada linha é um <b>estabelecimento</b> (descrições agrupadas), do maior gasto pro menor. Defina a <b>categoria</b> (use <b>Corporativo</b> para trabalho)
+        e clique <b>Aplicar</b> — vale pra todos os lançamentos do grupo, vira sugestão e dá pra <b>desfazer</b>.
+        <br />Agora aparecem também <b>receitas e transferências</b> ainda sem classificação. O botão <b>⇄</b> marca o grupo como <b className="text-violet">entre contas próprias</b> — é só uma escolha: <b>nada é gravado até você clicar em Aplicar</b>. Para <b className="text-green">receitas</b> (ex.: salário), use <b>✓ Receita</b> para confirmar sem precisar de categoria de despesa.
+        <br />Os que já sabemos serem <b className="text-violet">🔁 provavelmente entre contas</b> (histórico ou transferência) já vêm <b>pré-marcados</b> e entram, junto com os <b className="text-green">conhecidos</b> (🔗 vínculo e 🧠 histórico), no botão <b>Aplicar conhecidos</b>. Os <b className="text-accent">sugeridos</b> (⚙️ motor e 🏦 banco) vêm pré-preenchidos pra você confirmar.
+        <span className="hidden sm:inline"> Pelo teclado: <kbd className="kbd">↑</kbd><kbd className="kbd">↓</kbd> navega, <kbd className="kbd">Enter</kbd> escolhe categoria, <kbd className="kbd">espaço</kbd> seleciona, <kbd className="kbd">E</kbd> entre contas, <kbd className="kbd">A</kbd> aplica.</span>
+      </div>
     </div>
   );
 }
