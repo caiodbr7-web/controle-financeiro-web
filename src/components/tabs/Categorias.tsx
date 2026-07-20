@@ -78,10 +78,80 @@ const IconeLixeira = () => (
   </svg>
 );
 
+const IconeMover = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 7h11M4 12h7M4 17h4" />
+    <path d="m15 14 4 3-4 3" />
+    <path d="M19 17h-6" />
+  </svg>
+);
+
+/* ---------- popover "Mover…" (reestruturar a hierarquia) ----------
+   Nas categorias: transformar em subcategoria de outra categoria.
+   Nas subcategorias: promover a categoria ou mudar de categoria-mãe. */
+function MenuMover({ titulo, promover, cabecalhoDestinos, destinos, disabled }: {
+  titulo: string;
+  promover?: { rotulo: string; onPick: () => void };
+  cabecalhoDestinos: string;
+  destinos: { id: number; nome: string; cor: string; onPick: () => void }[];
+  disabled?: boolean;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!aberto) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [aberto]);
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        onClick={() => setAberto((o) => !o)}
+        disabled={disabled}
+        title={titulo}
+        className="tap shrink-0 w-[30px] h-[30px] rounded-[8px] flex items-center justify-center text-muted hover:text-accent hover:bg-accent/10 bg-transparent border-0 cursor-pointer transition-colors disabled:opacity-40"
+      >
+        <IconeMover />
+      </button>
+      {aberto && (
+        <div className="absolute z-[60] top-[34px] right-0 bg-card border border-line rounded-[12px] shadow-pop p-[6px] w-[230px] fade-in">
+          {promover && (
+            <>
+              <button
+                onClick={() => { setAberto(false); promover.onPick(); }}
+                className="w-full flex items-center gap-[8px] px-2 py-[7px] rounded-[8px] text-left text-[13px] font-medium border-0 cursor-pointer bg-transparent hover:bg-fill transition-colors"
+              >
+                ↥ {promover.rotulo}
+              </button>
+              <div className="h-px bg-line my-[4px]" />
+            </>
+          )}
+          <div className="text-[10.5px] text-muted uppercase tracking-[.05em] font-semibold px-2 py-[4px]">{cabecalhoDestinos}</div>
+          <div className="max-h-[220px] overflow-auto scroll-thin">
+            {destinos.length === 0 && <div className="text-muted text-[12.5px] px-2 py-2">Nenhuma categoria disponível</div>}
+            {destinos.map((d) => (
+              <button
+                key={d.id}
+                onClick={() => { setAberto(false); d.onPick(); }}
+                className="w-full flex items-center gap-[8px] px-2 py-[7px] rounded-[8px] text-left text-[13px] border-0 cursor-pointer bg-transparent hover:bg-fill transition-colors"
+              >
+                <span className="w-[9px] h-[9px] rounded-full shrink-0" style={{ background: d.cor }} />
+                <span className="truncate">{d.nome}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Categorias({ reload }: Props) {
   const {
     categorias, pronto, adicionar, renomear, mudarCor, excluir, reordenar,
     adicionarSub, renomearSub, excluirSub, reordenarSub,
+    converterEmSub, promoverSub, moverSubPara,
   } = useCategorias();
   const { toast } = useToast();
   const confirm = useConfirm();
@@ -261,6 +331,84 @@ export function Categorias({ reload }: Props) {
     await reordenarSub(c.id, ids);
   };
 
+  /* ------------------- movimentos entre níveis da hierarquia ------------------- */
+  const converterCatEmSub = async (c: Categoria, destino: Categoria) => {
+    const n = contagem[c.nome] || 0;
+    const ok = await confirm({
+      title: `Transformar “${c.nome}” em subcategoria de “${destino.nome}”?`,
+      confirmLabel: "Transformar",
+      message: (
+        <>
+          {n > 0 && (
+            <>
+              As <b>{n}</b> {n === 1 ? "transação vira" : "transações viram"}{" "}
+              <b>{destino.nome} › {c.nome}</b>.{" "}
+            </>
+          )}
+          {c.subs.length > 0 && (
+            <>
+              As {c.subs.length} subcategorias de “{c.nome}” passam a ser subcategorias
+              diretas de “{destino.nome}” (as de nome repetido são mescladas).{" "}
+            </>
+          )}
+          Regras e vínculos do Planejamento passam a apontar para “{destino.nome}”.
+        </>
+      ),
+    });
+    if (!ok) return;
+    setBusy(true);
+    const r = await converterEmSub(c.id, destino.id);
+    setBusy(false);
+    if (!r.ok) { toast({ message: r.erro || "Não foi possível mover.", variant: "error" }); return; }
+    toast({ message: `“${c.nome}” agora é subcategoria de “${destino.nome}”.`, variant: "success" });
+    setAbertas((m) => ({ ...m, [destino.id]: true }));
+    reload(); recarregarContagem();
+  };
+
+  const promoverSubCat = async (c: Categoria, s: Subcategoria) => {
+    const n = contagemSub[`${c.nome}//${s.nome}`] || 0;
+    const ok = await confirm({
+      title: `Promover “${s.nome}” a categoria?`,
+      confirmLabel: "Promover",
+      message: (
+        <>
+          “{s.nome}” deixa de ser subcategoria de “{c.nome}” e vira uma categoria própria
+          (herda a cor e o tipo).
+          {n > 0 && <> As <b>{n}</b> {n === 1 ? "transação passa" : "transações passam"} a ser da categoria <b>{s.nome}</b>.</>}
+        </>
+      ),
+    });
+    if (!ok) return;
+    setBusy(true);
+    const r = await promoverSub(s.id);
+    setBusy(false);
+    if (!r.ok) { toast({ message: r.erro || "Não foi possível promover.", variant: "error" }); return; }
+    toast({ message: `“${s.nome}” agora é uma categoria.`, variant: "success" });
+    reload(); recarregarContagem();
+  };
+
+  const moverSubOutra = async (c: Categoria, s: Subcategoria, destino: Categoria) => {
+    const n = contagemSub[`${c.nome}//${s.nome}`] || 0;
+    const ok = await confirm({
+      title: `Mover “${s.nome}” para “${destino.nome}”?`,
+      confirmLabel: "Mover",
+      message: (
+        <>
+          A subcategoria sai de “{c.nome}” e vai para “{destino.nome}”.
+          {n > 0 && <> As <b>{n}</b> {n === 1 ? "transação vira" : "transações viram"} <b>{destino.nome} › {s.nome}</b>.</>}
+        </>
+      ),
+    });
+    if (!ok) return;
+    setBusy(true);
+    const r = await moverSubPara(s.id, destino.id);
+    setBusy(false);
+    if (!r.ok) { toast({ message: r.erro || "Não foi possível mover.", variant: "error" }); return; }
+    toast({ message: `“${s.nome}” movida para “${destino.nome}”.`, variant: "success" });
+    setAbertas((m) => ({ ...m, [destino.id]: true }));
+    reload(); recarregarContagem();
+  };
+
   /* --------------------------- render de uma categoria --------------------------- */
   const renderCategoria = (c: Categoria, i: number, lista: Categoria[]) => {
     const n = contagem[c.nome] || 0;
@@ -328,14 +476,24 @@ export function Categorias({ reload }: Props) {
               Salvar
             </button>
           ) : (
-            <button
-              onClick={() => excluirCat(c)}
-              disabled={busy}
-              title="Apagar categoria"
-              className="tap shrink-0 w-[30px] h-[30px] rounded-[8px] flex items-center justify-center text-muted hover:text-red hover:bg-red/10 bg-transparent border-0 cursor-pointer transition-colors"
-            >
-              <IconeLixeira />
-            </button>
+            <>
+              <MenuMover
+                titulo="Transformar em subcategoria de…"
+                cabecalhoDestinos="Virar subcategoria de:"
+                disabled={busy}
+                destinos={lista
+                  .filter((d) => d.id !== c.id)
+                  .map((d) => ({ id: d.id, nome: d.nome, cor: d.cor, onPick: () => converterCatEmSub(c, d) }))}
+              />
+              <button
+                onClick={() => excluirCat(c)}
+                disabled={busy}
+                title="Apagar categoria"
+                className="tap shrink-0 w-[30px] h-[30px] rounded-[8px] flex items-center justify-center text-muted hover:text-red hover:bg-red/10 bg-transparent border-0 cursor-pointer transition-colors"
+              >
+                <IconeLixeira />
+              </button>
+            </>
           )}
         </div>
 
@@ -378,6 +536,15 @@ export function Categorias({ reload }: Props) {
                       {nSub} {nSub === 1 ? "transação" : "transações"}
                     </span>
                   )}
+                  <MenuMover
+                    titulo="Mover subcategoria…"
+                    cabecalhoDestinos="Mover para:"
+                    disabled={busy}
+                    promover={{ rotulo: "Promover a categoria", onPick: () => promoverSubCat(c, s) }}
+                    destinos={lista
+                      .filter((d) => d.id !== c.id)
+                      .map((d) => ({ id: d.id, nome: d.nome, cor: d.cor, onPick: () => moverSubOutra(c, s, d) }))}
+                  />
                   <button
                     onClick={() => excluirSubCat(c, s)}
                     disabled={busy}

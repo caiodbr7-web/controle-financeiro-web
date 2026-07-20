@@ -45,6 +45,10 @@ interface CategoriasCtx {
   renomearSub: (subId: number, nome: string) => Promise<ResultadoAdicionar>;
   excluirSub: (subId: number) => Promise<void>;
   reordenarSub: (categoriaId: number, subIds: number[]) => Promise<void>;
+  // movimentos entre níveis da hierarquia
+  converterEmSub: (catId: number, destinoId: number) => Promise<ResultadoAdicionar>;
+  promoverSub: (subId: number) => Promise<ResultadoAdicionar>;
+  moverSubPara: (subId: number, destinoId: number) => Promise<ResultadoAdicionar>;
 }
 
 // linha crua da tabela categorias (antes de anexar as subcategorias)
@@ -251,10 +255,100 @@ export function CategoriasProvider({ children }: { children: ReactNode }) {
     await Promise.all(nova.map((s) => sb.from("subcategorias").update({ ordem: s.ordem }).eq("id", s.id)));
   }, [categorias, aplicar]);
 
+  /* ---------------------- movimentos entre níveis ----------------------
+     Três operações reestruturam a hierarquia SEM perder classificação:
+       · converterEmSub: uma categoria vira subcategoria de outra — suas
+         transações viram "Destino › NomeAntigo" e as subs dela são
+         achatadas como irmãs no destino (mesclando homônimas);
+       · promoverSub: uma subcategoria vira categoria própria;
+       · moverSubPara: uma subcategoria muda de categoria-mãe.
+     Regras/planos que apontavam pela categoria antiga passam a apontar
+     para a nova mãe (mesmo padrão do renomear). */
+
+  const converterEmSub = useCallback(async (catId: number, destinoId: number): Promise<ResultadoAdicionar> => {
+    const cat = categorias.find((c) => c.id === catId);
+    const destino = categorias.find((c) => c.id === destinoId);
+    if (!cat || !destino) return { ok: false, erro: "Categoria não encontrada." };
+    if (cat.id === destino.id) return { ok: false, erro: "Escolha uma categoria diferente." };
+    if (destino.subs.some((s) => s.nome.toLowerCase() === cat.nome.toLowerCase()))
+      return { ok: false, erro: `“${destino.nome}” já tem uma subcategoria “${cat.nome}”.` };
+
+    // 1) a própria categoria vira sub no destino
+    let ordem = destino.subs.reduce((m, s) => Math.max(m, s.ordem), -1) + 1;
+    const { error } = await sb.from("subcategorias").insert({ categoria_id: destino.id, nome: cat.nome, ordem: ordem++ });
+    if (error) return { ok: false, erro: error.message };
+
+    // 2) as subs da categoria são achatadas como irmãs no destino (homônimas mesclam)
+    for (const s of cat.subs) {
+      const jaExiste = destino.subs.some((d) => d.nome.toLowerCase() === s.nome.toLowerCase());
+      if (jaExiste) await sb.from("subcategorias").delete().eq("id", s.id);
+      else await sb.from("subcategorias").update({ categoria_id: destino.id, ordem: ordem++ }).eq("id", s.id);
+    }
+
+    // 3) transações: sem sub → "Destino › NomeAntigo"; com sub → mantém a sub sob o destino
+    await sb.from("lancamentos")
+      .update({ categoria_manual: destino.nome, subcategoria_manual: cat.nome })
+      .eq("categoria_manual", cat.nome).is("subcategoria_manual", null);
+    await sb.from("lancamentos")
+      .update({ categoria_manual: destino.nome })
+      .eq("categoria_manual", cat.nome).not("subcategoria_manual", "is", null);
+
+    // 4) regras e planos passam a apontar para a nova mãe (best-effort)
+    await sb.from("regras").update({ categoria: destino.nome }).eq("categoria", cat.nome);
+    await sb.from("planos").update({ categoria: destino.nome }).eq("categoria", cat.nome);
+    await sb.from("planos").update({ link_categoria: destino.nome }).eq("link_categoria", cat.nome);
+
+    // 5) remove a categoria antiga
+    await sb.from("categorias").delete().eq("id", cat.id);
+    await recarregar();
+    return { ok: true };
+  }, [categorias, recarregar]);
+
+  const promoverSub = useCallback(async (subId: number): Promise<ResultadoAdicionar> => {
+    const mae = categorias.find((c) => c.subs.some((s) => s.id === subId));
+    const sub = mae?.subs.find((s) => s.id === subId);
+    if (!mae || !sub) return { ok: false, erro: "Subcategoria não encontrada." };
+    if (categorias.some((c) => c.nome.toLowerCase() === sub.nome.toLowerCase()))
+      return { ok: false, erro: "Já existe uma categoria com esse nome." };
+
+    // nova categoria herda cor e tipo da mãe, no fim da lista
+    const ordem = categorias.reduce((m, c) => Math.max(m, c.ordem), -1) + 1;
+    const { error } = await sb.from("categorias").insert({ nome: sub.nome, cor: mae.cor, tipo: mae.tipo, ordem });
+    if (error) return { ok: false, erro: error.message };
+
+    await sb.from("lancamentos")
+      .update({ categoria_manual: sub.nome, subcategoria_manual: null })
+      .eq("categoria_manual", mae.nome).eq("subcategoria_manual", sub.nome);
+    await sb.from("subcategorias").delete().eq("id", sub.id);
+    await recarregar();
+    return { ok: true };
+  }, [categorias, recarregar]);
+
+  const moverSubPara = useCallback(async (subId: number, destinoId: number): Promise<ResultadoAdicionar> => {
+    const mae = categorias.find((c) => c.subs.some((s) => s.id === subId));
+    const sub = mae?.subs.find((s) => s.id === subId);
+    const destino = categorias.find((c) => c.id === destinoId);
+    if (!mae || !sub || !destino) return { ok: false, erro: "Subcategoria não encontrada." };
+    if (destino.id === mae.id) return { ok: false, erro: "Escolha uma categoria diferente." };
+    if (destino.subs.some((s) => s.nome.toLowerCase() === sub.nome.toLowerCase()))
+      return { ok: false, erro: `“${destino.nome}” já tem uma subcategoria “${sub.nome}”.` };
+
+    const ordem = destino.subs.reduce((m, s) => Math.max(m, s.ordem), -1) + 1;
+    const { error } = await sb.from("subcategorias").update({ categoria_id: destino.id, ordem }).eq("id", sub.id);
+    if (error) return { ok: false, erro: error.message };
+
+    await sb.from("lancamentos")
+      .update({ categoria_manual: destino.nome })
+      .eq("categoria_manual", mae.nome).eq("subcategoria_manual", sub.nome);
+    await recarregar();
+    return { ok: true };
+  }, [categorias, recarregar]);
+
   const valor: CategoriasCtx = {
     categorias, carregando, pronto, recarregar,
     adicionar, renomear, mudarCor, excluir, reordenar, contarTransacoes,
     adicionarSub, renomearSub, excluirSub, reordenarSub,
+    converterEmSub, promoverSub, moverSubPara,
   };
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>;
 }

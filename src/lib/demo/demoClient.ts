@@ -64,6 +64,8 @@ class Query<T = unknown> implements PromiseLike<Result<T>> {
   in(col: string, vals: unknown[]): this { this.filtros.push(["in", col, vals]); return this; }
   // negação — só usamos `.not(col, "is", null)` (col IS NOT NULL); guardamos o valor negado
   not(col: string, _op: string, val: unknown): this { this.filtros.push(["not", col, val]); return this; }
+  // `.is(col, null)` (col IS NULL) — trata null e undefined como "sem valor"
+  is(col: string, val: unknown): this { this.filtros.push(["is", col, val]); return this; }
   order(col: string, opts?: { ascending?: boolean }): this { this.ordens.push([col, opts?.ascending !== false]); return this; }
   range(de: number, ate: number): this { this.faixa = [de, ate]; return this; }
   limit(n: number): this { this.lim = n; return this; }
@@ -87,6 +89,7 @@ class Query<T = unknown> implements PromiseLike<Result<T>> {
       this.filtros.every(([t, c, v]) => {
         if (t === "eq") return r[c] === v;
         if (t === "in") return Array.isArray(v) && v.includes(r[c]);
+        if (t === "is") return v === null ? r[c] == null : r[c] === v;
         // "not": negação do valor — usado como `.not(col, "is", null)` => col != null
         return v === null ? r[c] != null : r[c] !== v;
       }),
