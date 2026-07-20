@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, type ReactNode } from "react";
 import type { Lancamento } from "../types";
 import { Legenda } from "./ui";
-import { BRL0, dvLabel, dvParcialLimite } from "../lib/finance";
+import { kBRL, dvLabel, dvParcialLimite } from "../lib/finance";
 import {
   type MatrizMensal as Matriz, type SecaoInfo, type LinhaMatriz,
   lancamentosDaCelula,
@@ -237,7 +237,7 @@ function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, onDragStart, 
                 style={{ background: tintSequencial(v, sec.maxAbs, hue) }}
                 onClick={() => openModal(`${ln.label} · ${dvLabel(mk)}`, lancamentosDaCelula(dados, ln.secao, ln.catRaw, mk))}
               >
-                {v === 0 ? "—" : BRL0(v)}
+                {v === 0 ? "—" : kBRL(v)}
               </td>
             );
           })}
@@ -257,7 +257,7 @@ function BlocoSecao({ sec, linhas, meses, nCols, dados, openModal, onDragStart, 
               className={`num cursor-pointer ${v === 0 ? "text-muted" : ""}`}
               onClick={() => openModal(`${sec.totalLinha.label} · ${dvLabel(mk)}`, lancamentosDaCelula(dados, sec.secao, null, mk))}
             >
-              {v === 0 ? "—" : BRL0(v)}
+              {v === 0 ? "—" : kBRL(v)}
             </td>
           );
         })}
@@ -288,7 +288,7 @@ function LinhaSaldo({
             style={{ background: tintSequencial(v, maxAbs, HUE_SECAO.saldo) }}
             onClick={() => openModal(`${saldo.label} · ${dvLabel(mk)}`, lancamentosDaCelula(dados, "saldo", null, mk))}
           >
-            {v === 0 ? "—" : BRL0(v)}
+            {v === 0 ? "—" : kBRL(v)}
           </td>
         );
       })}
@@ -302,7 +302,7 @@ function LinhaSaldo({
 function CelulaDelta({ delta, maxDeltaAbs, bomQuandoSobe }: { delta: number; maxDeltaAbs: number; bomQuandoSobe: boolean }) {
   return (
     <td className="num text-muted" style={{ background: tintDivergente(delta, maxDeltaAbs, { bomQuandoSobe }) }}>
-      {delta === 0 ? "—" : (delta > 0 ? "+" : "") + BRL0(delta)}
+      {delta === 0 ? "—" : (delta > 0 ? "+" : "") + kBRL(delta)}
     </td>
   );
 }

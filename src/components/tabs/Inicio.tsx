@@ -5,7 +5,7 @@ import { Panel, BarRow, Select, Seg, Legenda } from "../ui";
 import { useChart, ChartTip, useIsMobile } from "../../lib/theme";
 import { sb } from "../../lib/supabase";
 import {
-  BRL0, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dataCompleta,
+  BRL0, kBRL, catKey, corCategoria, ehGasto, ehReceita, dvGasto, dvDataReal, dataCompleta,
   dvDiasNoMes, dvLabel, mesComp, diaDoMov, ehParcelaAnterior,
   normEstab, valorAporte, valorReceitaInvest, precisaClassificar,
 } from "../../lib/finance";
@@ -394,7 +394,7 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
           <div className="divide-y divide-line">
             <BigVal
               label={`Gasto atual · ${dvLabel(calc.selKey)}`}
-              value={BRL0(calc.gastoAtual)}
+              value={kBRL(calc.gastoAtual)}
               sub={calc.isAtual ? `até hoje · dia ${calc.refDay}/${calc.nd}` : "fatura + extrato do mês"}
               extra={calc.empilhado ? (
                 <div className="flex flex-wrap items-center gap-x-[7px] gap-y-[2px] text-[11.5px] text-muted mt-[5px] tabular-nums">
@@ -423,18 +423,18 @@ export function Inicio({ dados, allDados, months, openModal, go }: Props) {
             />
             <BigVal
               label="Esperado para este momento"
-              value={calc.benchAtRef != null ? BRL0(calc.benchAtRef) : "—"}
+              value={calc.benchAtRef != null ? kBRL(calc.benchAtRef) : "—"}
               sub={calc.temBench ? `média ${janela}m no mesmo ponto · fim ~${BRL0(calc.benchFim)}` : "sem meses completos p/ comparar"}
               dot={cc.media}
             />
             <BigVal
               label="Ainda previsto no mês"
-              value={aindaPrev != null ? BRL0(aindaPrev) : "—"}
+              value={aindaPrev != null ? kBRL(aindaPrev) : "—"}
               sub={aindaSub}
             />
             <BigVal
               label="Budget total do mês"
-              value={budget != null ? BRL0(budget) : "—"}
+              value={budget != null ? kBRL(budget) : "—"}
               sub={budget != null ? "planejamento do mês" : "definir no Planejamento"}
               onClick={() => go("planejamento")}
             />

@@ -3,7 +3,7 @@ import type { Lancamento, PatchLocal, Mutate, Enqueue } from "../../types";
 import { Kpi, Legenda } from "../ui";
 import { CategoryPicker } from "../CategoryPicker";
 import { sb } from "../../lib/supabase";
-import { BRL0, ehGasto, ehReceita, ehTransfer, normEstab, precisaClassificar } from "../../lib/finance";
+import { BRL0, kBRL, ehGasto, ehReceita, ehTransfer, normEstab, precisaClassificar } from "../../lib/finance";
 import { ehInterna, ehReceitaInvest } from "../../lib/lancClasses";
 import { sugerirGrupo, type FonteSugestao, type Regra, type VinculoPlano, type FolhaHist } from "../../lib/classificador";
 import { useToast } from "../Toast";
@@ -414,7 +414,7 @@ export function Classificar({ dados, allDados, openModal, mutate }: Props) {
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px] mb-[18px]">
-        <Kpi title="A classificar" value={BRL0(totalPendente)} sub={`${grupos.length} estab. · ${linhasPendentes} lançamentos`} color="text-amber" />
+        <Kpi title="A classificar" value={kBRL(totalPendente)} sub={`${grupos.length} estab. · ${linhasPendentes} lançamentos`} color="text-amber" />
         <Kpi title="Conhecidos" value={conhecidos.length} sub={conhecidosInterna.length ? `${conhecidosInterna.length} entre contas · 1 clique` : "vínculo/histórico · 1 clique"} color="text-green" />
         <Kpi title="Sugeridos" value={sugeridos} sub="motor/banco · confira" color={sugeridos ? "text-accent" : "text-muted"} />
         <div className="bg-card border border-line rounded-[18px] p-4 shadow-card flex flex-col justify-center gap-2 min-w-0">

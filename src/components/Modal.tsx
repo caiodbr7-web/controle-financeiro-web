@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Lancamento, Mutate } from "../types";
-import { BRL, catKey, corCategoria, dataCompleta } from "../lib/finance";
+import { BRL, kBRL, catKey, corCategoria, dataCompleta } from "../lib/finance";
 import { ehInterna, ehReceita, ehReceitaInvest, CLASSES } from "../lib/lancClasses";
 import { CategoryPicker } from "./CategoryPicker";
+import { TransacaoDetalhe } from "./TransacaoDetalhe";
 import { Select } from "./ui";
 import { sb } from "../lib/supabase";
 import { useToast } from "./Toast";
@@ -23,6 +24,9 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
   const { toast } = useToast();
   const [salvos, setSalvos] = useState<Record<number, string>>({});
   const [rev, setRev] = useState(0); // força recomputar a agregação após editar
+  const [detalhe, setDetalhe] = useState<Lancamento | null>(null); // transação aberta no pop-up de detalhe
+  const [filtroCat, setFiltroCat] = useState<string | null>(null); // linha clicada em "Por categoria" filtra a lista
+  useEffect(() => { setDetalhe(null); setFiltroCat(null); }, [data]); // reabertura com outros dados zera o estado
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -96,7 +100,9 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
   data.rows.forEach((d) => { const k = catKey(d); grupos[k] = (grupos[k] || 0) + Math.abs(d.valor); });
   const cats = Object.keys(grupos).sort((a, b) => grupos[b] - grupos[a]);
   const tot = cats.reduce((s, k) => s + grupos[k], 0);
-  const ord = [...data.rows].sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
+  // clicar numa linha de "Por categoria" filtra a lista de transações abaixo
+  const visiveis = filtroCat ? data.rows.filter((d) => catKey(d) === filtroCat) : data.rows;
+  const ord = [...visiveis].sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
 
   // seletor de classe (compartilhado mobile/desktop)
   const classeSelect = (d: Lancamento): ReactNode => (
@@ -152,34 +158,51 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
             </tr></thead>
             <tbody>
               {cats.map((k) => (
-                <tr key={k}>
+                <tr
+                  key={k}
+                  onClick={() => setFiltroCat((f) => (f === k ? null : k))}
+                  title={filtroCat === k ? "Mostrar todas as transações" : `Ver só as transações de ${k}`}
+                  className={`cursor-pointer transition-colors ${filtroCat === k ? "bg-accent/10" : "hover:bg-fill/60"}`}
+                >
                   <td>
                     <span className="inline-flex items-center gap-[7px]">
                       <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: corCategoria(k) }} />
                       {k}
+                      {filtroCat === k && <span className="text-accent text-[11px]">· filtrando</span>}
                     </span>
                   </td>
-                  <td className="num">{BRL(grupos[k])}</td>
+                  <td className="num">{kBRL(grupos[k])}</td>
                   <td className="num">{tot ? ((grupos[k] / tot) * 100).toFixed(1) : 0}%</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <h4 className="text-[11px] text-muted uppercase tracking-[.05em] mt-[18px] mb-2 font-semibold">Transações ({data.rows.length})</h4>
+          <h4 className="text-[11px] text-muted uppercase tracking-[.05em] mt-[18px] mb-2 font-semibold">
+            Transações ({ord.length}{filtroCat ? ` de ${data.rows.length}` : ""})
+            {filtroCat && (
+              <button onClick={() => setFiltroCat(null)} className="ml-2 text-accent normal-case tracking-normal font-medium bg-transparent border-0 p-0 cursor-pointer hover:underline text-[11.5px]">
+                limpar filtro ✕
+              </button>
+            )}
+          </h4>
           {/* mobile: cartões (sem rolagem horizontal) */}
           <div className="md:hidden max-h-[440px] overflow-auto scroll-thin divide-y divide-line -mx-2">
             {ord.map((d) => (
               <div key={d.id} className="px-2 py-[12px]">
-                <div className="flex items-start justify-between gap-3">
+                <button
+                  onClick={() => setDetalhe(d)}
+                  title="Ver detalhes da transação"
+                  className="w-full flex items-start justify-between gap-3 bg-transparent border-0 p-0 text-left cursor-pointer group"
+                >
                   <div className="min-w-0">
-                    <div className="text-[13px] font-medium truncate" title={d.descricao}>{d.descricao}</div>
+                    <div className="text-[13px] font-medium truncate group-hover:text-accent transition-colors" title={d.descricao}>{d.descricao}</div>
                     <div className="text-muted text-[11.5px] truncate">
                       {dataCompleta(d)} · {d.origem}
                       {d.subtipo && <span className="ml-1">· {d.subtipo}</span>}
                     </div>
                   </div>
                   <div className={`tabular-nums text-[13px] font-medium shrink-0 ${d.valor < 0 ? "text-red" : ehReceita(d.classe) || ehReceitaInvest(d.classe) ? "text-green" : ""}`}>{BRL(d.valor)}</div>
-                </div>
+                </button>
                 {/* controles: classe · categoria · entre contas */}
                 <div className="mt-[9px] flex flex-wrap items-center gap-x-2 gap-y-[8px]">
                   {classeSelect(d)}
@@ -209,7 +232,15 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
                 {ord.map((d) => (
                   <tr key={d.id}>
                     <td className="whitespace-nowrap">{dataCompleta(d)}</td>
-                    <td className="max-w-[220px] truncate" title={d.descricao}>{d.descricao}</td>
+                    <td className="max-w-[220px]">
+                      <button
+                        onClick={() => setDetalhe(d)}
+                        title="Ver detalhes da transação"
+                        className="max-w-full truncate block bg-transparent border-0 p-0 text-left cursor-pointer text-[inherit] hover:text-accent transition-colors"
+                      >
+                        {d.descricao}
+                      </button>
+                    </td>
                     <td>{d.origem}</td>
                     <td>
                       <div className="flex items-center gap-[6px]">
@@ -237,6 +268,14 @@ export function Modal({ data, onClose, mutate }: { data: ModalData | null; onClo
           </div>
         </div>
       </div>
+
+      {/* detalhe unificado de UMA transação — abre por cima deste modal */}
+      <TransacaoDetalhe
+        transacao={detalhe}
+        onClose={() => setDetalhe(null)}
+        onCategoria={(d, c, s) => salvarCat(d, c, s)}
+        salvando={detalhe ? salvos[detalhe.id] : undefined}
+      />
     </div>
   );
 }
