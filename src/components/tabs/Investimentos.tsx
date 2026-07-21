@@ -15,7 +15,7 @@ import {
   getIbkrCredencial, saveIbkrCredencial, deleteIbkrCredencial, importIbkr,
 } from "../../lib/pluggy";
 import type { ManualInvestmentInput, SaldoConta, IbkrCredencial } from "../../lib/pluggy";
-import { BRL, BRL0, kBRL, brlShort, fmtMoeda } from "../../lib/finance";
+import { BRL, BRL0, kBRL, brlShort, fmtMoeda, dvLabel } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
 
 /* ============================================================================
@@ -829,6 +829,40 @@ export function Investimentos() {
     return { data: [] as Record<string, number | string>[], cats: baseCats, sintetico: false };
   }, [histTipoEff, serie, porTipo, corPorTipo, kpis.atual]);
 
+  // Evolução MENSAL por categoria (tabela sob o gráfico): fecha cada mês no seu
+  // ÚLTIMO retrato diário da mesma série do stackado (mês em andamento = retrato
+  // mais recente, marcado com *). Δ/%Δ comparam o último mês com o anterior.
+  const mensalCat = useMemo(() => {
+    if (!stack.data.length || !stack.cats.length) return null;
+    const fimDoMes = new Map<string, Record<string, number | string>>();
+    for (const row of stack.data) {
+      const mk = String(row.dia).slice(0, 7);
+      const cur = fimDoMes.get(mk);
+      if (!cur || String(row.dia) > String(cur.dia)) fimDoMes.set(mk, row);
+    }
+    const meses = [...fimDoMes.keys()].sort();
+    const n = meses.length;
+    const varDe = (vals: number[]) => {
+      const delta = n >= 2 ? vals[n - 1] - vals[n - 2] : null;
+      const pct = delta != null && vals[n - 2] !== 0 ? (delta / Math.abs(vals[n - 2])) * 100 : null;
+      return { delta, pct };
+    };
+    const linhas = stack.cats.map((c) => {
+      const valores = meses.map((mk) => Number(fimDoMes.get(mk)?.[c.tipo] ?? 0));
+      return { ...c, valores, ...varDe(valores) };
+    });
+    const totais = meses.map((_, i) => linhas.reduce((s, l) => s + l.valores[i], 0));
+    return { meses, linhas, totais, total: varDe(totais) };
+  }, [stack]);
+  const mesAtualK = new Date().toISOString().slice(0, 7); // UTC, como os retratos
+
+  // célula de variação (Δ em R$ ou %Δ): verde subiu, vermelho caiu
+  const tdVar = (v: number | null, fmt: (x: number) => string) => (
+    <td className={`num ${v == null || v === 0 ? "text-muted" : v > 0 ? "text-green" : "text-red"}`}>
+      {v == null ? "—" : (v > 0 ? "+" : "") + fmt(v)}
+    </td>
+  );
+
   function baixarCsv(cols: ColDef[]) {
     const blob = new Blob(["﻿" + toCsv(filtrados, cols)], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -1107,6 +1141,55 @@ export function Investimentos() {
           )}
         </Panel>
       </div>
+
+      {mensalCat && (
+        <Panel
+          title="Evolução mensal por categoria"
+          sub={stack.sintetico ? "(estimativa pela composição atual · valor no fim de cada mês)" : "(valor no fim de cada mês)"}
+        >
+          <div className="overflow-x-auto scroll-thin mt-2">
+            <table className="tbl min-w-[560px]">
+              <thead><tr>
+                <th>Categoria</th>
+                {mensalCat.meses.map((mk) => (
+                  <th key={mk} className="num whitespace-nowrap">{dvLabel(mk)}{mk >= mesAtualK ? "*" : ""}</th>
+                ))}
+                <th className="num" title="variação do último mês vs. o anterior">Δ</th>
+                <th className="num" title="variação % do último mês vs. o anterior">%Δ</th>
+              </tr></thead>
+              <tbody>
+                {mensalCat.linhas.map((l) => (
+                  <tr key={l.tipo}>
+                    <td>
+                      <span className="inline-flex items-center gap-[7px]">
+                        <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: l.cor }} />
+                        {l.label}
+                      </span>
+                    </td>
+                    {l.valores.map((v, i) => (
+                      <td key={mensalCat.meses[i]} className={`num ${v === 0 ? "text-muted" : ""}`}>{v === 0 ? "—" : BRL0(v)}</td>
+                    ))}
+                    {tdVar(l.delta, kBRL)}
+                    {tdVar(l.pct, (x) => x.toFixed(1) + "%")}
+                  </tr>
+                ))}
+                <tr className="font-semibold border-t-2 border-line">
+                  <td>Total</td>
+                  {mensalCat.totais.map((v, i) => (
+                    <td key={mensalCat.meses[i]} className="num">{BRL0(v)}</td>
+                  ))}
+                  {tdVar(mensalCat.total.delta, kBRL)}
+                  {tdVar(mensalCat.total.pct, (x) => x.toFixed(1) + "%")}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="text-muted text-[12px] mt-2">
+            Cada mês mostra o <b>último retrato registrado</b> naquele mês; o mês em andamento (com&nbsp;*) usa o retrato mais
+            recente e ainda muda até fechar. O histórico é gravado a cada sincronização — meses novos entram automaticamente.
+          </div>
+        </Panel>
+      )}
 
       <div className="flex flex-wrap gap-2 items-center mb-4">
         <input className="input min-w-[220px] flex-1" placeholder="Buscar (nome, emissor, instituição)…" value={busca} onChange={(e) => setBusca(e.target.value)} />
