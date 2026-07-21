@@ -206,6 +206,12 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
     return { data, patamar, ultVal, ultLabel: ult >= 0 ? dvLabel(keys[ult]) : "—", baseAnt };
   }, [dados, allDados, months, modo, mesesSel]);
 
+  // pop-up com os lançamentos do gasto de um mês (barras do gráfico e tabela)
+  const abreGastoMes = (k: string) => {
+    const rows = dados.filter((x) => dvGasto(x) !== 0 && mvOrigemOk(x.origem, modo) && mesComp(x) === k);
+    openModal("Gasto " + meta.rotulo + " · " + dvLabel(k), rows);
+  };
+
   if (!hero) return <div className="text-muted p-4">Sem dados ainda — importe os primeiros PDFs para começar.</div>;
 
   // lançamentos que compõem cada balde do mês-herói, ACUMULADOS até o dia de
@@ -338,7 +344,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
 
       <Panel
         title="Evolução mensal do gasto"
-        sub="(só meses completos · média móvel de 3 meses)"
+        sub="(só meses completos · média móvel de 3 meses · clique p/ detalhar)"
         right={
           <div className="flex items-center gap-2 flex-wrap">
             <Seg size="sm" value={mesesSel} onChange={setMesesSel} options={MESES_OPTS} />
@@ -361,11 +367,7 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
               <Legend wrapperStyle={{ fontSize: 11.5 }} iconType="circle" iconSize={7} />
               <Bar dataKey="gasto" name={"Gasto · " + meta.rotulo} fill={meta.cor} radius={[5, 5, 0, 0]}
                 cursor="pointer"
-                onClick={(d: any) => {
-                  const k = d?.payload?._k ?? d?._k; if (!k) return;
-                  const rows = dados.filter((x) => { if (!dvGasto(x)) return false; if (!mvOrigemOk(x.origem, modo)) return false; return mesComp(x) === k; });
-                  openModal("Gasto " + meta.rotulo + " · " + dvLabel(k), rows);
-                }} />
+                onClick={(d: any) => { const k = d?.payload?._k ?? d?._k; if (k) abreGastoMes(k); }} />
               <Line type="monotone" dataKey="media" name="Média 3 meses" stroke={cc.saldo} strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
             </ComposedChart>
           </ResponsiveContainer>
@@ -383,7 +385,12 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
                 const a = r.media as number | null;
                 const d = a != null ? r.gasto - a : null;
                 return (
-                  <tr key={r.mes}>
+                  <tr
+                    key={r.mes}
+                    className="cursor-pointer hover:bg-fill/60 transition-colors"
+                    title={`Ver os lançamentos de ${r.mes}`}
+                    onClick={() => abreGastoMes(r._k)}
+                  >
                     <td>{r.mes}</td>
                     <td className="num text-red">{BRL0(r.gasto)}</td>
                     <td className="num">{a != null ? BRL0(a) : "—"}</td>
