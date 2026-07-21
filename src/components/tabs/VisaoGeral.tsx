@@ -16,6 +16,9 @@ const PERIODOS = [
   { v: "6", label: "6m" }, { v: "12", label: "12m" }, { v: "24", label: "24m" }, { v: "all", label: "Tudo" },
 ];
 
+// célula de valor clicável (abre o pop-up de detalhamento do mês)
+const CLICK = "cursor-pointer hover:bg-fill/60 transition-colors";
+
 /* Toda esta aba agrupa pela COMPETÊNCIA (fatura/extrato do mês), eixo único do contrato.
    Gasto/receita já excluem transferência interna e aporte (ver lancClasses). */
 export function VisaoGeral({ dados, allDados, openModal }: Props) {
@@ -198,7 +201,7 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
         </Panel>
       </div>
 
-      <Panel title="Resumo por mês">
+      <Panel title="Resumo por mês" sub="(clique nos valores p/ detalhar)">
         <div className="overflow-x-auto scroll-thin mt-2">
           <table className="tbl">
             <thead><tr>
@@ -214,12 +217,18 @@ export function VisaoGeral({ dados, allDados, openModal }: Props) {
               {aggs.map((a) => (
                 <tr key={a.m}>
                   <td>{rotulo(a.m)}</td>
-                  <td className="num text-green">{BRL0(a.rec)}</td>
-                  <td className="num text-red">{BRL0(a.gas)}</td>
-                  <td className={`num ${a.saldo >= 0 ? "text-green" : "text-red"}`}>{BRL0(a.saldo)}</td>
-                  <td className="num text-violet">{a.inv ? BRL0(a.inv) : "—"}</td>
-                  <td className="num text-green">{a.recInv ? BRL0(a.recInv) : "—"}</td>
-                  <td className="num">{BRL0(a.tr)}</td>
+                  <td className={`num text-green ${CLICK}`} title={`Ver as receitas de ${dvLabel(a.m)}`}
+                    onClick={() => openModal(`Receitas · ${dvLabel(a.m)}`, rowsDoMes(a.m, ehReceita))}>{BRL0(a.rec)}</td>
+                  <td className={`num text-red ${CLICK}`} title={`Ver as despesas de ${dvLabel(a.m)}`}
+                    onClick={() => openModal(`Despesas · ${dvLabel(a.m)}`, rowsDoMes(a.m, ehGasto))}>{BRL0(a.gas)}</td>
+                  <td className={`num ${a.saldo >= 0 ? "text-green" : "text-red"} ${CLICK}`} title={`Ver as receitas e despesas de ${dvLabel(a.m)}`}
+                    onClick={() => openModal(`Receitas e despesas · ${dvLabel(a.m)}`, rowsDoMes(a.m, (c) => ehReceita(c) || ehGasto(c)))}>{BRL0(a.saldo)}</td>
+                  <td className={`num text-violet ${a.inv ? CLICK : ""}`} title={a.inv ? `Ver os aportes de ${dvLabel(a.m)}` : undefined}
+                    onClick={a.inv ? () => openModal(`Aportes · ${dvLabel(a.m)}`, rows.filter((r) => r.mk === a.m && valorAporte(r.d) > 0).map((r) => r.d)) : undefined}>{a.inv ? BRL0(a.inv) : "—"}</td>
+                  <td className={`num text-green ${a.recInv ? CLICK : ""}`} title={a.recInv ? `Ver a renda de investimentos de ${dvLabel(a.m)}` : undefined}
+                    onClick={a.recInv ? () => openModal(`Renda de investimentos · ${dvLabel(a.m)}`, rows.filter((r) => r.mk === a.m && valorReceitaInvest(r.d) > 0).map((r) => r.d)) : undefined}>{a.recInv ? BRL0(a.recInv) : "—"}</td>
+                  <td className={`num ${CLICK}`} title={`Ver as transferências e pagamentos de ${dvLabel(a.m)}`}
+                    onClick={() => openModal(`Transferências e pagamentos · ${dvLabel(a.m)}`, rowsDoMes(a.m, ehTransfer))}>{BRL0(a.tr)}</td>
                 </tr>
               ))}
             </tbody>
