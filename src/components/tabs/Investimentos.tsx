@@ -17,6 +17,7 @@ import {
 import type { ManualInvestmentInput, SaldoConta, IbkrCredencial } from "../../lib/pluggy";
 import { BRL, BRL0, kBRL, brlShort, fmtMoeda, dvLabel } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
+import { ImportB3 } from "../ImportB3";
 
 /* ============================================================================
    Aba "Investimentos" — patrimônio investido via Open Finance (Pluggy).
@@ -506,6 +507,7 @@ export function Investimentos() {
   const [modal, setModal] = useState<{ mode: "add" | "edit"; inv?: Investimento } | null>(null);
   const [ibkr, setIbkr] = useState<IbkrCredencial | null>(null); // conexão IBKR (null = não conectado)
   const [ibkrModal, setIbkrModal] = useState(false);
+  const [b3Modal, setB3Modal] = useState(false); // importar histórico da B3
 
   const [busca, setBusca] = useState("");
   const [fTipo, setFTipo] = useState("");
@@ -993,6 +995,16 @@ export function Investimentos() {
     </button>
   );
 
+  const btnB3 = (
+    <button
+      onClick={() => setB3Modal(true)}
+      className="bg-fill text-txt border border-line rounded-[10px] px-3 py-[8px] text-[13px] font-medium cursor-pointer hover:border-muted transition-colors"
+      title="Importar o histórico de longo prazo a partir dos relatórios consolidados da Área do Investidor da B3"
+    >
+      Importar histórico B3
+    </button>
+  );
+
   const btnSync = (
     <button
       onClick={sincronizar}
@@ -1026,9 +1038,10 @@ export function Investimentos() {
         </p>
         {erro && <div className="text-[13px] text-red bg-fill rounded-[10px] px-3 py-2 mt-4 max-w-[560px] mx-auto">Erro: {erro}</div>}
         {msg && <div className="text-[13px] text-txt bg-fill rounded-[10px] px-3 py-2 mt-3 max-w-[560px] mx-auto">{msg}</div>}
-        <div className="mt-4 flex gap-2 justify-center flex-wrap">{btnAddManual}{btnIbkr}{btnSync}</div>
+        <div className="mt-4 flex gap-2 justify-center flex-wrap">{btnAddManual}{btnIbkr}{btnB3}{btnSync}</div>
         {modal && <ManualForm mode={modal.mode} inicial={modal.inv} onClose={() => setModal(null)} onSaved={carregar} />}
         {ibkrModal && <IbkrForm inicial={ibkr} onClose={() => setIbkrModal(false)} onReload={carregar} />}
+        {b3Modal && <ImportB3 onClose={() => setB3Modal(false)} onDone={carregar} />}
       </div>
     );
   }
@@ -1220,6 +1233,7 @@ export function Investimentos() {
         {fx != null && temTickers && <span className="text-muted text-[12px] tabular-nums">USD R$ {fx.toFixed(2)}</span>}
         {btnAddManual}
         {btnIbkr}
+        {btnB3}
         {btnSync}
       </div>
 
@@ -1275,6 +1289,7 @@ export function Investimentos() {
 
       {modal && <ManualForm mode={modal.mode} inicial={modal.inv} onClose={() => setModal(null)} onSaved={carregar} />}
       {ibkrModal && <IbkrForm inicial={ibkr} onClose={() => setIbkrModal(false)} onReload={carregar} />}
+      {b3Modal && <ImportB3 onClose={() => setB3Modal(false)} onDone={carregar} />}
     </div>
   );
 }
