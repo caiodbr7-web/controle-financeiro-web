@@ -61,6 +61,53 @@ async function getItem(apiKey: string, itemId: string) {
   return await r.json();
 }
 
+// ----------------------------------------------------------------------------
+//  Refresh do item — mesmo mecanismo da sync MANUAL (pluggy-sync com
+//  refresh:true). Sem o PATCH, a leitura devolve só o último retrato que a
+//  Pluggy já tinha em cache: o robô rodava 2x/dia mas reimportava sempre os
+//  mesmos dados, e as transações novas nunca chegavam sozinhas.
+// ----------------------------------------------------------------------------
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// estados em que a Pluggy ainda está trabalhando (devemos esperar)
+const EM_ANDAMENTO = new Set(["UPDATING", "LOGIN_IN_PROGRESS", "CREATING", "CREATED"]);
+// estados que exigem ação do usuário (MFA / credencial / consentimento) -> não adianta esperar
+const PRECISA_USUARIO = new Set(["WAITING_USER_INPUT", "LOGIN_ERROR", "OUTDATED"]);
+const REFRESH_TIMEOUT_MS = 75_000; // teto de espera pela atualização da Pluggy
+const REFRESH_POLL_MS = 3_000;     // intervalo entre verificações
+
+// Força a Pluggy a reconsultar o banco e espera o item ficar pronto. Devolve o
+// item atualizado (ou o melhor que conseguiu, em caso de timeout/MFA) — nunca
+// derruba o sync: no pior caso seguimos lendo o cache, como antes.
+async function forcarAtualizacao(apiKey: string, itemId: string) {
+  const item = await getItem(apiKey, itemId);
+  if (PRECISA_USUARIO.has(item?.status ?? "")) return item; // reconexão manual: disparar não resolve
+  const lastBefore: string | null = item?.lastUpdatedAt ?? null;
+
+  const r = await fetch(`${PLUGGY_API}/items/${encodeURIComponent(itemId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", "X-API-KEY": apiKey },
+    body: "{}",
+  });
+  if (!r.ok) {
+    console.error(`pluggy-cron: PATCH /items falhou (${itemId}): ${r.status} ${await r.text()}`);
+    return item; // não deu pra disparar: lê o cache atual
+  }
+  let atual = await r.json();
+
+  const deadline = Date.now() + REFRESH_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const st: string = atual?.status ?? "";
+    if (PRECISA_USUARIO.has(st)) return atual; // MFA/credencial: para por aqui
+    // pronto: saiu do "em andamento" E o lastUpdatedAt mudou (dados novos)
+    if (!EM_ANDAMENTO.has(st) && atual?.lastUpdatedAt && atual.lastUpdatedAt !== lastBefore) {
+      return atual;
+    }
+    await sleep(REFRESH_POLL_MS);
+    try { atual = await getItem(apiKey, itemId); } catch { break; }
+  }
+  return atual; // timeout: segue com o que tem
+}
+
 async function getAccounts(apiKey: string, itemId: string): Promise<any[]> {
   const r = await fetch(`${PLUGGY_API}/accounts?itemId=${encodeURIComponent(itemId)}`, { headers: { "X-API-KEY": apiKey } });
   if (!r.ok) throw new Error(`Pluggy /accounts falhou: ${r.status} ${await r.text()}`);
@@ -225,7 +272,9 @@ function resolverBancoDaConta(connectorName: string | null, account: any): strin
 //  da própria tabela pluggy_items).
 // ----------------------------------------------------------------------------
 async function syncTransacoes(admin: any, apiKey: string, userId: string, itemId: string, syncFrom: string | null) {
-  const item = await getItem(apiKey, itemId);
+  // força a Pluggy a buscar dados FRESCOS no banco antes de ler (igual à sync
+  // manual com refresh:true) — ver forcarAtualizacao acima.
+  const item = await forcarAtualizacao(apiKey, itemId);
   const accounts = await getAccounts(apiKey, itemId);
   // banco resolvido POR CONTA (ver resolverBancoDaConta)
   const connRaw: string | null = item?.connector?.name ?? null;
@@ -272,7 +321,9 @@ async function syncTransacoes(admin: any, apiKey: string, userId: string, itemId
       status: item?.status ?? null,
       sync_from: from,
       last_synced_at: new Date().toISOString(),
-      last_result: { contas: accounts.length, por_conta: porConta, transacoes: txRaw.length, from },
+      // status pós-refresh no resumo, como na sync manual: deixa visível na UI
+      // quando a conexão precisa de reconexão (WAITING_USER_INPUT / LOGIN_ERROR / OUTDATED)
+      last_result: { contas: accounts.length, por_conta: porConta, transacoes: txRaw.length, from, status: item?.status ?? null },
     },
     { onConflict: "item_id" },
   );
