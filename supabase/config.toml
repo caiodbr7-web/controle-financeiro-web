@@ -9,3 +9,11 @@ project_id = "controle-financeiro-web"
 [db]
 # Versão do Postgres do projeto no Supabase.
 major_version = 15
+
+# Funções chamadas pelo pg_cron: quem autoriza é o header x-cron-secret, não um
+# JWT — o deploy (functions.yml) precisa publicá-las sem verificação de JWT.
+[functions.pluggy-cron]
+verify_jwt = false
+
+[functions.email-lembrete]
+verify_jwt = false
