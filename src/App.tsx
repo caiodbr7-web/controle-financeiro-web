@@ -139,6 +139,17 @@ export default function App() {
     setAba(id);
   }, []);
 
+  // deep-link por hash (#classificar, #geral…): links externos — como o botão
+  // do e-mail de lembrete semanal — abrem o app direto na aba certa.
+  useEffect(() => {
+    const ABAS_HASH = new Set<Aba>([
+      "inicio", "geral", "mensal", "diario", "investimentos", "planejamento",
+      "adicionar", "classificar", "lanc", "openbanking", "categorias",
+    ]);
+    const h = window.location.hash.replace(/^#\/?/, "") as Aba;
+    if (ABAS_HASH.has(h)) navTo(h);
+  }, [navTo]);
+
   // atalho global: Cmd/Ctrl+K abre a paleta de comandos
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
