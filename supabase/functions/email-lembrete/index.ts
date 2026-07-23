@@ -15,13 +15,16 @@
 //    - userId: só esse usuário;  - to: força o destinatário (teste);
 //    - dryRun: calcula tudo e responde SEM enviar e-mail.
 //
-//  Envio: Resend (https://resend.com). Secrets necessários
-//  (Supabase -> Project Settings -> Edge Functions -> Secrets):
+//  Envio: Brevo (preferido — "remetente único" verificado, SEM precisar de
+//  domínio) ou Resend (exige domínio verificado p/ enviar a terceiros). O
+//  provedor é escolhido pelo secret configurado: BREVO_API_KEY vence.
+//  Secrets (Supabase -> Project Settings -> Edge Functions -> Secrets):
 //    CRON_SECRET       o MESMO do pluggy-cron (autoriza a chamada)
-//    RESEND_API_KEY    chave da API do Resend
-//    EMAIL_FROM        remetente verificado (ex.: "Controle Financeiro <lembrete@seudominio.com>");
-//                      sem domínio verificado, use "onboarding@resend.dev" (só entrega
-//                      para o e-mail do dono da conta Resend)
+//    BREVO_API_KEY     chave da API do Brevo (https://brevo.com, 300 e-mails/dia grátis)
+//    EMAIL_FROM        remetente. Com Brevo: OBRIGATÓRIO, o e-mail verificado como
+//                      remetente na conta (ex.: "Controle Financeiro <voce@gmail.com>").
+//    RESEND_API_KEY    (alternativa ao Brevo) chave do Resend; sem domínio
+//                      verificado só entrega ao dono da conta (onboarding@resend.dev)
 //    APP_URL           (opcional) URL do app; default abaixo
 //
 //  Deploy: automático no merge (functions.yml); verify_jwt=false no config.toml.
@@ -30,8 +33,42 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const APP_URL = Deno.env.get("APP_URL") ?? "https://legendary-bubblegum-6dc676.netlify.app";
-const EMAIL_FROM = Deno.env.get("EMAIL_FROM") ?? "Controle Financeiro <onboarding@resend.dev>";
+const BREVO_KEY = Deno.env.get("BREVO_API_KEY");
+const RESEND_KEY = Deno.env.get("RESEND_API_KEY");
+const EMAIL_FROM_RAW = Deno.env.get("EMAIL_FROM") ?? "";
 const MAX_PENDENTES_NO_EMAIL = 12;
+
+// "Nome <email@x>" -> { name, email }; e-mail puro também vale
+function parseFrom(s: string): { name: string; email: string } {
+  const m = s.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  if (m) return { name: m[1] || "Controle Financeiro", email: m[2].trim() };
+  return { name: "Controle Financeiro", email: s.trim() };
+}
+
+// envia por quem estiver configurado: Brevo (remetente único, sem domínio) > Resend
+async function enviarEmail(to: string, subject: string, html: string): Promise<void> {
+  if (BREVO_KEY) {
+    if (!EMAIL_FROM_RAW) throw new Error("Com Brevo, EMAIL_FROM é obrigatório (o remetente verificado na conta).");
+    const r = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": BREVO_KEY, "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ sender: parseFrom(EMAIL_FROM_RAW), to: [{ email: to }], subject, htmlContent: html }),
+    });
+    if (!r.ok) throw new Error(`Brevo ${r.status}: ${await r.text()}`);
+    return;
+  }
+  if (RESEND_KEY) {
+    const from = EMAIL_FROM_RAW || "Controle Financeiro <onboarding@resend.dev>";
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [to], subject, html }),
+    });
+    if (!r.ok) throw new Error(`Resend ${r.status}: ${await r.text()}`);
+    return;
+  }
+  throw new Error("Configure BREVO_API_KEY (ou RESEND_API_KEY) nos secrets da função.");
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -147,8 +184,6 @@ Deno.serve(async (req) => {
     if (!cronSecret || !safeEqual(req.headers.get("x-cron-secret") ?? "", cronSecret)) {
       return json({ error: "não autorizado" }, 401);
     }
-    const resendKey = Deno.env.get("RESEND_API_KEY");
-
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -156,8 +191,8 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const dryRun: boolean = body?.dryRun === true;
-    if (!resendKey && !dryRun) {
-      return json({ error: "RESEND_API_KEY ausente nos secrets da função." }, 500);
+    if (!BREVO_KEY && !RESEND_KEY && !dryRun) {
+      return json({ error: "Configure BREVO_API_KEY (ou RESEND_API_KEY) nos secrets da função." }, 500);
     }
 
     // usuários cadastrados (auth) — poucos usuários: 1 página dá conta
@@ -219,14 +254,7 @@ Deno.serve(async (req) => {
         const subject = `🏷️ ${totalPendentes} lançamento${totalPendentes === 1 ? "" : "s"} para classificar · gasto de ${rotuloMes(mkAtual)}: ${BRL0(gasto)}`;
         const to = body?.to || u.email;
 
-        if (!dryRun) {
-          const r = await fetch("https://api.resend.com/emails", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ from: EMAIL_FROM, to: [to], subject, html }),
-          });
-          if (!r.ok) throw new Error(`Resend ${r.status}: ${await r.text()}`);
-        }
+        if (!dryRun) await enviarEmail(to, subject, html);
         enviados++;
         resumo[u.email] = { pendentes: totalPendentes, gasto: Math.round(gasto), esperado: esperado != null ? Math.round(esperado) : null, enviado: !dryRun };
       } catch (e) {

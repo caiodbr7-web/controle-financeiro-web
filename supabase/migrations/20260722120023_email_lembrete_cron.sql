@@ -15,10 +15,12 @@
 --
 --  PRÉ-REQUISITOS (uma vez, fora deste SQL):
 --    1) Secrets da Edge Function (Project Settings -> Edge Functions -> Secrets):
---         RESEND_API_KEY   chave da API do Resend (resend.com)
---         EMAIL_FROM       remetente verificado, ex.: "Controle Financeiro <lembrete@seudominio.com>"
---                          (sem domínio verificado: "onboarding@resend.dev", que só
---                           entrega para o e-mail do dono da conta Resend)
+--         BREVO_API_KEY    chave da API do Brevo (brevo.com; 300 e-mails/dia grátis,
+--                          remetente único verificado — NÃO precisa de domínio)
+--         EMAIL_FROM       o remetente verificado na conta do Brevo,
+--                          ex.: "Controle Financeiro <voce@gmail.com>"
+--         RESEND_API_KEY   (alternativa ao Brevo; exige domínio verificado
+--                          p/ enviar a terceiros)
 --         APP_URL          (opcional) URL do app, p/ o botão do e-mail
 --       CRON_SECRET já existe (é o mesmo do pluggy-cron).
 --    2) A função `email-lembrete` deploya sozinha no merge (functions.yml).
