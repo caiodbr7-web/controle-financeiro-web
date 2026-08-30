@@ -265,6 +265,32 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
     { t: "gastos gerais", v: BRL0(hero.geralAtual), s: "não casa fixo · em conta", c: "", dot: corGeral, balde: "geral" as const },
   ];
 
+  // um card de KPI. `destaque` = o total do mês, sozinho em cima; os outros
+  // quatro vêm menores, em 2x2, para o conjunto fechar na altura do gráfico.
+  const cardStat = (s: (typeof splitStats)[number], destaque: boolean) => (
+    <button
+      key={s.t}
+      onClick={() => abrirBalde(s.balde, s.t)}
+      title={`Ver lançamentos · ${s.t}`}
+      className={`flex flex-col justify-center bg-card border border-line rounded-[18px] shadow-card min-w-0 text-left cursor-pointer transition-all hover:-translate-y-[2px] hover:border-accent/50 hover:shadow-card-hover md:min-h-0 ${
+        destaque ? "md:flex-1 px-4 py-3 sm:px-[18px]" : "px-3 py-[10px] sm:px-4"
+      }`}
+    >
+      <div className="flex items-center gap-[6px] text-muted font-medium text-[11.5px] md:text-[12px]">
+        {s.dot && <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: s.dot }} />}
+        <span className="truncate">{s.t}</span>
+      </div>
+      <div
+        className={`font-semibold mt-[4px] tracking-tight tabular-nums ${
+          destaque ? "text-[26px] sm:text-[30px]" : "text-[19px] sm:text-[22px]"
+        } ${s.c}`}
+      >
+        {s.v}
+      </div>
+      <div className="text-[10.5px] md:text-[11px] mt-[2px] text-muted leading-tight">{s.s}</div>
+    </button>
+  );
+
   return (
     <div>
       <Panel
@@ -312,22 +338,13 @@ export function EvolucaoDiaria({ dados, allDados, months, openModal }: Props) {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          <div className="grid grid-cols-2 gap-3 md:flex md:flex-col md:h-full">
-            {splitStats.map((s) => (
-              <button
-                key={s.t}
-                onClick={() => abrirBalde(s.balde, s.t)}
-                title={`Ver lançamentos · ${s.t}`}
-                className="md:flex-1 flex flex-col justify-center bg-card border border-line rounded-[18px] p-4 sm:p-[18px] shadow-card min-w-0 text-left cursor-pointer transition-all hover:-translate-y-[2px] hover:border-accent/50 hover:shadow-card-hover"
-              >
-                <div className="flex items-center gap-[6px] text-muted text-[12px] font-medium">
-                  {s.dot && <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: s.dot }} />}
-                  {s.t}
-                </div>
-                <div className={`text-[22px] sm:text-[28px] font-semibold mt-[5px] tracking-tight tabular-nums ${s.c}`}>{s.v}</div>
-                <div className="text-[11.5px] mt-[3px] text-muted">{s.s}</div>
-              </button>
-            ))}
+          {/* KPIs: destaque em cima, os quatro baldes em 2x2 — o conjunto fecha
+              na mesma altura do gráfico (antes eles esticavam a linha inteira) */}
+          <div className="flex flex-col gap-3 md:h-[440px]">
+            {cardStat(splitStats[0], true)}
+            <div className="grid grid-cols-2 gap-3 md:flex-[2.2] md:min-h-0">
+              {splitStats.slice(1).map((s) => cardStat(s, false))}
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3">
