@@ -13,8 +13,30 @@ import {
 
 // categorias tratadas como "gasto de casa fixo" — somadas numa faixa própria,
 // independente de terem caído no cartão ou em conta.
-const CASA_FIXO = new Set(["Moradia - Contas Mensais", "Moradia - Aluguel + IPTU"]);
-const ehCasaFixo = (d: Lancamento) => CASA_FIXO.has(catKey(d));
+//
+// Isto já foi uma categoria PLANA ("Moradia - Contas Mensais"). Desde que as
+// subcategorias entraram (#75), virou o par categoria "Moradia" + subcategoria
+// ("Contas Mensais" / "Aluguel + IPTU") — e o casamento pelo nome inteiro parou
+// de achar lançamento nenhum, zerando a faixa. Aceitamos as duas formas e
+// comparamos sem acento nem pontuação, para não quebrar de novo com variação de
+// separador ("+", "/", "-") ou de caixa.
+const normCat = (s: unknown) =>
+  String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+const CASA_CAT = "moradia";
+// dentro de Moradia, só estas subs são casa fixo (o resto é gasto avulso de casa)
+const ehSubCasa = (sub: string) =>
+  /\bcontas mensais\b/.test(sub) || /\baluguel\b/.test(sub) || /\biptu\b/.test(sub);
+
+const ehCasaFixo = (d: Lancamento) => {
+  const cat = normCat(catKey(d));
+  // formato atual: categoria "Moradia" + subcategoria (a sub só vale sob
+  // categoria_manual, mesma regra do resto do app)
+  if (cat === CASA_CAT) return ehSubCasa(d.categoria_manual ? normCat(d.subcategoria_manual) : "");
+  // formato antigo: categoria plana com o nome inteiro
+  return cat.startsWith(CASA_CAT + " ") && ehSubCasa(cat.slice(CASA_CAT.length).trim());
+};
 
 interface Props {
   dados: Lancamento[]; allDados: Lancamento[]; months: string[];
