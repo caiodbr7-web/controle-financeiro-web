@@ -1011,13 +1011,6 @@ export function Planejamento({ lancamentos }: { lancamentos: Lancamento[] }) {
             </div>,
             document.body
           )}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mb-[18px]">
-            <Kpi title={`Gastos previstos · ${dvLabel(comp)}`} value={kBRL(prevGer)} sub="recorrentes (plano)" />
-            <Kpi title="Gastos realizados" value={kBRL(efetGer)} sub={cartaoParcial(comp) ? "cartão ainda parcial · mês em aberto" : "recorrente + conta + cartão"} color="text-amber" />
-            <Kpi title="Saldo previsto" value={kBRL(prevRec - prevGer)} sub="receita − gastos (plano)" color={prevRec - prevGer < 0 ? "text-red" : "text-green"} />
-            <Kpi title="Saldo realizado" value={kBRL(efetRec - efetGer)} sub="receita − gastos (real)" color={efetRec - efetGer < 0 ? "text-red" : "text-green"} />
-          </div>
-
           <div className="bg-card border border-line rounded-[18px] shadow-card overflow-hidden">
             <div className="overflow-x-auto scroll-thin">
               <table className="tbl min-w-[560px] md:min-w-[960px]">
