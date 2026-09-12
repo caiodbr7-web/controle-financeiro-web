@@ -1,5 +1,5 @@
 import { sb, SUPABASE_URL, SUPABASE_ANON, isDemo } from "./supabase";
-import type { Investimento, InvestimentoHist, InvestimentoHistTipo } from "../types";
+import type { Investimento, InvestimentoHist, InvestimentoHistTipo, InvestimentoHistAtivo } from "../types";
 
 const FN_BASE = `${SUPABASE_URL}/functions/v1`;
 
@@ -194,6 +194,22 @@ export async function listInvestmentHistoryByTipo(): Promise<InvestimentoHistTip
     throw new Error(error.message);
   }
   return (data ?? []) as InvestimentoHistTipo[];
+}
+
+/** Histórico diário do patrimônio POR ATIVO (tabela pluggy_investments_hist_ativo).
+ *  É o nível que permite expandir uma categoria na tabela de evolução mensal.
+ *  Mesma degradação graciosa da função acima: se a migração ainda não rodou,
+ *  devolve [] e a tabela simplesmente não oferece a expansão. */
+export async function listInvestmentHistoryByAtivo(): Promise<InvestimentoHistAtivo[]> {
+  const { data, error } = await sb
+    .from("pluggy_investments_hist_ativo")
+    .select("dia,ativo_id,tipo,nome,valor_total,valor_aplicado")
+    .order("dia", { ascending: true });
+  if (error) {
+    if (/relation|does not exist|could not find|schema cache|not exist/i.test(error.message)) return [];
+    throw new Error(error.message);
+  }
+  return (data ?? []) as InvestimentoHistAtivo[];
 }
 
 // Saldo ATUAL de uma conta bancária (caixa líquido), vindo do Open Banking.

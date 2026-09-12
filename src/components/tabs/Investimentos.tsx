@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, PieChart, Pie, Cell,
 } from "recharts";
-import type { Investimento, InvestimentoHist, InvestimentoHistTipo } from "../../types";
+import type { Investimento, InvestimentoHist, InvestimentoHistTipo, InvestimentoHistAtivo } from "../../types";
 import { Kpi, Panel, Select, BarRow } from "../ui";
 import { useChart, ChartTip } from "../../lib/theme";
 import {
-  listInvestments, listInvestmentHistory, listInvestmentHistoryByTipo, syncInvestments,
+  listInvestments, listInvestmentHistory, listInvestmentHistoryByTipo, listInvestmentHistoryByAtivo, syncInvestments,
   setTipoManual, setLiquidezD1Manual,
   addManualInvestment, updateManualInvestment, deleteManualInvestment, setInvestmentCotacao, fetchCotacoes,
   listSaldoCaixa,
@@ -18,6 +18,7 @@ import type { ManualInvestmentInput, SaldoConta, IbkrCredencial } from "../../li
 import { BRL, BRL0, kBRL, brlShort, fmtMoeda, dvLabel } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
 import { labelTipo, CLASSE_OPTS, PALETA, CAIXA_COR, CAIXA_TIPO } from "../../lib/investclasses";
+import { semAcento } from "../../lib/texto";
 import { ImportB3 } from "../ImportB3";
 import { Balanceamento } from "../Balanceamento";
 
@@ -31,6 +32,13 @@ import { Balanceamento } from "../Balanceamento";
    Permite ao usuário CLASSIFICAR o tipo de cada ativo (coluna tipo_manual), que
    sobrepõe o tipo vindo da Pluggy para a sua visualização (KPIs/gráficos/tabela).
    ============================================================================ */
+
+// Nome do ativo normalizado — é a chave que junta as duas fontes do histórico.
+// O Open Finance tem investment_id; os relatórios da B3 não têm id nenhum, só
+// o nome do produto. Agrupar pelo nome normalizado faz o passado importado da
+// B3 e o presente sincronizado caírem na MESMA linha quando o ativo se chama
+// igual nos dois lados.
+const normNome = (s: string) => semAcento(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 // tipo "efetivo": a classificação manual vence a da Pluggy
 const tipoEf = (i: Investimento) => i.tipo_manual ?? i.tipo ?? "";
@@ -462,6 +470,7 @@ export function Investimentos() {
   const [rows, setRows] = useState<Investimento[]>([]);
   const [hist, setHist] = useState<InvestimentoHist[]>([]);
   const [histTipo, setHistTipo] = useState<InvestimentoHistTipo[]>([]);
+  const [histAtivo, setHistAtivo] = useState<InvestimentoHistAtivo[]>([]);
   const [caixa, setCaixa] = useState<SaldoConta[]>([]); // saldo das contas (Open Banking)
   const [status, setStatus] = useState("carregando…");
   const [erro, setErro] = useState("");
@@ -519,16 +528,18 @@ export function Investimentos() {
     setStatus("carregando…");
     setErro("");
     try {
-      const [inv, h, ht, cx, cred] = await Promise.all([
+      const [inv, h, ht, ha, cx, cred] = await Promise.all([
         listInvestments(),
         listInvestmentHistory(),
         listInvestmentHistoryByTipo().catch(() => [] as InvestimentoHistTipo[]),
+        listInvestmentHistoryByAtivo().catch(() => [] as InvestimentoHistAtivo[]),
         listSaldoCaixa().catch(() => [] as SaldoConta[]),
         getIbkrCredencial().catch(() => null),
       ]);
       setRows(inv);
       setHist(h);
       setHistTipo(ht);
+      setHistAtivo(ha);
       setCaixa(cx);
       setIbkr(cred);
       void refreshCotacoes(inv, { silent: true }); // atualiza cotações em 2º plano
@@ -664,6 +675,23 @@ export function Investimentos() {
     const hoje = [...porT.entries()].map(([tipo, v]) => ({ dia, tipo, ...v }));
     return [...base, ...hoje];
   }, [histTipo, rows]);
+
+  // mesmo retrato de hoje, mas por ATIVO — alimenta a expansão da tabela mensal.
+  // Sem isto o mês corrente só apareceria depois da próxima sincronização.
+  const histAtivoEff = useMemo<InvestimentoHistAtivo[]>(() => {
+    if (!rows.length) return histAtivo;
+    const dia = new Date().toISOString().slice(0, 10);
+    const base = histAtivo.filter((h) => h.dia < dia);
+    const hoje = rows.map((i) => ({
+      dia,
+      ativo_id: i.investment_id,
+      tipo: tipoEf(i) || "OUTROS",
+      nome: i.nome,
+      valor_total: i.saldo ?? 0,
+      valor_aplicado: i.valor_aplicado ?? 0,
+    }));
+    return [...base, ...hoje];
+  }, [histAtivo, rows]);
 
   // Crescimento do patrimônio (MoM / YTD / YoY) a partir do histórico diário.
   // Base de cada métrica: o retrato mais recente NA ou ANTES da data-âncora
@@ -827,19 +855,59 @@ export function Investimentos() {
     }
     const meses = [...fimDoMes.keys()].sort();
     const n = meses.length;
+    const r2 = (v: number) => Math.round(v * 100) / 100;
     const varDe = (vals: number[]) => {
       const delta = n >= 2 ? vals[n - 1] - vals[n - 2] : null;
       const pct = delta != null && vals[n - 2] !== 0 ? (delta / Math.abs(vals[n - 2])) * 100 : null;
       return { delta, pct };
     };
+
+    // --- quebra por ATIVO: o que a linha da categoria revela ao expandir ---
+    // Para cada mês usamos o retrato do ÚLTIMO dia registrado naquele mês, a
+    // mesma regra das categorias — assim a soma dos ativos e o total da
+    // categoria olham para o mesmo instante.
+    const ultimoDia = new Map<string, string>();
+    for (const r of histAtivoEff) {
+      const mk = r.dia.slice(0, 7);
+      const cur = ultimoDia.get(mk);
+      if (!cur || r.dia > cur) ultimoDia.set(mk, r.dia);
+    }
+    const acu = new Map<string, { tipo: string; nome: string; porMes: Map<string, number> }>();
+    for (const r of histAtivoEff) {
+      const mk = r.dia.slice(0, 7);
+      if (r.dia !== ultimoDia.get(mk)) continue;
+      const nome = String(r.nome ?? "").trim() || r.ativo_id;
+      const chave = r.tipo + "|" + normNome(nome);
+      const cur = acu.get(chave) ?? { tipo: r.tipo, nome, porMes: new Map<string, number>() };
+      cur.porMes.set(mk, (cur.porMes.get(mk) ?? 0) + (r.valor_total ?? 0));
+      acu.set(chave, cur);
+    }
+    // ativos de uma categoria, do maior para o menor no mês mais recente.
+    // Posição zerada em TODOS os meses não vira linha (ruído de ativo encerrado).
+    const ativosDe = (tipo: string) =>
+      [...acu.entries()]
+        .filter(([, a]) => a.tipo === tipo)
+        .map(([chave, a]) => {
+          const valores = meses.map((mk) => r2(a.porMes.get(mk) ?? 0));
+          return { chave, nome: a.nome, valores, ...varDe(valores) };
+        })
+        .filter((a) => a.valores.some((v) => v !== 0))
+        .sort((x, y) => y.valores[n - 1] - x.valores[n - 1]);
     const linhas = stack.cats.map((c) => {
       const valores = meses.map((mk) => Number(fimDoMes.get(mk)?.[c.tipo] ?? 0));
-      return { ...c, valores, ...varDe(valores) };
+      return { ...c, valores, ...varDe(valores), ativos: ativosDe(c.tipo) };
     });
     const totais = meses.map((_, i) => linhas.reduce((s, l) => s + l.valores[i], 0));
     return { meses, linhas, totais, total: varDe(totais) };
-  }, [stack]);
+  }, [stack, histAtivoEff]);
   const mesAtualK = new Date().toISOString().slice(0, 7); // UTC, como os retratos
+
+  // categorias expandidas na tabela mensal (mostrando os ativos). Todas
+  // recolhidas por padrão: a leitura normal é por categoria.
+  const [abertas, setAbertas] = useState<Set<string>>(new Set());
+  const alternar = useCallback((tipo: string) => {
+    setAbertas((s) => { const n = new Set(s); n.has(tipo) ? n.delete(tipo) : n.add(tipo); return n; });
+  }, []);
 
   // célula de variação (Δ em R$ ou %Δ): verde subiu, vermelho caiu
   const tdVar = (v: number | null, fmt: (x: number) => string) => (
@@ -1187,21 +1255,55 @@ export function Investimentos() {
                 <th className="num" title="variação % do último mês vs. o anterior">%Δ</th>
               </tr></thead>
               <tbody>
-                {mensalCat.linhas.map((l) => (
-                  <tr key={l.tipo}>
-                    <td>
-                      <span className="inline-flex items-center gap-[7px]">
-                        <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: l.cor }} />
-                        {l.label}
-                      </span>
-                    </td>
-                    {l.valores.map((v, i) => (
-                      <td key={mensalCat.meses[i]} className={`num ${v === 0 ? "text-muted" : ""}`}>{v === 0 ? "—" : BRL0(v)}</td>
-                    ))}
-                    {tdVar(l.delta, kBRL)}
-                    {tdVar(l.pct, (x) => x.toFixed(1) + "%")}
-                  </tr>
-                ))}
+                {mensalCat.linhas.map((l) => {
+                  const aberta = abertas.has(l.tipo);
+                  const temAtivos = l.ativos.length > 0;
+                  return (
+                    <Fragment key={l.tipo}>
+                      <tr>
+                        <td>
+                          <span className="inline-flex items-center gap-[7px] min-w-0">
+                            {temAtivos ? (
+                              <button
+                                onClick={() => alternar(l.tipo)}
+                                title={aberta ? "Recolher" : l.ativos.length === 1 ? "Ver o ativo desta categoria" : `Ver os ${l.ativos.length} ativos desta categoria`}
+                                aria-expanded={aberta}
+                                className="shrink-0 w-[16px] h-[16px] flex items-center justify-center text-muted hover:text-txt bg-transparent border-0 cursor-pointer p-0"
+                              >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${aberta ? "rotate-90" : ""}`}><path d="m9 18 6-6-6-6" /></svg>
+                              </button>
+                            ) : <span className="w-[16px] shrink-0" />}
+                            <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: l.cor }} />
+                            <span className="truncate">{l.label}</span>
+                            {temAtivos && !aberta && <span className="text-muted/60 text-[11px] shrink-0">({l.ativos.length})</span>}
+                          </span>
+                        </td>
+                        {l.valores.map((v, i) => (
+                          <td key={mensalCat.meses[i]} className={`num ${v === 0 ? "text-muted" : ""}`}>{v === 0 ? "—" : BRL0(v)}</td>
+                        ))}
+                        {tdVar(l.delta, kBRL)}
+                        {tdVar(l.pct, (x) => x.toFixed(1) + "%")}
+                      </tr>
+
+                      {/* ativos da categoria (indentados), só quando expandida */}
+                      {aberta && l.ativos.map((a) => (
+                        <tr key={a.chave} className="text-[12px]">
+                          <td>
+                            <span className="inline-flex items-center gap-2 min-w-0 pl-[31px]">
+                              <span className="w-[6px] h-[6px] rounded-full shrink-0 opacity-70" style={{ background: l.cor }} />
+                              <span className="truncate text-muted" title={a.nome}>{a.nome}</span>
+                            </span>
+                          </td>
+                          {a.valores.map((v, i) => (
+                            <td key={mensalCat.meses[i]} className="num text-muted">{v === 0 ? "—" : BRL0(v)}</td>
+                          ))}
+                          {tdVar(a.delta, kBRL)}
+                          {tdVar(a.pct, (x) => x.toFixed(1) + "%")}
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
                 <tr className="font-semibold border-t-2 border-line">
                   <td>Total</td>
                   {mensalCat.totais.map((v, i) => (
@@ -1216,6 +1318,9 @@ export function Investimentos() {
           <div className="text-muted text-[12px] mt-2">
             Cada mês mostra o <b>último retrato registrado</b> naquele mês; o mês em andamento (com&nbsp;*) usa o retrato mais
             recente e ainda muda até fechar. O histórico é gravado a cada sincronização — meses novos entram automaticamente.
+            {" "}Clique na seta de uma categoria para abrir os <b>ativos</b> dentro dela. Um ativo só
+            aparece nos meses em que havia retrato dele: meses anteriores à criação desse
+            histórico ficam com “—” na linha do ativo, embora o total da categoria esteja completo.
           </div>
         </Panel>
       )}
