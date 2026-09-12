@@ -4,6 +4,8 @@ import { useAuth } from "./hooks/useAuth";
 import { useLancamentos, useSaving } from "./hooks/useLancamentos";
 import { useTheme, type ThemePref } from "./lib/theme";
 import { precisaClassificar } from "./lib/finance";
+import { sincronizarTudo } from "./lib/pluggy";
+import { useToast } from "./components/Toast";
 import { Login } from "./components/Login";
 import { Logo } from "./components/Logo";
 import { Modal, type ModalData } from "./components/Modal";
@@ -125,6 +127,9 @@ export default function App() {
   const [aba, setAba] = useState<Aba>("inicio");
   const [modal, setModal] = useState<ModalData | null>(null);
   const [paletaAberta, setPaletaAberta] = useState(false);
+  // atalho "sincronizar tudo" do topo: gastos + investimentos de uma vez
+  const [syncBusy, setSyncBusy] = useState(false);
+  const { toast } = useToast();
   // método ativo da aba Adicionar (arquivo manual × banco via Open Finance)
   const [addMetodo, setAddMetodo] = useState<MetodoAdd>("arquivo");
 
@@ -209,6 +214,27 @@ export default function App() {
     { id: "sair", label: "Sair", grupo: "Ações", keywords: "logout deslogar", run: sair },
   ], [navTo, pendClass, cycle, sair]);
 
+  // sync completo (gastos + investimentos) e recarrega a base. Erros de conexões
+  // individuais voltam contados, sem abortar o resto — por isso o toast pode ser
+  // de erro mesmo com parte das conexões atualizada.
+  // Fica ACIMA dos early returns abaixo: hook chamado condicionalmente quebra a
+  // ordem de hooks entre renders.
+  const rodarSync = useCallback(async () => {
+    setSyncBusy(true);
+    try {
+      const r = await sincronizarTudo();
+      reload();
+      if (r.erros.length) {
+        toast({ message: `Sincronizado com ${r.erros.length} erro(s): ${r.erros.join(" · ")}`, variant: "error" });
+      } else {
+        toast({ message: `Tudo sincronizado · ${r.conexoes} conexão(ões) e investimentos.`, variant: "success" });
+      }
+    } catch (e) {
+      toast({ message: (e as Error).message, variant: "error" });
+    }
+    setSyncBusy(false);
+  }, [reload, toast]);
+
   if (logado === null) return <div className="p-8 text-muted">Carregando…</div>;
   if (!logado) return <Login onGoogle={entrarGoogle} onTeste={entrarTeste} erro={erro} />;
 
@@ -286,6 +312,30 @@ export default function App() {
               </button>
               <button onClick={() => setPaletaAberta(true)} title="Buscar e navegar" aria-label="Buscar e navegar" className={`sm:hidden ${iconBtn} hover:text-txt hover:border-accent`}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" strokeLinecap="round" /></svg>
+              </button>
+              <button
+                onClick={rodarSync}
+                disabled={syncBusy}
+                title={syncBusy ? "Sincronizando gastos e investimentos…" : "Sincronizar tudo (gastos e investimentos)"}
+                aria-label="Sincronizar tudo"
+                aria-busy={syncBusy}
+                className={`${iconBtn} disabled:cursor-wait hover:text-accent hover:border-accent`}
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  className={syncBusy ? "animate-spin" : ""}
+                >
+                  <path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-7.5-4" />
+                  <path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 7.5 4" />
+                  <path d="M21 3v5h-5" />
+                  <path d="M3 21v-5h5" />
+                </svg>
               </button>
               <button
                 onClick={cycleVisao}

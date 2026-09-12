@@ -405,3 +405,50 @@ export async function importIbkr(): Promise<IbkrImportResult> {
   if (!r.ok) throw new Error(data?.error || "Falha ao importar da IBKR");
   return data as IbkrImportResult;
 }
+
+/** Resultado do atalho "sincronizar tudo" da barra superior. */
+export interface SyncTudoResult {
+  /** quantas conexões Pluggy foram percorridas */
+  conexoes: number;
+  /** falhas por etapa; vazio = tudo certo. Uma falha não aborta as demais. */
+  erros: string[];
+}
+
+/** Sincroniza TUDO: gastos (todas as conexões + tradução) e investimentos.
+ *  É o mesmo caminho do botão "Sincronizar tudo" da aba Conectar, somado ao
+ *  "Sincronizar" da aba Investimentos — reunidos para o atalho do topo.
+ *
+ *  As conexões baixam em paralelo com translate=false e a tradução roda UMA
+ *  vez no fim (mesma precaução da aba Conectar: traduzir a cada conexão
+ *  estoura o tempo do banco). Erros são coletados, não propagados: uma
+ *  conexão com problema não impede o resto de atualizar. */
+export async function sincronizarTudo(): Promise<SyncTudoResult> {
+  const itens = await listItems();
+  const erros: string[] = [];
+
+  await Promise.all(
+    itens.map(async (it) => {
+      try {
+        await syncItem(it.item_id, it.sync_from ?? undefined, { refresh: true, translate: false });
+      } catch (e) {
+        erros.push(`${it.connector_name || it.item_id}: ${(e as Error).message}`);
+      }
+    }),
+  );
+
+  if (itens.length) {
+    try {
+      await translateLancamentos();
+    } catch (e) {
+      erros.push(`processar lançamentos: ${(e as Error).message}`);
+    }
+  }
+
+  try {
+    await syncInvestments();
+  } catch (e) {
+    erros.push(`investimentos: ${(e as Error).message}`);
+  }
+
+  return { conexoes: itens.length, erros };
+}
