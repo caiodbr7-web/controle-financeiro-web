@@ -188,18 +188,22 @@ function toCsv(rows: Investimento[], allCols: ColDef[]): string {
     if (/^[=@\t\r]/.test(s) || (/^[+-]/.test(s) && !/^[+-][\d.,]+$/.test(s))) s = "'" + s;
     return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const head = cols.map((c) => c.label).join(";");
+  // "Valor atual" sai SEMPRE em BRL, para o arquivo poder ser somado: misturar
+  // "27765.04 USD" com reais na mesma coluna quebra qualquer total (no Excel ou
+  // fora dele). O valor na moeda original vai em duas colunas próprias.
+  const head = [...cols.map((c) => c.label), "Valor nativo", "Moeda nativa"].join(";");
   const body = rows.map((i) =>
-    cols
-      .map((c) =>
+    [
+      ...cols.map((c) =>
         esc(
           c.key === "tipo_manual" ? labelTipo(tipoEf(i)) :
           c.key === "liquidez_d1_manual" ? (liquidezD1Ef(i) ? "Sim" : "Não") :
-          c.key === "saldo" && temCotacaoNativa(i) ? `${valorNativo(i)} ${i.moeda_cotacao}` :
           i[c.key],
         ),
-      )
-      .join(";"),
+      ),
+      esc(temCotacaoNativa(i) ? valorNativo(i) : ""),
+      esc(temCotacaoNativa(i) ? i.moeda_cotacao : ""),
+    ].join(";"),
   );
   return [head, ...body].join("\n");
 }
@@ -774,6 +778,14 @@ export function Investimentos() {
   }, [rows, caixaTotal]);
   const patrimonioTotal = useMemo(() => composicaoTotal.reduce((s, c) => s + c.total, 0), [composicaoTotal]);
 
+  // liquidez D+1 da carteira INTEIRA (também sem os filtros da aba): o caixa mais
+  // os investimentos resgatáveis em ~1 dia útil. É o que a reserva de emergência
+  // tem hoje — e não o "Caixa" sozinho, que costuma ser só uma fatia dela.
+  const liquidoD1Total = useMemo(
+    () => rows.reduce((s, i) => s + (liquidezD1Ef(i) ? i.saldo ?? 0 : 0), 0) + caixaTotal,
+    [rows, caixaTotal],
+  );
+
   // série de evolução do patrimônio (histórico diário)
   const serie = useMemo(
     () => histEff.map((h) => ({
@@ -1124,7 +1136,7 @@ export function Investimentos() {
     return (
       <div>
         {barraSub}
-        <Balanceamento atuais={composicaoTotal} total={patrimonioTotal} />
+        <Balanceamento atuais={composicaoTotal} total={patrimonioTotal} liquidoD1={liquidoD1Total} />
       </div>
     );
   }
