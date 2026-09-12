@@ -1,5 +1,5 @@
 import { MES_ABREV, CATEGORIAS_DEFAULT } from "../finance";
-import type { Lancamento, Investimento, InvestimentoHist, InvestimentoHistTipo } from "../../types";
+import type { Lancamento, Investimento, InvestimentoHist, InvestimentoHistTipo, InvestimentoHistAtivo } from "../../types";
 import type { SaldoConta } from "../pluggy";
 
 /* ============================================================================
@@ -279,11 +279,13 @@ function totalCarteira(invs: Investimento[]): { total: number; aplicado: number 
 }
 
 // histórico diário do patrimônio (≈150 dias, terminando ONTEM; hoje é calculado ao vivo)
-function buildHist(invs: Investimento[]): { hist: InvestimentoHist[]; histTipo: InvestimentoHistTipo[] } {
+function buildHist(invs: Investimento[]): { hist: InvestimentoHist[]; histTipo: InvestimentoHistTipo[]; histAtivo: InvestimentoHistAtivo[] } {
   const { total, aplicado } = totalCarteira(invs);
   const DIAS = 150;
   const hist: InvestimentoHist[] = [];
   const histTipo: InvestimentoHistTipo[] = [];
+  // retrato por ATIVO — é o que a tabela mensal abre ao expandir a categoria
+  const histAtivo: InvestimentoHistAtivo[] = [];
   const tipoEf = (i: Investimento) => i.tipo_manual ?? i.tipo ?? "OUTROS";
   const fracPorTipo = new Map<string, number>();
   for (const i of invs) {
@@ -306,8 +308,19 @@ function buildHist(invs: Investimento[]): { hist: InvestimentoHist[]; histTipo: 
       const vt = Math.round(valor_total * frac * 100) / 100;
       histTipo.push({ dia, tipo, valor_total: vt, valor_aplicado: Math.round(vt * aplicadoFrac * 100) / 100, posicoes: 1 });
     }
+    // cada posição acompanha a mesma curva do total (proporcional ao saldo)
+    for (const i of invs) {
+      histAtivo.push({
+        dia,
+        ativo_id: i.investment_id,
+        tipo: tipoEf(i),
+        nome: i.nome,
+        valor_total: Math.round((i.saldo ?? 0) * fator * 100) / 100,
+        valor_aplicado: Math.round((i.valor_aplicado ?? 0) * fator * 100) / 100,
+      });
+    }
   }
-  return { hist, histTipo };
+  return { hist, histTipo, histAtivo };
 }
 
 // saldo em conta (caixa) — Open Finance
@@ -348,7 +361,7 @@ export interface DemoDb {
 /** Constrói (uma vez) o conjunto completo de tabelas fake do modo demo. */
 export function buildDemoData(): DemoDb {
   const invs = buildInvestimentos();
-  const { hist, histTipo } = buildHist(invs);
+  const { hist, histTipo, histAtivo } = buildHist(invs);
   const cats = buildCategorias();
   return {
     lancamentos: buildLancamentos() as unknown as Record<string, unknown>[],
@@ -360,6 +373,7 @@ export function buildDemoData(): DemoDb {
     pluggy_investments: invs as unknown as Record<string, unknown>[],
     pluggy_investments_hist: hist as unknown as Record<string, unknown>[],
     pluggy_investments_hist_tipo: histTipo as unknown as Record<string, unknown>[],
+    pluggy_investments_hist_ativo: histAtivo as unknown as Record<string, unknown>[],
     pluggy_saldos: buildSaldos() as unknown as Record<string, unknown>[],
     pluggy_items: buildItems() as unknown as Record<string, unknown>[],
     pluggy_transacoes_raw: [],

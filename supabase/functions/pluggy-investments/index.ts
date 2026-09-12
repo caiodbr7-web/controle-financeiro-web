@@ -172,7 +172,7 @@ Deno.serve(async (req) => {
     try {
       const { data: todas } = await sb
         .from("pluggy_investments")
-        .select("saldo, valor_aplicado, lucro, tipo, tipo_manual")
+        .select("investment_id, nome, saldo, valor_aplicado, lucro, tipo, tipo_manual")
         .eq("user_id", userId);
       if (todas && todas.length) {
         const dia = agora.slice(0, 10); // "YYYY-MM-DD" (UTC)
@@ -212,6 +212,28 @@ Deno.serve(async (req) => {
           // Tabela opcional: se a migração ainda não rodou, ignora o erro.
           await sb.from("pluggy_investments_hist_tipo").delete().eq("user_id", userId).eq("dia", dia);
           await sb.from("pluggy_investments_hist_tipo").insert(linhasTipo);
+        }
+
+        // Quebra por ATIVO (uma linha por posição) — é o nível que a tabela de
+        // evolução mensal expande ao clicar numa categoria. Mesmo delete+insert
+        // do bloco acima, e pela mesma razão: substituir o dia inteiro evita
+        // deixar presa uma posição encerrada ou reclassificada.
+        const linhasAtivo = (todas as any[])
+          .filter((p: any) => p.investment_id)
+          .map((p: any) => ({
+            user_id: userId,
+            dia,
+            ativo_id: String(p.investment_id),
+            tipo: (p.tipo_manual ?? p.tipo) || "OUTROS",
+            nome: p.nome ?? null,
+            valor_total: p.saldo ?? 0,
+            valor_aplicado: p.valor_aplicado ?? 0,
+            atualizado_em: agora,
+          }));
+        if (linhasAtivo.length) {
+          // tabela opcional: se a migração ainda não rodou, o catch externo ignora
+          await sb.from("pluggy_investments_hist_ativo").delete().eq("user_id", userId).eq("dia", dia);
+          await sb.from("pluggy_investments_hist_ativo").insert(linhasAtivo);
         }
       }
     } catch { /* histórico é best-effort; não derruba a sincronização */ }

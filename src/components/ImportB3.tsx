@@ -48,7 +48,7 @@ export function ImportB3({ onClose, onDone }: { onClose: () => void; onDone: () 
         try {
           novos.push({ ...(await parseB3Xlsx(f)), id: Date.now() + Math.random() });
         } catch (e) {
-          novos.push({ id: Date.now() + Math.random(), nome: f.name, mk: null, categorias: {}, total: 0, posicoes: 0, avisos: ["Falha ao ler: " + (e as Error).message] });
+          novos.push({ id: Date.now() + Math.random(), nome: f.name, mk: null, categorias: {}, ativos: [], total: 0, posicoes: 0, avisos: ["Falha ao ler: " + (e as Error).message] });
         }
       }
       setArquivos((cur) => [...cur, ...novos]);
@@ -77,7 +77,7 @@ export function ImportB3({ onClose, onDone }: { onClose: () => void; onDone: () 
     const porMes = new Map<string, PontoB3>();
     for (const a of arquivos) {
       if (!a.mk || a.mk >= mesAtualK || a.total <= 0) continue;
-      porMes.set(a.mk, { mk: a.mk, categorias: a.categorias });
+      porMes.set(a.mk, { mk: a.mk, categorias: a.categorias, ativos: a.ativos });
     }
     if (manualPronto) {
       const categorias: PontoB3["categorias"] = {};
