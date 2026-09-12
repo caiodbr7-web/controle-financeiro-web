@@ -84,6 +84,20 @@ export interface InvestimentoHistTipo {
   posicoes: number | null;       // nº de posições da categoria no dia
 }
 
+// Retrato diário do patrimônio POR ATIVO (tabela public.pluggy_investments_hist_ativo).
+// Uma linha por (dia, ativo) — é o nível que permite expandir uma categoria na
+// tabela de evolução mensal e ver os ativos dentro dela.
+// `nome` e `tipo` são o retrato daquele dia: se o ativo for renomeado ou
+// reclassificado depois, o passado continua mostrando como ele era.
+export interface InvestimentoHistAtivo {
+  dia: string;                   // "YYYY-MM-DD"
+  ativo_id: string;              // investment_id, ou "b3:<tipo>:<slug>" no import da B3
+  tipo: string;                  // categoria efetiva do ativo naquele dia
+  nome: string | null;           // rótulo do ativo naquele dia
+  valor_total: number | null;    // saldo da posição no dia
+  valor_aplicado: number | null; // montante aplicado no dia
+}
+
 // ---------------------------------------------------------------------------
 // Helpers de mutação otimista + fila de escrita (ver src/lib/mutationQueue.ts e
 // src/hooks/useLancamentos.ts). Passados às abas p/ ações não-bloqueantes.

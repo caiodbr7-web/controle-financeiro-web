@@ -26,8 +26,21 @@ import { semAcento } from "./texto";
 
 /** total de uma categoria do app num mês (valor + nº de posições) */
 export interface CatTotal { valor: number; posicoes: number }
-/** um ponto mensal pronto para gravar: "YYYY-MM" -> categorias */
-export interface PontoB3 { mk: string; categorias: Record<string, CatTotal> }
+/** uma posição individual do relatório (linha de uma aba "Posição - …") */
+export interface AtivoB3 {
+  ativo_id: string;  // chave estável "b3:<tipo>:<slug do nome>"
+  nome: string;      // produto como veio na planilha
+  tipo: string;      // categoria do app (mesma chave do tipo efetivo)
+  valor: number;     // valor atualizado da posição no fim do período
+}
+/** um ponto mensal pronto para gravar: "YYYY-MM" -> categorias (+ ativos) */
+export interface PontoB3 {
+  mk: string;
+  categorias: Record<string, CatTotal>;
+  // quebra por ativo do mesmo ponto. Vem vazia no lançamento MANUAL (ali o
+  // usuário digita só o total de cada categoria), e aí o mês fica sem detalhe.
+  ativos?: AtivoB3[];
+}
 
 /** resultado do parse de um arquivo (a competência pode vir nula se o nome fugir do padrão) */
 export interface ArquivoB3 {
@@ -35,6 +48,7 @@ export interface ArquivoB3 {
   mk: string | null;
   categorias: Record<string, CatTotal>;
   total: number;
+  ativos: AtivoB3[];  // as posições individuais lidas do arquivo
   posicoes: number;
   avisos: string[];
 }
@@ -68,6 +82,16 @@ export function competenciaDoNome(nome: string): string | null {
   return null;
 }
 
+/** Chave estável de um ativo da B3. Os relatórios não trazem id, só o nome do
+ *  produto — então derivamos a chave do nome normalizado dentro da categoria.
+ *  Reimportar o mesmo mês cai na mesma chave (substitui, não duplica); e se o
+ *  nome bater com o da posição vinda do Open Finance, a tabela junta as duas
+ *  pontas numa linha só. Prefixo "b3:" deixa a origem explícita. */
+export function slugAtivoB3(tipo: string, nome: string): string {
+  const s = semAcento(nome).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `b3:${tipo}:${s.slice(0, 80) || "sem-nome"}`;
+}
+
 /** último dia do mês de "YYYY-MM" -> "YYYY-MM-DD" */
 export function ultimoDiaDoMes(mk: string): string {
   const y = +mk.slice(0, 4), m = +mk.slice(5, 7);
@@ -90,6 +114,9 @@ export async function parseB3Xlsx(file: File): Promise<ArquivoB3> {
   const XLSX = await import("xlsx");
   const wb = XLSX.read(await file.arrayBuffer());
   const categorias: Record<string, CatTotal> = {};
+  // posições individuais, por chave: o MESMO produto pode aparecer em mais de
+  // uma linha (corretoras diferentes) e precisa somar, não virar duas linhas.
+  const ativos = new Map<string, AtivoB3>();
   const avisos: string[] = [];
   let abasPos = 0;
 
@@ -108,6 +135,10 @@ export async function parseB3Xlsx(file: File): Promise<ArquivoB3> {
       for (const c of row) { const n = numCelula(c); if (n != null) valor = n; }
       if (valor == null) { avisos.push(`${nomeAba}: linha "${produto.slice(0, 40)}" sem valor — ignorada`); continue; }
       acc.valor += valor;
+      const chave = slugAtivoB3(cat, produto);
+      const ja = ativos.get(chave);
+      if (ja) ja.valor += valor;
+      else ativos.set(chave, { ativo_id: chave, nome: produto, tipo: cat, valor });
       acc.posicoes += 1;
     }
     if (acc.valor === 0 && acc.posicoes === 0) delete categorias[cat];
@@ -116,8 +147,16 @@ export async function parseB3Xlsx(file: File): Promise<ArquivoB3> {
   if (!abasPos) avisos.push('Nenhuma aba "Posição - …" encontrada — este arquivo é um relatório consolidado da B3?');
   const total = Object.values(categorias).reduce((s, v) => s + v.valor, 0);
   const posicoes = Object.values(categorias).reduce((s, v) => s + v.posicoes, 0);
-  return { nome: file.name, mk: competenciaDoNome(file.name), categorias, total, posicoes, avisos };
+  return {
+    nome: file.name, mk: competenciaDoNome(file.name), categorias,
+    ativos: [...ativos.values()], total, posicoes, avisos,
+  };
 }
+
+// A tabela por ativo é opcional: se a migração ainda não rodou no banco, o
+// import da B3 não pode falhar por causa dela — grava o resto e segue.
+const tabelaAusente = (msg: string) =>
+  /relation|does not exist|could not find|schema cache|not exist/i.test(msg);
 
 /** Grava os pontos mensais no histórico (upsert do total + substitui a quebra
  *  por categoria do dia, como a sincronização faz). Dias já existentes são
@@ -145,6 +184,23 @@ export async function salvarPontosB3(pontos: PontoB3[]): Promise<void> {
       }));
       const { error: eIns } = await sb.from("pluggy_investments_hist_tipo").insert(linhas);
       if (eIns) throw new Error(eIns.message);
+    }
+
+    // Quebra por ATIVO do mesmo ponto — é o que permite expandir a categoria
+    // na tabela de evolução mensal e ver o passado de cada posição.
+    // Mesma regra do bloco acima: substitui o dia inteiro, então reimportar o
+    // mesmo mês corrige em vez de duplicar. Ponto sem detalhe (lançamento
+    // manual) apaga o dia e não reinsere nada — o mês fica só com o total.
+    const { error: eDelA } = await sb.from("pluggy_investments_hist_ativo").delete().eq("dia", dia);
+    if (eDelA && !tabelaAusente(eDelA.message)) throw new Error(eDelA.message);
+    const ativos = (p.ativos ?? []).filter((a) => a.valor > 0);
+    if (ativos.length) {
+      const linhasA = ativos.map((a) => ({
+        dia, ativo_id: a.ativo_id, tipo: a.tipo, nome: a.nome,
+        valor_total: a.valor, valor_aplicado: null, atualizado_em: agora,
+      }));
+      const { error: eInsA } = await sb.from("pluggy_investments_hist_ativo").insert(linhasA);
+      if (eInsA && !tabelaAusente(eInsA.message)) throw new Error(eInsA.message);
     }
   }
 }
