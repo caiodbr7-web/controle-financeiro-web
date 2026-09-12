@@ -468,3 +468,48 @@ export async function sincronizarTudo(): Promise<SyncTudoResult> {
 
   return { conexoes: itens.length, erros };
 }
+
+/* ============================================================================
+   Alocação-alvo (sub-aba "Balanceamento")
+
+   Guarda só o ALVO em % por classe; a posição de hoje segue vindo de
+   pluggy_investments + saldos das contas. A chave é a mesma de `tipo_manual`,
+   mais a pseudo-classe 'CAIXA'.
+   ============================================================================ */
+
+/** Alvo de alocação de uma classe, em % da carteira. */
+export interface AlocacaoAlvo {
+  tipo: string;
+  alvo_pct: number;
+}
+
+/** Lê os alvos salvos. Sem nenhum alvo definido, devolve lista vazia. */
+export async function listAlvos(): Promise<AlocacaoAlvo[]> {
+  const { data, error } = await sb.from("alocacao_alvo").select("tipo,alvo_pct");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => ({ tipo: String(r.tipo), alvo_pct: Number(r.alvo_pct) || 0 }));
+}
+
+/**
+ * Salva os alvos de uma vez. Classes com alvo 0 são REMOVIDAS em vez de
+ * gravadas — "não quero nada aqui" e "nunca defini" são a mesma coisa, e assim
+ * a tabela não acumula linhas zeradas de classes que o usuário deixou de usar.
+ */
+export async function saveAlvos(alvos: AlocacaoAlvo[]): Promise<void> {
+  const comValor = alvos.filter((a) => a.alvo_pct > 0);
+  const zerados = alvos.filter((a) => a.alvo_pct <= 0).map((a) => a.tipo);
+
+  if (comValor.length) {
+    const linhas = comValor.map((a) => ({
+      tipo: a.tipo,
+      alvo_pct: a.alvo_pct,
+      atualizado_em: new Date().toISOString(),
+    }));
+    const { error } = await sb.from("alocacao_alvo").upsert(linhas, { onConflict: "user_id,tipo" });
+    if (error) throw new Error(error.message);
+  }
+  if (zerados.length) {
+    const { error } = await sb.from("alocacao_alvo").delete().in("tipo", zerados);
+    if (error) throw new Error(error.message);
+  }
+}

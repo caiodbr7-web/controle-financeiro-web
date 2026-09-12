@@ -17,8 +17,10 @@ import {
 import type { ManualInvestmentInput, SaldoConta, IbkrCredencial } from "../../lib/pluggy";
 import { BRL, BRL0, kBRL, brlShort, fmtMoeda, dvLabel } from "../../lib/finance";
 import { bancoCanonico } from "../../lib/bancos";
+import { labelTipo, CLASSE_OPTS, PALETA, CAIXA_COR, CAIXA_TIPO } from "../../lib/investclasses";
 import { semAcento } from "../../lib/texto";
 import { ImportB3 } from "../ImportB3";
+import { Balanceamento } from "../Balanceamento";
 
 /* ============================================================================
    Aba "Investimentos" — patrimônio investido via Open Finance (Pluggy).
@@ -30,24 +32,6 @@ import { ImportB3 } from "../ImportB3";
    Permite ao usuário CLASSIFICAR o tipo de cada ativo (coluna tipo_manual), que
    sobrepõe o tipo vindo da Pluggy para a sua visualização (KPIs/gráficos/tabela).
    ============================================================================ */
-
-// rótulos amigáveis para os tipos (Pluggy + classes manuais extras)
-const TIPO_LABEL: Record<string, string> = {
-  FIXED_INCOME: "Renda Fixa",
-  MUTUAL_FUND: "Fundos",
-  SECURITY: "Títulos",
-  EQUITY: "Ações",
-  STOCK: "Ações",
-  ETF: "ETF",
-  ETF_US: "ETF - US",
-  DEBENTURE: "Debêntures",
-  COE: "COE",
-  PENSION: "Previdência",
-  REAL_ESTATE: "Imobiliário",
-  CRYPTO: "Cripto",
-  OUTROS: "Outros",
-};
-const labelTipo = (t?: string | null) => (t ? TIPO_LABEL[t] ?? t : "Outros");
 
 // Nome do ativo normalizado — é a chave que junta as duas fontes do histórico.
 // O Open Finance tem investment_id; os relatórios da B3 não têm id nenhum, só
@@ -99,26 +83,6 @@ const instDe = (i: Investimento) => {
   const base = i.emissor || i.banco || "";
   return base ? limpaInstituicao(base) : "—";
 };
-
-// opções do seletor de classificação manual (value = chave canônica)
-const CLASSE_OPTS = [
-  { v: "FIXED_INCOME", label: "Renda Fixa" },
-  { v: "MUTUAL_FUND", label: "Fundos" },
-  { v: "EQUITY", label: "Ações" },
-  { v: "ETF", label: "ETF" },
-  { v: "ETF_US", label: "ETF - US" },
-  { v: "DEBENTURE", label: "Debêntures" },
-  { v: "COE", label: "COE" },
-  { v: "PENSION", label: "Previdência" },
-  { v: "REAL_ESTATE", label: "Imobiliário" },
-  { v: "CRYPTO", label: "Cripto" },
-  { v: "OUTROS", label: "Outros" },
-];
-
-// paleta categórica (uma cor por tipo) — legível nos dois temas (premium 2026)
-const PALETA = ["#6d28d9", "#16a06b", "#e0a33a", "#ec5b7e", "#3b82f6", "#8b5cf6", "#14b8a6", "#9ca3af"];
-// cor fixa do "Caixa" (saldo líquido em conta) — cinza-azulado, destaca-se da paleta
-const CAIXA_COR = "#64748b";
 
 const cell = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : String(v));
 const fmtVenc = (s?: string | null) => {
@@ -502,6 +466,7 @@ function IbkrForm({ inicial, onClose, onReload }: {
 
 export function Investimentos() {
   const cc = useChart();
+  const [sub, setSub] = useState<"posicoes" | "balanceamento">("posicoes");
   const [rows, setRows] = useState<Investimento[]>([]);
   const [hist, setHist] = useState<InvestimentoHist[]>([]);
   const [histTipo, setHistTipo] = useState<InvestimentoHistTipo[]>([]);
@@ -787,9 +752,27 @@ export function Investimentos() {
   // composição do patrimônio: tipos de investimento + (opcional) o Caixa
   const composicao = useMemo(() => {
     if (!mostraCaixa) return porTipo;
-    return [...porTipo, { tipo: "CAIXA", label: "Caixa", total: caixaTotal, cor: CAIXA_COR }]
+    return [...porTipo, { tipo: CAIXA_TIPO, label: "Caixa", total: caixaTotal, cor: CAIXA_COR }]
       .sort((a, b) => b.total - a.total);
   }, [porTipo, mostraCaixa, caixaTotal]);
+
+  // composição para o BALANCEAMENTO: a carteira inteira, ignorando os filtros da
+  // aba (balancear é sobre o todo, não sobre um recorte) e sempre com o Caixa
+  // dentro — ele é uma classe como as outras e entra nos 100%.
+  const composicaoTotal = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const i of rows) {
+      const k = tipoEf(i) || "OUTROS";
+      m.set(k, (m.get(k) ?? 0) + (i.saldo ?? 0));
+    }
+    const arr = [...m.entries()]
+      .map(([tipo, total]) => ({ tipo, label: labelTipo(tipo), total }))
+      .sort((a, b) => b.total - a.total)
+      .map((x, i) => ({ ...x, cor: PALETA[i % PALETA.length] }));
+    if (caixaTotal !== 0) arr.push({ tipo: CAIXA_TIPO, label: "Caixa", total: caixaTotal, cor: CAIXA_COR });
+    return arr.sort((a, b) => b.total - a.total);
+  }, [rows, caixaTotal]);
+  const patrimonioTotal = useMemo(() => composicaoTotal.reduce((s, c) => s + c.total, 0), [composicaoTotal]);
 
   // série de evolução do patrimônio (histórico diário)
   const serie = useMemo(
@@ -1114,8 +1097,41 @@ export function Investimentos() {
     );
   }
 
+  // sub-abas da aba Investimentos (mesmo visual da barra de Importação/Análise).
+  // Mora aqui, e não no App: "Balanceamento" é uma visão DESTA aba, não uma aba
+  // do menu principal.
+  const barraSub = (
+    <div className="inline-flex gap-[2px] bg-soft p-[3px] rounded-[10px] flex-wrap mb-[18px]">
+      {([
+        { id: "posicoes", label: "Posições" },
+        { id: "balanceamento", label: "Balanceamento" },
+      ] as const).map((s) => (
+        <button
+          key={s.id}
+          onClick={() => setSub(s.id)}
+          aria-current={sub === s.id ? "page" : undefined}
+          className={`whitespace-nowrap border-0 px-[13px] py-[9px] text-[13px] cursor-pointer rounded-[8px] transition-all ${
+            sub === s.id ? "bg-card text-accent font-bold shadow-card" : "bg-transparent text-muted hover:text-txt font-medium"
+          }`}
+        >
+          {s.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (sub === "balanceamento") {
+    return (
+      <div>
+        {barraSub}
+        <Balanceamento atuais={composicaoTotal} total={patrimonioTotal} />
+      </div>
+    );
+  }
+
   return (
     <div>
+      {barraSub}
       <div className={`grid grid-cols-2 gap-[14px] mb-[18px] ${caixa.length > 0 ? "md:grid-cols-3 lg:grid-cols-5" : "md:grid-cols-4"}`}>
         <Kpi
           title="Investido total"
