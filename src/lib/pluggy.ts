@@ -513,3 +513,34 @@ export async function saveAlvos(alvos: AlocacaoAlvo[]): Promise<void> {
     if (error) throw new Error(error.message);
   }
 }
+
+/* ============================================================================
+   Reserva de emergência
+
+   Guarda só os dois parametros que o app não tem como deduzir: quanto custaria
+   o mês NUMA EMERGÊNCIA (menor que o gasto médio, porque se corta viagem e
+   lazer) e quantos meses se quer cobrir. O quanto já existe continua derivado
+   da liquidez D+1.
+   ============================================================================ */
+
+export interface ReservaConfig {
+  gasto_mensal: number;
+  meses: number;
+}
+
+/** Lê a config da reserva. Sem nada definido, devolve null. */
+export async function getReserva(): Promise<ReservaConfig | null> {
+  const { data, error } = await sb.from("reserva_emergencia").select("gasto_mensal,meses").maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return { gasto_mensal: Number(data.gasto_mensal) || 0, meses: Number(data.meses) || 0 };
+}
+
+/** Salva a config da reserva (uma linha por usuário). */
+export async function saveReserva(cfg: ReservaConfig): Promise<void> {
+  const { error } = await sb.from("reserva_emergencia").upsert(
+    { gasto_mensal: cfg.gasto_mensal, meses: cfg.meses, atualizado_em: new Date().toISOString() },
+    { onConflict: "user_id" },
+  );
+  if (error) throw new Error(error.message);
+}

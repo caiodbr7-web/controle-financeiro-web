@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Panel, Select, Seg } from "./ui";
 import { BRL0 } from "../lib/finance";
-import { listAlvos, saveAlvos } from "../lib/pluggy";
+import { listAlvos, saveAlvos, getReserva, saveReserva } from "../lib/pluggy";
 import { labelTipo, CLASSES_ALVO, PALETA } from "../lib/investclasses";
 
 /* ============================================================================
@@ -49,7 +49,16 @@ const fmtPP = (v: number) =>
 // só lê dígitos: o campo de aporte aceita o que o usuário digitar
 const parseBRL = (s: string) => Number(String(s).replace(/\D/g, "")) || 0;
 
-export function Balanceamento({ atuais, total }: { atuais: CatAtual[]; total: number }) {
+export function Balanceamento({
+  atuais,
+  total,
+  liquidoD1,
+}: {
+  atuais: CatAtual[];
+  total: number;
+  /** caixa + investimentos resgatáveis em ~1 dia útil — o que a reserva tem hoje */
+  liquidoD1: number;
+}) {
   const [alvos, setAlvos] = useState<Record<string, string>>({});
   const [salvos, setSalvos] = useState<Record<string, number>>({});
   const [carregando, setCarregando] = useState(true);
@@ -58,12 +67,17 @@ export function Balanceamento({ atuais, total }: { atuais: CatAtual[]; total: nu
   const [modo, setModo] = useState<Modo>("aporte");
   const [aporteTxt, setAporteTxt] = useState("");
   const [addTipo, setAddTipo] = useState("");
+  // reserva de emergência: os dois parâmetros que só o usuário sabe
+  const [gastoTxt, setGastoTxt] = useState("");
+  const [mesesTxt, setMesesTxt] = useState("");
+  const [resSalva, setResSalva] = useState<{ gasto: number; meses: number } | null>(null);
+  const [resSalvando, setResSalvando] = useState(false);
 
   useEffect(() => {
     let vivo = true;
     (async () => {
       try {
-        const lista = await listAlvos();
+        const [lista, res] = await Promise.all([listAlvos(), getReserva()]);
         if (!vivo) return;
         const mapa: Record<string, number> = {};
         lista.forEach((a) => { mapa[a.tipo] = a.alvo_pct; });
@@ -71,6 +85,11 @@ export function Balanceamento({ atuais, total }: { atuais: CatAtual[]; total: nu
         const txt: Record<string, string> = {};
         Object.entries(mapa).forEach(([k, v]) => { txt[k] = String(v).replace(".", ","); });
         setAlvos(txt);
+        if (res) {
+          setResSalva({ gasto: res.gasto_mensal, meses: res.meses });
+          setGastoTxt(res.gasto_mensal ? String(Math.round(res.gasto_mensal)) : "");
+          setMesesTxt(String(res.meses));
+        }
       } catch (e) {
         if (vivo) setErro((e as Error).message);
       } finally {
@@ -158,6 +177,29 @@ export function Balanceamento({ atuais, total }: { atuais: CatAtual[]; total: nu
     setAlvos(txt);
   };
 
+  // --- reserva de emergência ---
+  const gastoEmerg = parseBRL(gastoTxt);
+  const mesesAlvo = Math.max(0, Math.min(120, Number(String(mesesTxt).replace(/\D/g, "")) || 0));
+  const alvoReserva = gastoEmerg * mesesAlvo;
+  const faltaReserva = Math.max(0, alvoReserva - liquidoD1);
+  const mesesCobertos = gastoEmerg > 0 ? liquidoD1 / gastoEmerg : 0;
+  const resConfigurada = gastoEmerg > 0 && mesesAlvo > 0;
+  const resMudou =
+    !resSalva || Math.abs(resSalva.gasto - gastoEmerg) > 0.005 || resSalva.meses !== mesesAlvo;
+
+  const salvarReserva = async () => {
+    setResSalvando(true);
+    setErro("");
+    try {
+      await saveReserva({ gasto_mensal: gastoEmerg, meses: mesesAlvo });
+      setResSalva({ gasto: gastoEmerg, meses: mesesAlvo });
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setResSalvando(false);
+    }
+  };
+
   const salvar = async () => {
     setSalvando(true);
     setErro("");
@@ -181,6 +223,110 @@ export function Balanceamento({ atuais, total }: { atuais: CatAtual[]; total: nu
 
   return (
     <>
+      <Panel
+        title="Reserva de emergência"
+        sub="dimensionada em meses de gasto, não em % da carteira"
+        right={
+          <button
+            onClick={salvarReserva}
+            disabled={!resMudou || resSalvando}
+            className="tap border border-line bg-card text-txt rounded-[10px] px-3 py-[7px] text-[12.5px] font-semibold cursor-pointer hover:border-accent/50 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+          >
+            {resSalvando ? "Salvando…" : "Salvar reserva"}
+          </button>
+        }
+      >
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(200px,240px)_minmax(130px,160px)_1fr] gap-[14px] items-start">
+          <div className="bg-card2 border border-line rounded-[14px] p-4">
+            <label htmlFor="gastoEmerg" className="text-muted text-[11.5px] font-semibold uppercase tracking-[0.04em] block">
+              Gasto num mês de emergência
+            </label>
+            <div className="flex items-baseline gap-[6px] mt-[6px]">
+              <span className="text-muted text-[16px]">R$</span>
+              <input
+                id="gastoEmerg"
+                className="font-display text-[26px] font-bold w-full bg-transparent border-0 p-0 text-txt tracking-tight tabular-nums outline-none focus:ring-2 focus:ring-accent rounded"
+                value={gastoTxt}
+                onChange={(e) => setGastoTxt(e.target.value)}
+                inputMode="numeric"
+                placeholder="0"
+                aria-label="Gasto num mês de emergência, em reais"
+              />
+            </div>
+            <p className="text-muted text-[11.5px] mt-[10px] leading-snug">
+              Não é o seu gasto médio: numa emergência some viagem, lazer e afins. Só você sabe esse número — o app
+              não tem como deduzi-lo.
+            </p>
+          </div>
+
+          <div className="bg-card2 border border-line rounded-[14px] p-4">
+            <label htmlFor="mesesReserva" className="text-muted text-[11.5px] font-semibold uppercase tracking-[0.04em] block">
+              Meses de cobertura
+            </label>
+            <input
+              id="mesesReserva"
+              className="font-display text-[26px] font-bold w-full bg-transparent border-0 p-0 mt-[6px] text-txt tracking-tight tabular-nums outline-none focus:ring-2 focus:ring-accent rounded"
+              value={mesesTxt}
+              onChange={(e) => setMesesTxt(e.target.value)}
+              inputMode="numeric"
+              placeholder="0"
+              aria-label="Meses de cobertura da reserva"
+            />
+            <p className="text-muted text-[11.5px] mt-[10px] leading-snug">
+              Quantos meses você quer conseguir bancar sem renda nenhuma.
+            </p>
+          </div>
+
+          <div className="bg-card2 border border-line rounded-[14px] p-4">
+            {resConfigurada ? (
+              <>
+                <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                  <div>
+                    <div className="text-muted text-[11.5px] font-semibold uppercase tracking-[0.04em]">Alvo da reserva</div>
+                    <div className="font-display text-[26px] font-bold tracking-tight tabular-nums">{BRL0(alvoReserva)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-muted text-[11.5px] font-semibold uppercase tracking-[0.04em]">Você tem (D+1)</div>
+                    <div className="font-display text-[26px] font-bold tracking-tight tabular-nums">{BRL0(liquidoD1)}</div>
+                  </div>
+                </div>
+
+                <div className="h-[10px] rounded-full bg-fill overflow-hidden mt-[14px]">
+                  <div
+                    className={`h-full rounded-full ${faltaReserva > 0 ? "bg-amber" : "bg-green"}`}
+                    style={{ width: `${Math.min(100, alvoReserva > 0 ? (liquidoD1 / alvoReserva) * 100 : 0)}%` }}
+                  />
+                </div>
+
+                <div className="flex items-baseline justify-between gap-3 mt-[10px] flex-wrap text-[12.5px]">
+                  <span className="text-muted">
+                    Cobre <b className="text-txt tabular-nums">
+                      {mesesCobertos.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                    </b>{" "}
+                    {mesesCobertos === 1 ? "mês" : "meses"} · {(liquidoD1 / (total || 1) * 100).toFixed(1).replace(".", ",")}% da carteira
+                  </span>
+                  {faltaReserva > 0 ? (
+                    <span className="font-bold text-amber tabular-nums">faltam {BRL0(faltaReserva)}</span>
+                  ) : (
+                    <span className="font-bold text-green">reserva completa</span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-muted text-[13px] leading-relaxed">
+                Preencha o gasto de emergência e os meses ao lado. O que você já tem vem da <b>liquidez D+1</b> —
+                caixa mais os investimentos resgatáveis em ~1 dia útil — e hoje soma <b className="text-txt">{BRL0(liquidoD1)}</b>.
+                <br />
+                <span className="text-[12px]">
+                  Esse número depende da coluna “Liquidez D+1” estar certa na aba Posições; ela é um palpite do app
+                  quando você não marca na mão.
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </Panel>
+
       <Panel
         title="Balanceamento da carteira"
         sub="alvo por classe · o caixa entra nos 100%"
@@ -304,7 +450,7 @@ export function Balanceamento({ atuais, total }: { atuais: CatAtual[]; total: nu
                       {emLinha ? "—" : fmtPP(drift)}
                     </td>
                     <td className="num">
-                      <Ordem valor={l.ordem} ok={fechou100} acimaSemVenda={modo === "aporte" && drift > 0.05} />
+                      <Ordem valor={l.ordem} ok={fechou100} drift={drift} />
                     </td>
                   </tr>
                 );
@@ -362,19 +508,24 @@ function Tile({ k, v, extra }: { k: string; v: string; extra?: string }) {
   );
 }
 
-function Ordem({ valor, ok, acimaSemVenda }: { valor: number; ok: boolean; acimaSemVenda: boolean }) {
+const pill = "inline-block px-[9px] py-[3px] rounded-full text-[11.5px] font-bold";
+
+function Ordem({ valor, ok, drift }: { valor: number; ok: boolean; drift: number }) {
   if (!ok) return <span className="text-muted">—</span>;
   const v = Math.round(valor);
+
+  // ordem zerada tem TRÊS motivos bem diferentes, e chamar os três de "em linha"
+  // seria mentir em dois deles — o desvio continua lá, só não há o que fazer agora.
   if (v === 0) {
-    // sem ordem tem dois motivos bem diferentes: ou a classe está no alvo, ou
-    // ela passou do alvo e o modo "Só aportar" não vende — dizer "em linha" nesse
-    // segundo caso seria mentira, já que o desvio continua lá.
-    return acimaSemVenda ? (
-      <span className="inline-block px-[9px] py-[3px] rounded-full text-[11.5px] font-bold bg-amber/15 text-amber" title="Acima do alvo, mas o modo “Só aportar” não vende — ela se dilui conforme você aporta nas outras.">
+    if (Math.abs(drift) < 0.05) return <span className={`${pill} bg-fill text-muted`}>em linha</span>;
+    return drift > 0 ? (
+      <span className={`${pill} bg-amber/15 text-amber`} title="Acima do alvo, mas o modo “Só aportar” não vende — ela se dilui conforme você aporta nas outras.">
         acima · não aporta
       </span>
     ) : (
-      <span className="inline-block px-[9px] py-[3px] rounded-full text-[11.5px] font-bold bg-fill text-muted">em linha</span>
+      <span className={`${pill} bg-fill text-muted`} title="Abaixo do alvo, mas não há aporte para distribuir — preencha o valor do aporte para ver quanto viria para cá.">
+        abaixo · sem aporte
+      </span>
     );
   }
   const compra = v > 0;
