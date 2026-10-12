@@ -233,21 +233,66 @@ function buildPlanos() {
     id: id++, tipo: "fixo", nome: "", categoria: null, valor: 0,
     mes_inicio: inicioAntigo, mes_fim: null, parcelas: null, ativo: true, ordem: id,
     no_cartao: false, eh_cartao_total: false, eh_conta_total: false, eh_receita_total: false,
-    link_categoria: null, link_texto: null, ...o,
+    link_categoria: null, link_texto: null,
+    favorecido: null, dia_venc: null, forma_pagamento: null, dados_pagamento: null, lembrar_dias: 3, observacoes: null, variavel: false,
+    ...o,
   });
   return [
-    p({ tipo: "fixo", nome: "Aluguel", categoria: "Moradia", valor: 2500, link_categoria: "Moradia", link_texto: "aluguel" }),
-    p({ tipo: "fixo", nome: "Condomínio", categoria: "Moradia", valor: 720 }),
-    p({ tipo: "fixo", nome: "Internet", categoria: "Assinaturas", valor: 119.9 }),
-    p({ tipo: "fixo", nome: "Academia", categoria: "Academia", valor: 109.9 }),
-    p({ tipo: "fixo", nome: "Streaming (Netflix + Spotify)", categoria: "Assinaturas", valor: 90.8, no_cartao: true }),
-    p({ tipo: "receita", nome: "Salário", categoria: null, valor: 12000 }),
-    p({ tipo: "parcelamento", nome: "Notebook novo", categoria: "Compras", valor: 583.2, parcelas: 10, mes_inicio: ymBack(3).key, no_cartao: true }),
-    p({ tipo: "meta", nome: "Viagem Europa", categoria: "Viagem", valor: 18000, mes_inicio: ymBack(2).key, mes_fim: ymBack(-9).key }),
-    p({ tipo: "pagamento", nome: "IPVA 2026", categoria: "Impostos/Taxas", valor: 1850, mes_inicio: ymBack(-1).key }),
+    p({ tipo: "fixo", nome: "Aluguel", categoria: "Moradia", valor: 2500, link_categoria: "Moradia", link_texto: "aluguel", favorecido: "Imobiliária Lar Feliz", dia_venc: 5, forma_pagamento: "Boleto", dados_pagamento: "Boleto chega por e-mail ~dia 28", observacoes: "Reajuste anual pelo IGP-M em janeiro. Contrato vence em jun/2027." }),
+    p({ tipo: "fixo", nome: "Condomínio", categoria: "Moradia", valor: 720, favorecido: "Cond. Ed. Aurora", dia_venc: 10, forma_pagamento: "Boleto", dados_pagamento: "App Superlógica", observacoes: "Taxa extra de R$ 150 de jan a mar (obra da fachada)." }),
+    p({ tipo: "fixo", nome: "Energia", categoria: "Moradia", valor: 260, variavel: true, favorecido: "Cemig", dia_venc: 18, forma_pagamento: "Débito automático", lembrar_dias: 0 }),
+    p({ tipo: "fixo", nome: "Internet", categoria: "Assinaturas", valor: 119.9, favorecido: "Vivo Fibra", dia_venc: 15, forma_pagamento: "Cartão de crédito", no_cartao: true, lembrar_dias: 0, observacoes: "Fidelidade até mar/27 — renegociar depois." }),
+    p({ tipo: "fixo", nome: "Academia", categoria: "Academia", valor: 109.9, favorecido: "Smart Fit", dia_venc: 12, forma_pagamento: "Cartão de crédito", no_cartao: true, lembrar_dias: 0 }),
+    p({ tipo: "fixo", nome: "Streaming (Netflix + Spotify)", categoria: "Assinaturas", valor: 90.8, no_cartao: true, dia_venc: 22, forma_pagamento: "Cartão de crédito", lembrar_dias: 0 }),
+    p({ tipo: "fixo", nome: "Diarista", categoria: "Moradia", valor: 1200, favorecido: "Maria Aparecida", dia_venc: 30, forma_pagamento: "Pix", dados_pagamento: "Pix CPF 123.456.789-00", lembrar_dias: 1, observacoes: "R$ 300/semana, pago no fim do mês. 13º em dezembro." }),
+    p({ tipo: "fixo", nome: "Plano de saúde", categoria: "Saude", valor: 1150, favorecido: "Unimed", dia_venc: 20, forma_pagamento: "Boleto", dados_pagamento: "Boleto no app Unimed", lembrar_dias: 5, observacoes: "Reajuste ANS em maio." }),
+    p({ tipo: "receita", nome: "Salário", categoria: null, valor: 12000, favorecido: "Empresa XPTO", dia_venc: 5 }),
+    p({ tipo: "parcelamento", nome: "Notebook novo", categoria: "Compras", valor: 583.2, parcelas: 10, mes_inicio: ymBack(3).key, no_cartao: true, favorecido: "Fast Shop", dia_venc: 25, forma_pagamento: "Cartão de crédito", lembrar_dias: 0, observacoes: "10x sem juros." }),
+    p({ tipo: "parcelamento", nome: "Geladeira", categoria: "Compras", valor: 380, parcelas: 12, mes_inicio: ymBack(8).key, favorecido: "Magazine Luiza", dia_venc: 28, forma_pagamento: "Cartão de crédito", no_cartao: true, lembrar_dias: 0 }),
+    p({ tipo: "meta", nome: "Viagem Europa", categoria: "Viagem", valor: 18000, mes_inicio: ymBack(2).key, mes_fim: ymBack(-9).key, dia_venc: 6, forma_pagamento: "Transferência", dados_pagamento: "Caixinha Nubank “Europa”" }),
+    p({ tipo: "pagamento", nome: "IPVA 2027", categoria: "Impostos/Taxas", valor: 1850, mes_inicio: ymBack(-3).key, favorecido: "SEF-MG", dia_venc: 20, forma_pagamento: "Boleto", dados_pagamento: "Pagar pelo app do banco (Renavam)", lembrar_dias: 7, observacoes: "Cota única tem 3% de desconto." }),
+    p({ tipo: "pagamento", nome: "Seguro do carro", categoria: "Transporte", valor: 2300, mes_inicio: ymBack(-1).key, favorecido: "Porto Seguro", dia_venc: 15, forma_pagamento: "Boleto", lembrar_dias: 7, observacoes: "Renovação — cotar antes; ano passado foi R$ 2.150." }),
+    p({ tipo: "pagamento", nome: "Conserto máq. de lavar", categoria: "Moradia", valor: 450, mes_inicio: ymBack(2).key, favorecido: "Assistência Rápida", dia_venc: 3, forma_pagamento: "Pix" }),
     p({ tipo: "fixo", nome: "Orçamento do cartão", categoria: null, valor: 3200, eh_cartao_total: true }),
     p({ tipo: "fixo", nome: "Orçamento da conta", categoria: null, valor: 2600, eh_conta_total: true }),
   ];
+}
+
+// registro mensal dos planos: meses passados pagos (com pequenas variações
+// nas contas variáveis), mês atual parcialmente pago, algumas notas.
+function buildPlanoMensal(planos: ReturnType<typeof buildPlanos>) {
+  const out: Record<string, unknown>[] = [];
+  const hoje = new Date();
+  const atual = ymBack(0).key;
+  let id = 1;
+  const itens = planos.filter((p) => !p.eh_cartao_total && !p.eh_conta_total && !p.eh_receita_total);
+  for (let back = N_MESES - 2; back >= 0; back--) {
+    const k = ymBack(back).key;
+    for (const p of itens) {
+      if (p.tipo === "receita") continue;
+      if (k < p.mes_inicio || (p.mes_fim && k > p.mes_fim)) continue;
+      if (p.tipo === "parcelamento" && (() => { const [y1, m1] = p.mes_inicio.split("-").map(Number); const [y2, m2] = k.split("-").map(Number); return (y2 - y1) * 12 + (m2 - m1) >= (p.parcelas || 1); })()) continue;
+      if (p.tipo === "pagamento" && k !== p.mes_inicio) continue;
+      const dia = p.dia_venc || 1;
+      // mês atual: só o que já venceu está pago
+      if (k === atual && dia >= hoje.getDate()) continue;
+      const seed = (p.id * 31 + back * 7) % 100;
+      let valor: number | null = null;
+      if (p.variavel) valor = Math.round(p.valor * (0.85 + seed / 400) * 100) / 100;
+      else if (seed < 15) valor = Math.round(p.valor * (seed < 7 ? 1.08 : 0.95) * 100) / 100;
+      const nota = k === ymBack(1).key && p.nome === "Energia" ? "Veio alta — ar-condicionado ligado direto."
+        : k === ymBack(3).key && p.nome === "Plano de saúde" ? "Reajuste aplicado a partir deste mês." : null;
+      out.push({ id: id++, plano_id: p.id, competencia: k, valor_real: valor, pago: true, nota });
+    }
+  }
+  // uma conta atrasada no mês atual: condomínio sem registro + nota
+  const cond = itens.find((p) => p.nome === "Condomínio");
+  if (cond && hoje.getDate() > 10) {
+    const i = out.findIndex((r) => r.plano_id === cond.id && r.competencia === atual);
+    if (i >= 0) out.splice(i, 1);
+    out.push({ id: id++, plano_id: cond.id, competencia: atual, valor_real: null, pago: false, nota: "Boleto não chegou — pedi 2ª via ao síndico." });
+  }
+  return out;
 }
 
 // ---- investimentos (posições) ----------------------------------------------
@@ -363,12 +408,13 @@ export function buildDemoData(): DemoDb {
   const invs = buildInvestimentos();
   const { hist, histTipo, histAtivo } = buildHist(invs);
   const cats = buildCategorias();
+  const planos = buildPlanos();
   return {
     lancamentos: buildLancamentos() as unknown as Record<string, unknown>[],
     categorias: cats as unknown as Record<string, unknown>[],
     subcategorias: buildSubcategorias(cats) as unknown as Record<string, unknown>[],
-    planos: buildPlanos() as unknown as Record<string, unknown>[],
-    plano_mensal: [],
+    planos: planos as unknown as Record<string, unknown>[],
+    plano_mensal: buildPlanoMensal(planos),
     regras: buildRegras() as unknown as Record<string, unknown>[],
     pluggy_investments: invs as unknown as Record<string, unknown>[],
     pluggy_investments_hist: hist as unknown as Record<string, unknown>[],
