@@ -34,6 +34,14 @@ export interface Plano {
   // vínculo opcional a lançamentos reais (usado na visão "Mês": previsto × realizado)
   link_categoria?: string | null;
   link_texto?: string | null;
+  // dados de pagamento / lembrete (migração *_planejamento_lembretes.sql)
+  favorecido?: string | null;      // para quem pagar
+  dia_venc?: number | null;        // dia do vencimento (1–31) dentro do mês
+  forma_pagamento?: string | null; // Pix, Boleto, Cartão de crédito…
+  dados_pagamento?: string | null; // chave Pix, código do boleto, conta…
+  lembrar_dias?: number | null;    // lembrar N dias antes do vencimento
+  observacoes?: string | null;     // anotações livres sobre a despesa
+  variavel?: boolean;              // valor muda todo mês (previsto = estimativa)
 }
 
 export const TIPOS: { v: TipoPlano; label: string; icon: string; receita?: boolean }[] = [

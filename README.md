@@ -179,6 +179,25 @@ Connection string → URI, de preferência o pooler na porta `6543`). Depois dis
 Para testar uma migração antes do merge, dá para colar o SQL do arquivo no
 **Supabase → SQL Editor** manualmente (todos são idempotentes).
 
+## Planejamento (contas a pagar)
+
+A aba **Planejamento** tem quatro visões (`src/components/planejamento/`):
+
+| Visão | O que mostra |
+|---|---|
+| **Mês** | Calendário com cada conta no dia do vencimento, painel do dia (dados para pagar, "Paguei"), próximos 7 dias e o **saldo em conta dia a dia** (parte do saldo do Open Finance ou do valor que você digitar). |
+| **Planilha** | Linhas = despesas, colunas = meses. No histórico, **previsto × realizado** lado a lado (ou só o real, ou a diferença); à frente, a projeção. Filtro **Não recorrentes** mostra só parcelamentos, pagamentos únicos e metas, com total / pago / falta de cada compromisso. |
+| **Despesas** | O cadastro em três formatos: **mapa de área** (cada retângulo proporcional ao peso da despesa), **lista** e **linha do tempo**. |
+| **Orçamento** | A visão antiga (orçamento do cartão, da conta e receita prevista) — continua igual. |
+
+Cada despesa guarda **para quem** pagar, **dia do vencimento**, **forma**, **dados
+para pagar** (Pix, boleto…), **lembrete** e **observações**; cada mês pode ter uma
+**nota** ("boleto atrasou", "pago com desconto"). Esses campos vêm da migração
+`*_planejamento_lembretes.sql` — sem ela a página funciona, mas sem esses campos.
+
+A lógica (ocorrências, status, fluxo de caixa) é pura e fica em
+[`src/lib/agenda.ts`](src/lib/agenda.ts).
+
 ## Observações
 
 - A *publishable key* no `lib/supabase.ts` é pública de propósito; o RLS do
